@@ -1,6 +1,7 @@
 defmodule JournalexWeb.ActivityStatementLive do
   use JournalexWeb, :live_view
   alias Journalex.ActivityStatementParser
+  alias Journalex.Activity
 
   @impl true
   def mount(_params, _session, socket) do
@@ -66,11 +67,16 @@ defmodule JournalexWeb.ActivityStatementLive do
         </div>
 
         <div class="px-6 py-4 border-b border-gray-200">
-          <div class="flex items-center justify-between">
+          <div class="flex items-center justify-between gap-3">
             <h2 class="text-lg font-semibold text-gray-900">Recent Activity</h2>
-            <.link navigate={~p"/activity_statement/upload"} class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700">
-              Upload New Statement
-            </.link>
+            <div class="flex items-center gap-2">
+              <button phx-click="save_all" class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-50" disabled={Enum.empty?(@activity_data)}>
+                Save All to DB
+              </button>
+              <.link navigate={~p"/activity_statement/upload"} class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700">
+                Upload New Statement
+              </.link>
+            </div>
           </div>
         </div>
 
@@ -209,6 +215,18 @@ defmodule JournalexWeb.ActivityStatementLive do
     case to_number(qty) do
       n when is_number(n) and n < 0 -> "SELL"
       _ -> "BUY"
+    end
+  end
+
+  @impl true
+  def handle_event("save_all", _params, socket) do
+    trades = socket.assigns.activity_data || []
+    try do
+      Activity.save_activity_rows(trades)
+      {:noreply, put_flash(socket, :info, "Saved #{length(trades)} rows to DB")}
+    rescue
+      e ->
+        {:noreply, put_flash(socket, :error, "Failed to save: #{Exception.message(e)}")}
     end
   end
 end
