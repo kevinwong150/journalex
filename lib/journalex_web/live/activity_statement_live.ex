@@ -2,6 +2,7 @@ defmodule JournalexWeb.ActivityStatementLive do
   use JournalexWeb, :live_view
   alias Journalex.ActivityStatementParser
   alias Journalex.Activity
+  alias JournalexWeb.ActivityStatementSummary
 
   @impl true
   def mount(_params, _session, socket) do
@@ -77,69 +78,12 @@ defmodule JournalexWeb.ActivityStatementLive do
           </div>
         </div>
 
-        <%= if @summary_expanded do %>
-          <div class="overflow-x-auto" id="summary-table">
-            <table class="min-w-full divide-y divide-gray-200">
-              <thead class="bg-gray-50">
-                <tr>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Symbol
-                  </th>
-
-                  <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Aggregated Realized P/L
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody class="bg-white divide-y divide-gray-200">
-                <%= for row <- @summary_by_symbol do %>
-                  <tr class="hover:bg-gray-50">
-                    <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900">{row.symbol}</td>
-
-                    <td class={"px-6 py-3 whitespace-nowrap text-sm text-right #{pl_class_amount(row.realized_pl)}"}>
-                      {format_amount(row.realized_pl)}
-                    </td>
-                  </tr>
-                <% end %>
-
-                <tr class="bg-gray-50 font-semibold">
-                  <td class="px-6 py-3 text-sm text-gray-900">Total</td>
-
-                  <td class={"px-6 py-3 text-sm text-right #{pl_class_amount(@summary_total)}"}>
-                    {format_amount(@summary_total)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        <% else %>
-          <div class="overflow-x-auto" id="summary-table">
-            <table class="min-w-full divide-y divide-gray-200">
-              <thead class="bg-gray-50">
-                <tr>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Symbol
-                  </th>
-
-                  <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Aggregated Realized P/L
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody class="bg-white divide-y divide-gray-200">
-                <tr class="bg-gray-50 font-semibold">
-                  <td class="px-6 py-3 text-sm text-gray-900">Total</td>
-
-                  <td class={"px-6 py-3 text-sm text-right #{pl_class_amount(@summary_total)}"}>
-                    {format_amount(@summary_total)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        <% end %>
+        <ActivityStatementSummary.summary_table
+          rows={@summary_by_symbol}
+          total={@summary_total}
+          expanded={@summary_expanded}
+          id="summary-table"
+        />
 
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between gap-3">

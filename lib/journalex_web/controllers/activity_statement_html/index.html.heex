@@ -70,13 +70,21 @@
 
             <td class="px-4 py-2 whitespace-nowrap text-sm font-medium">{s.symbol}</td>
 
-            <td class="px-4 py-2 whitespace-nowrap text-sm text-right">{format_decimal(s.quantity)}</td>
+            <td class="px-4 py-2 whitespace-nowrap text-sm text-right">
+              {format_decimal(s.quantity)}
+            </td>
 
-            <td class="px-4 py-2 whitespace-nowrap text-sm text-right">{format_decimal(s.trade_price)}</td>
+            <td class="px-4 py-2 whitespace-nowrap text-sm text-right">
+              {format_decimal(s.trade_price)}
+            </td>
 
-            <td class="px-4 py-2 whitespace-nowrap text-sm text-right">{format_decimal(s.proceeds)}</td>
+            <td class="px-4 py-2 whitespace-nowrap text-sm text-right">
+              {format_decimal(s.proceeds)}
+            </td>
 
-            <td class="px-4 py-2 whitespace-nowrap text-sm text-right">{format_decimal(s.realized_pl)}</td>
+            <td class="px-4 py-2 whitespace-nowrap text-sm text-right">
+              {format_decimal(s.realized_pl)}
+            </td>
 
             <td class="px-4 py-2 whitespace-nowrap text-sm text-right">
               <.link
