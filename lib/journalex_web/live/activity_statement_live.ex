@@ -19,11 +19,22 @@ defmodule JournalexWeb.ActivityStatementLive do
     {summary_by_symbol, summary_total} = summarize_realized_pl(trades)
     period = load_latest_period()
 
+    # Compute selected business days (Mon-Fri) present in trades
+    selected_days =
+      trades
+      |> Enum.map(&date_only(Map.get(&1, :datetime)))
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+      |> Enum.map(&parse_date!/1)
+      |> Enum.filter(fn %Date{} = d -> Date.day_of_week(d) in 1..5 end)
+      |> length()
+
     {:ok,
      socket
      |> assign(:activity_data, trades)
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
+     |> assign(:selected_days, selected_days)
      |> assign(:statement_period, period)
      |> assign(:summary_expanded, false)
      |> assign(:activity_expanded, true)}
@@ -83,6 +94,7 @@ defmodule JournalexWeb.ActivityStatementLive do
           rows={@summary_by_symbol}
           total={@summary_total}
           expanded={@summary_expanded}
+          selected_days={@selected_days}
           id="summary-table"
         />
 
@@ -174,12 +186,45 @@ defmodule JournalexWeb.ActivityStatementLive do
       groups
       |> Enum.map(fn {symbol, ts} ->
         sum = ts |> Enum.map(&to_number(&1.realized_pl)) |> Enum.sum()
-        %{symbol: symbol, realized_pl: sum}
+        # Close trades are those with inferred position_action == "CLOSE"
+        closes = Enum.filter(ts, fn r -> build_close(r) == "CLOSE" end)
+        close_count = length(closes)
+        close_positive_count = closes |> Enum.count(fn r -> to_number(r.realized_pl) > 0.0 end)
+        days_traded =
+          ts
+          |> Enum.map(&date_only(Map.get(&1, :datetime)))
+          |> Enum.reject(&is_nil/1)
+          |> Enum.uniq()
+          |> length()
+
+        %{
+          symbol: symbol,
+          realized_pl: sum,
+          close_count: close_count,
+          close_positive_count: close_positive_count,
+          days_traded: days_traded
+        }
       end)
       |> Enum.sort_by(& &1.symbol)
 
     total = rows |> Enum.map(& &1.realized_pl) |> Enum.sum()
     {rows, total}
+  end
+
+  defp date_only(nil), do: nil
+  defp date_only(%DateTime{} = dt), do: Date.to_iso8601(DateTime.to_date(dt))
+  defp date_only(%NaiveDateTime{} = ndt), do: Date.to_iso8601(NaiveDateTime.to_date(ndt))
+  defp date_only(<<y::binary-size(4), "-", m::binary-size(2), "-", d::binary-size(2), _::binary>>), do: y <> "-" <> m <> "-" <> d
+  defp date_only(bin) when is_binary(bin) do
+    case String.split(bin) do
+      [date | _] -> date_only(date)
+      _ -> nil
+    end
+  end
+
+  defp parse_date!(<<y::binary-size(4), "-", m::binary-size(2), "-", d::binary-size(2)>>) do
+    {:ok, dt} = Date.from_iso8601(y <> "-" <> m <> "-" <> d)
+    dt
   end
 
   defp to_number(nil), do: 0.0

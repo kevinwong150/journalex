@@ -2,7 +2,6 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
   use JournalexWeb, :live_view
   alias Journalex.Activity
   alias JournalexWeb.ActivityStatementSummary
-  alias JournalexWeb.ActivityStatementList
 
   @impl true
   def mount(_params, _session, socket) do
@@ -33,7 +32,8 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
      |> assign(:activity_expanded, true)
      |> assign(:calendar_month, first)
      |> assign(:date_grid, default_grid)
-     |> assign(:error, nil)}
+  |> assign(:selected_days, 0)
+  |> assign(:error, nil)}
   end
 
   defp sanitize_date(nil), do: nil
@@ -145,6 +145,7 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
           rows={@summary_by_symbol}
           total={@summary_total}
           expanded={@summary_expanded}
+          selected_days={@selected_days}
           id="summary-table"
         />
 
@@ -186,6 +187,7 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
 
           results when is_list(results) ->
             {summary_by_symbol, summary_total} = summarize_realized_pl(results)
+            selected_days = business_days_between(start_date, end_date)
             date_grid = build_date_grid(start_date, end_date, results)
 
             {:noreply,
@@ -196,6 +198,7 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
                summary_by_symbol: summary_by_symbol,
                summary_total: summary_total,
                date_grid: date_grid,
+               selected_days: selected_days,
                error: nil
              )}
         end
@@ -244,6 +247,16 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
     end
   end
 
+  @impl true
+  def handle_event("toggle_summary", _params, socket) do
+    {:noreply, assign(socket, :summary_expanded, !socket.assigns.summary_expanded)}
+  end
+
+  @impl true
+  def handle_event("toggle_activity", _params, socket) do
+    {:noreply, assign(socket, :activity_expanded, !socket.assigns.activity_expanded)}
+  end
+
   defp update_calendar_month(socket, %Date{} = first) do
     last = end_of_month(first)
     sd = yyyymmdd(first)
@@ -271,12 +284,46 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
       groups
       |> Enum.map(fn {symbol, ts} ->
         sum = ts |> Enum.map(&to_number(&1.realized_pl)) |> Enum.sum()
-        %{symbol: symbol, realized_pl: sum}
+        closes = Enum.filter(ts, fn r -> display_position_action(r.position_action) == "CLOSE" or infer_close?(r) end)
+        close_count = length(closes)
+        close_positive_count = closes |> Enum.count(fn r -> to_number(r.realized_pl) > 0.0 end)
+        days_traded =
+          ts
+          |> Enum.map(&date_only(Map.get(&1, :datetime)))
+          |> Enum.reject(&is_nil/1)
+          |> Enum.uniq()
+          |> length()
+
+        %{
+          symbol: symbol,
+          realized_pl: sum,
+          close_count: close_count,
+          close_positive_count: close_positive_count,
+          days_traded: days_traded
+        }
       end)
       |> Enum.sort_by(& &1.symbol)
 
     total = rows |> Enum.map(& &1.realized_pl) |> Enum.sum()
     {rows, total}
+  end
+
+  defp date_only(nil), do: nil
+  defp date_only(%DateTime{} = dt), do: Date.to_iso8601(DateTime.to_date(dt))
+  defp date_only(%NaiveDateTime{} = ndt), do: Date.to_iso8601(NaiveDateTime.to_date(ndt))
+  defp date_only(<<y::binary-size(4), "-", m::binary-size(2), "-", d::binary-size(2), _::binary>>), do: y <> "-" <> m <> "-" <> d
+  defp date_only(bin) when is_binary(bin) do
+    case String.split(bin) do
+      [date | _] -> date_only(date)
+      _ -> nil
+    end
+  end
+
+  defp infer_close?(row) do
+    case Map.get(row, :position_action) do
+      val when is_binary(val) -> String.upcase(val) == "CLOSE"
+      _ -> to_number(Map.get(row, :realized_pl)) != 0.0
+    end
   end
 
   defp to_number(nil), do: 0.0
@@ -388,6 +435,16 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
 
   defp build_date_grid(_, _, _), do: []
 
+  # Count business days (Mon-Fri) between yyyymmdd strings inclusive
+  defp business_days_between(sd, ed) when is_binary(sd) and is_binary(ed) do
+    with {:ok, d1} <- to_date(sd), {:ok, d2} <- to_date(ed) do
+      Date.range(d1, d2)
+      |> Enum.count(fn d -> Date.day_of_week(d) in 1..5 end)
+    else
+      _ -> 0
+    end
+  end
+
   defp months_in_range(%Date{} = d1, %Date{} = d2) do
     start = {d1.year, d1.month}
     stop = {d2.year, d2.month}
@@ -430,15 +487,6 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
     Date.new!(ny, nm, 1)
   end
 
-  @impl true
-  def handle_event("toggle_summary", _params, socket) do
-    {:noreply, assign(socket, :summary_expanded, !socket.assigns.summary_expanded)}
-  end
-
-  @impl true
-  def handle_event("toggle_activity", _params, socket) do
-    {:noreply, assign(socket, :activity_expanded, !socket.assigns.activity_expanded)}
-  end
 
   defp format_input(nil), do: nil
 
