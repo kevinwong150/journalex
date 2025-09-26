@@ -76,6 +76,7 @@ defmodule JournalexWeb.ActivityStatementList do
 							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date/Time</th>
 							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Side</th>
 							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Build/Close</th>
+							<th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Realized P/L</th>
 							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
 							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asset</th>
 							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Currency</th>
@@ -83,7 +84,6 @@ defmodule JournalexWeb.ActivityStatementList do
 							  <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Trade Px</th>
 							  <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Proceeds</th>
 							  <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Comm/Fee</th>
-							  <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Realized P/L</th>
 						</tr>
 					</thead>
 					<tbody class="bg-white divide-y divide-gray-200">
@@ -114,6 +114,7 @@ defmodule JournalexWeb.ActivityStatementList do
 								<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{display_datetime(row)}</td>
 								<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{display_side(row)}</td>
 								<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{display_build_close(row)}</td>
+								<td class={"px-6 py-4 whitespace-nowrap text-sm text-right #{pl_class(realized(row))}"}>{if @show_values?, do: display_number(realized(row)), else: ""}</td>
 								<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{Map.get(row, :symbol)}</td>
 								<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{Map.get(row, :asset_category)}</td>
 								<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{Map.get(row, :currency)}</td>
@@ -121,7 +122,6 @@ defmodule JournalexWeb.ActivityStatementList do
 								<td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{if @show_values?, do: display_number(Map.get(row, :trade_price)), else: ""}</td>
 								<td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{if @show_values?, do: display_number(Map.get(row, :proceeds)), else: ""}</td>
 								<td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{if @show_values?, do: display_number(Map.get(row, :comm_fee)), else: ""}</td>
-								<td class={"px-6 py-4 whitespace-nowrap text-sm text-right #{pl_class(realized(row))}"}>{if @show_values?, do: display_number(realized(row)), else: ""}</td>
 							</tr>
 						<% end %>
 
