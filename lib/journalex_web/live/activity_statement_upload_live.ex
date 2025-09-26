@@ -1,0 +1,249 @@
+defmodule JournalexWeb.ActivityStatementUploadLive do
+  use JournalexWeb, :live_view
+
+  @impl true
+  def mount(_params, _session, socket) do
+    {:ok,
+     socket
+     |> assign(:uploaded_files, [])
+     |> assign(:upload_status, nil)
+     |> allow_upload(:csv_file,
+       accept: ~w(.csv),
+       max_entries: 1,
+       auto_upload: true,
+       max_file_size: 10_000_000
+     )}
+  end
+
+  @impl true
+  def handle_event("validate", _params, socket) do
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("cancel-upload", %{"ref" => ref}, socket) do
+    {:noreply, cancel_upload(socket, :csv_file, ref)}
+  end
+
+  @impl true
+  def handle_event("save", _params, socket) do
+    uploaded_files =
+      consume_uploaded_entries(socket, :csv_file, fn %{path: path}, _entry ->
+        # In a real application, you would process the CSV file here
+        # For now, we'll just simulate processing
+        case process_csv_file(path) do
+          {:ok, data} ->
+            {:ok, %{path: path, data: data, processed_at: DateTime.utc_now()}}
+
+          {:error, reason} ->
+            {:postpone, reason}
+        end
+      end)
+
+    case uploaded_files do
+      [file | _] ->
+        {:noreply,
+         socket
+         |> assign(:uploaded_files, uploaded_files)
+         |> assign(:upload_status, :success)
+         |> put_flash(:info, "CSV file uploaded and processed successfully!")}
+
+      [] ->
+        {:noreply,
+         socket
+         |> assign(:upload_status, :error)
+         |> put_flash(:error, "Failed to process the uploaded file.")}
+    end
+  end
+
+  defp process_csv_file(path) do
+    # Simulate CSV processing - in a real app, you'd use a CSV parsing library
+    # like NimbleCSV or CSV
+    try do
+      # Read file content for demo
+      content = File.read!(path)
+      lines = String.split(content, "\n", trim: true)
+      
+      # Simulate processing
+      processed_data = %{
+        total_lines: length(lines),
+        sample_content: Enum.take(lines, 3),
+        file_size: byte_size(content)
+      }
+      
+      {:ok, processed_data}
+    rescue
+      _ -> {:error, "Failed to read or process CSV file"}
+    end
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <div class="mx-auto max-w-4xl">
+      <div class="mb-8">
+        <div class="flex items-center gap-4 mb-4">
+          <.link navigate={~p"/activity_statement"} class="inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to Activity Statement
+          </.link>
+        </div>
+        <h1 class="text-3xl font-bold text-gray-900">Upload Activity Statement</h1>
+        <p class="mt-2 text-gray-600">Upload a CSV file containing your activity statement data</p>
+      </div>
+
+      <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg">
+        <div class="px-6 py-8">
+          <form id="upload-form" phx-submit="save" phx-change="validate">
+            <div class="space-y-6">
+              <!-- File Upload Area -->
+              <div class="space-y-4">
+                <label class="block text-sm font-medium text-gray-700">
+                  CSV File
+                </label>
+                
+                <div class="mt-2 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-gray-400 transition-colors"
+                     phx-drop-target={@uploads.csv_file.ref}>
+                  <div class="space-y-2 text-center">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                      <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <div class="text-sm text-gray-600">
+                      <label for={@uploads.csv_file.ref} class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
+                        <span>Upload a file</span>
+                        <.live_file_input upload={@uploads.csv_file} class="sr-only" />
+                      </label>
+                      <span class="pl-1">or drag and drop</span>
+                    </div>
+                    <p class="text-xs text-gray-500">CSV files up to 10MB</p>
+                  </div>
+                </div>
+
+                <!-- Upload Progress -->
+                <%= for entry <- @uploads.csv_file.entries do %>
+                  <div class="bg-gray-50 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-2">
+                      <div class="flex items-center">
+                        <svg class="w-5 h-5 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span class="text-sm font-medium text-gray-900"><%= entry.client_name %></span>
+                      </div>
+                      <button type="button" 
+                              phx-click="cancel-upload" 
+                              phx-value-ref={entry.ref}
+                              class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    
+                    <!-- Progress Bar -->
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                      <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                           style={"width: #{entry.progress}%"}></div>
+                    </div>
+                    <div class="flex justify-between mt-1">
+                      <span class="text-xs text-gray-500"><%= entry.progress %>% uploaded</span>
+                      <span class="text-xs text-gray-500"><%= Float.round(entry.client_size / 1024, 1) %>KB</span>
+                    </div>
+
+                    <!-- Upload Errors -->
+                    <%= for err <- upload_errors(@uploads.csv_file, entry) do %>
+                      <div class="mt-2 text-sm text-red-600">
+                        <%= error_to_string(err) %>
+                      </div>
+                    <% end %>
+                  </div>
+                <% end %>
+
+                <!-- General Upload Errors -->
+                <%= for err <- upload_errors(@uploads.csv_file) do %>
+                  <div class="text-sm text-red-600">
+                    <%= error_to_string(err) %>
+                  </div>
+                <% end %>
+              </div>
+
+              <!-- File Requirements -->
+              <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div class="flex">
+                  <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div class="ml-3">
+                    <h3 class="text-sm font-medium text-blue-800">CSV File Requirements</h3>
+                    <div class="mt-2 text-sm text-blue-700">
+                      <ul class="list-disc pl-5 space-y-1">
+                        <li>File must be in CSV format</li>
+                        <li>Maximum file size: 10MB</li>
+                        <li>Expected columns: Date, Description, Amount, Type</li>
+                        <li>Date format: YYYY-MM-DD</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Submit Button -->
+              <div class="flex justify-end">
+                <button type="submit" 
+                        disabled={Enum.empty?(@uploads.csv_file.entries) || !upload_complete?(@uploads.csv_file)}
+                        class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                  <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  Process File
+                </button>
+              </div>
+            </div>
+          </form>
+
+          <!-- Upload Results -->
+          <%= if @upload_status == :success and not Enum.empty?(@uploaded_files) do %>
+            <div class="mt-8 bg-green-50 border border-green-200 rounded-lg p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <h3 class="text-sm font-medium text-green-800">File Processed Successfully</h3>
+                  <%= for file <- @uploaded_files do %>
+                    <div class="mt-2 text-sm text-green-700">
+                      <p><strong>Total records:</strong> <%= file.data.total_lines %></p>
+                      <p><strong>File size:</strong> <%= Float.round(file.data.file_size / 1024, 1) %>KB</p>
+                      <p><strong>Processed at:</strong> <%= Calendar.strftime(file.processed_at, "%Y-%m-%d %H:%M:%S UTC") %></p>
+                      
+                      <div class="mt-3">
+                        <.link navigate={~p"/activity_statement"} class="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700">
+                          View Activity Statement
+                        </.link>
+                      </div>
+                    </div>
+                  <% end %>
+                </div>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  defp upload_complete?(upload) do
+    Enum.all?(upload.entries, & &1.progress == 100)
+  end
+
+  defp error_to_string(:too_large), do: "File is too large (max 10MB)"
+  defp error_to_string(:too_many_files), do: "Only one file allowed"
+  defp error_to_string(:not_accepted), do: "File type not accepted (CSV only)"
+  defp error_to_string(err), do: "Upload error: #{inspect(err)}"
+end
