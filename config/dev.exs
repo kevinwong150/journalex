@@ -2,9 +2,9 @@ import Config
 
 # Configure your database
 config :journalex, Journalex.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
+  username: "journalex",
+  password: "journalex",
+  hostname: "db",
   database: "journalex_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,

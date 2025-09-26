@@ -9,7 +9,7 @@ defmodule Journalex.Application do
   def start(_type, _args) do
     children = [
       JournalexWeb.Telemetry,
-      # Journalex.Repo,
+      Journalex.Repo,
       {DNSCluster, query: Application.get_env(:journalex, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Journalex.PubSub},
       # Start the Finch HTTP client for sending emails
