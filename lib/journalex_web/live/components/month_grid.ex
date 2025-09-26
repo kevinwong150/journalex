@@ -36,7 +36,7 @@ defmodule JournalexWeb.MonthGrid do
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-sm font-semibold text-gray-700">{@title}</h2>
 
-        <%= if @show_nav and match?(%Date{}, @current_month) do %>
+        <%= if @show_nav do %>
           <div class="flex items-center gap-2">
             <button
               phx-click={@prev_event}

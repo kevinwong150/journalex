@@ -76,7 +76,7 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
         <div class="mb-6">
           <JournalexWeb.MonthGrid.month_grid
             months={@date_grid}
-            show_nav={is_nil(@start_date) and is_nil(@end_date)}
+            show_nav={true}
             current_month={@calendar_month}
             prev_event="prev_month"
             next_event="next_month"
