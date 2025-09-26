@@ -6,6 +6,14 @@ defmodule JournalexWeb.ActivityStatementLive do
   @impl true
   def mount(_params, _session, socket) do
     trades = load_latest_trades()
+    # annotate each row with existence flag
+    exists_flags = Activity.rows_exist_flags(trades)
+
+    trades =
+      trades
+      |> Enum.with_index()
+      |> Enum.map(fn {row, idx} -> Map.put(row, :exists, Enum.at(exists_flags, idx)) end)
+
     {summary_by_symbol, summary_total} = summarize_realized_pl(trades)
     period = load_latest_period()
 
@@ -171,6 +179,12 @@ defmodule JournalexWeb.ActivityStatementLive do
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
               <tr>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Save
+                </th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Date/Time
                 </th>
@@ -212,10 +226,44 @@ defmodule JournalexWeb.ActivityStatementLive do
                 </th>
               </tr>
             </thead>
-
             <tbody class="bg-white divide-y divide-gray-200">
-              <%= for activity <- @activity_data do %>
+              <%= for {activity, idx} <- Enum.with_index(@activity_data) do %>
                 <tr class="hover:bg-gray-50">
+                  <td class="px-3 py-4 whitespace-nowrap text-sm">
+                    <button
+                      phx-click="save_row"
+                      phx-value-index={idx}
+                      class="inline-flex items-center px-2 py-1 bg-emerald-600 text-white text-xs font-medium rounded hover:bg-emerald-700 disabled:opacity-50"
+                      disabled={activity[:exists] == true}
+                    >
+                      Save
+                    </button>
+                  </td>
+                  <td class="px-3 py-4 whitespace-nowrap text-sm">
+                    <%= if activity[:exists] == true do %>
+                      <span class="inline-flex items-center text-green-600" title="Already saved">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                      </span>
+                    <% else %>
+                      <span class="inline-flex items-center text-red-500" title="Not saved">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </span>
+                    <% end %>
+                  </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {activity.datetime}
                   </td>
@@ -386,8 +434,19 @@ defmodule JournalexWeb.ActivityStatementLive do
     trades = socket.assigns.activity_data || []
 
     try do
-      Activity.save_activity_rows(trades)
-      {:noreply, put_flash(socket, :info, "Saved #{length(trades)} rows to DB")}
+      {:ok, inserted} = Activity.save_activity_rows(trades)
+      # refresh exists flags
+      flags = Activity.rows_exist_flags(trades)
+
+      updated =
+        trades
+        |> Enum.with_index()
+        |> Enum.map(fn {row, i} -> Map.put(row, :exists, Enum.at(flags, i)) end)
+
+      {:noreply,
+       socket
+       |> assign(:activity_data, updated)
+       |> put_flash(:info, "Saved #{inserted} new rows to DB")}
     rescue
       e ->
         {:noreply, put_flash(socket, :error, "Failed to save: #{Exception.message(e)}")}
@@ -402,5 +461,29 @@ defmodule JournalexWeb.ActivityStatementLive do
   @impl true
   def handle_event("toggle_activity", _params, socket) do
     {:noreply, assign(socket, :activity_expanded, !socket.assigns.activity_expanded)}
+  end
+
+  @impl true
+  def handle_event("save_row", %{"index" => index_str}, socket) do
+    with {idx, _} <- Integer.parse(to_string(index_str)),
+         rows when is_list(rows) <- socket.assigns.activity_data,
+         row when is_map(row) <- Enum.at(rows, idx) do
+      case Activity.save_activity_row(row) do
+        {:ok, _} ->
+          updated =
+            rows
+            |> List.update_at(idx, fn r -> Map.put(r, :exists, true) end)
+
+          {:noreply,
+           socket
+           |> assign(:activity_data, updated)
+           |> put_flash(:info, "Row saved")}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Failed to save row: #{inspect(reason)}")}
+      end
+    else
+      _ -> {:noreply, socket}
+    end
   end
 end
