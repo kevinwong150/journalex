@@ -1,17 +1,19 @@
 defmodule JournalexWeb.ActivityStatementLive do
   use JournalexWeb, :live_view
+  alias Journalex.ActivityStatementParser
 
   @impl true
   def mount(_params, _session, socket) do
-    # Sample data for demonstration - replace with actual data loading
-    sample_data = [
-      %{date: "2024-01-15", description: "Monthly Investment", amount: "$1,250.00", type: "Deposit"},
-      %{date: "2024-01-10", description: "Stock Purchase - AAPL", amount: "-$580.00", type: "Trade"},
-      %{date: "2024-01-05", description: "Dividend Payment", amount: "$25.50", type: "Dividend"},
-      %{date: "2024-01-01", description: "Account Opening", amount: "$5,000.00", type: "Deposit"}
-    ]
+  trades = load_latest_trades()
+  {summary_by_symbol, summary_total} = summarize_realized_pl(trades)
+  period = load_latest_period()
 
-    {:ok, assign(socket, :activity_data, sample_data)}
+  {:ok,
+   socket
+   |> assign(:activity_data, trades)
+   |> assign(:summary_by_symbol, summary_by_symbol)
+   |> assign(:summary_total, summary_total)
+   |> assign(:statement_period, period)}
   end
 
   @impl true
@@ -21,9 +23,48 @@ defmodule JournalexWeb.ActivityStatementLive do
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-gray-900">Activity Statement</h1>
         <p class="mt-2 text-gray-600">View your account activity and transaction history</p>
+        <%= if @statement_period do %>
+          <p class="mt-1 text-sm text-gray-500">Statement Date: <span class="font-medium text-gray-700"><%= @statement_period %></span></p>
+        <% end %>
       </div>
 
       <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg">
+        <!-- Summary: Realized P/L by Symbol -->
+        <div class="px-6 py-4 border-b border-gray-200">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-gray-900">Summary (Realized P/L by Symbol)</h2>
+            <.link navigate={~p"/activity_statement/upload"} class="inline-flex items-center px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-md hover:bg-blue-100">
+              Upload New Statement
+            </.link>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Aggregated Realized P/L</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <%= for row <- @summary_by_symbol do %>
+                <tr class="hover:bg-gray-50">
+                  <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900"><%= row.symbol %></td>
+                  <td class={"px-6 py-3 whitespace-nowrap text-sm text-right #{pl_class_amount(row.realized_pl)}"}>
+                    <%= format_amount(row.realized_pl) %>
+                  </td>
+                </tr>
+              <% end %>
+              <tr class="bg-gray-50 font-semibold">
+                <td class="px-6 py-3 text-sm text-gray-900">Total</td>
+                <td class={"px-6 py-3 text-sm text-right #{pl_class_amount(@summary_total)}"}>
+                  <%= format_amount(@summary_total) %>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold text-gray-900">Recent Activity</h2>
@@ -37,46 +78,31 @@ defmodule JournalexWeb.ActivityStatementLive do
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Description
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Type
-                </th>
-                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Amount
-                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date/Time</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Side</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asset</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Currency</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Trade Px</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Proceeds</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Comm/Fee</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Realized P/L</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <%= for activity <- @activity_data do %>
                 <tr class="hover:bg-gray-50">
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <%= activity.date %>
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <%= activity.description %>
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap">
-                    <span class={"inline-flex px-2 py-1 text-xs font-semibold rounded-full #{
-                      case activity.type do
-                        "Deposit" -> "bg-green-100 text-green-800"
-                        "Trade" -> "bg-blue-100 text-blue-800"
-                        "Dividend" -> "bg-purple-100 text-purple-800"
-                        _ -> "bg-gray-100 text-gray-800"
-                      end
-                    }"}>
-                      <%= activity.type %>
-                    </span>
-                  </td>
-                  <td class={"px-6 py-4 whitespace-nowrap text-sm font-medium text-right #{
-                    if String.starts_with?(activity.amount, "-"), do: "text-red-600", else: "text-green-600"
-                  }"}>
-                    <%= activity.amount %>
-                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><%= activity.datetime %></td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><%= buy_sell(activity.quantity) %></td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><%= activity.symbol %></td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><%= activity.asset_category %></td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><%= activity.currency %></td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900"><%= activity.quantity %></td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900"><%= activity.trade_price %></td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900"><%= activity.proceeds %></td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900"><%= activity.comm_fee %></td>
+                  <td class={"px-6 py-4 whitespace-nowrap text-sm text-right #{pl_class(activity.realized_pl)}"}><%= activity.realized_pl %></td>
                 </tr>
               <% end %>
             </tbody>
@@ -100,5 +126,89 @@ defmodule JournalexWeb.ActivityStatementLive do
       </div>
     </div>
     """
+  end
+
+  defp load_latest_trades do
+    uploads_dir = Path.join([:code.priv_dir(:journalex), "uploads"]) |> to_string()
+    file_path = Path.join(uploads_dir, "latest_activity_statement.csv")
+    if File.exists?(file_path) do
+      try do
+        ActivityStatementParser.parse_trades_file(file_path)
+      rescue
+        _ -> []
+      end
+    else
+      []
+    end
+  end
+
+  defp load_latest_period do
+    uploads_dir = Path.join([:code.priv_dir(:journalex), "uploads"]) |> to_string()
+    file_path = Path.join(uploads_dir, "latest_activity_statement.csv")
+    if File.exists?(file_path) do
+      try do
+        ActivityStatementParser.parse_period_file(file_path)
+      rescue
+        _ -> nil
+      end
+    else
+      nil
+    end
+  end
+
+  defp pl_class(nil), do: "text-gray-900"
+  defp pl_class(<<"-", _rest::binary>>), do: "text-red-600"
+  defp pl_class(_), do: "text-green-600"
+
+  # Summary helpers
+  defp summarize_realized_pl(trades) do
+    groups = Enum.group_by(trades, & &1.symbol)
+
+    rows =
+      groups
+      |> Enum.map(fn {symbol, ts} ->
+        sum = ts |> Enum.map(&to_number(&1.realized_pl)) |> Enum.sum()
+        %{symbol: symbol, realized_pl: sum}
+      end)
+      |> Enum.sort_by(& &1.symbol)
+
+    total = rows |> Enum.map(& &1.realized_pl) |> Enum.sum()
+    {rows, total}
+  end
+
+  defp to_number(nil), do: 0.0
+  defp to_number(""), do: 0.0
+  defp to_number(val) when is_binary(val) do
+    val
+    |> String.trim()
+    |> String.replace(",", "")
+    |> case do
+      "" -> 0.0
+      s ->
+        case Float.parse(s) do
+          {n, _} -> n
+          :error -> 0.0
+        end
+    end
+  end
+  defp to_number(val) when is_number(val), do: val * 1.0
+
+  defp pl_class_amount(n) when is_number(n) do
+    cond do
+      n < 0 -> "text-red-600"
+      n > 0 -> "text-green-600"
+      true -> "text-gray-900"
+    end
+  end
+
+  defp format_amount(n) when is_number(n) do
+    :erlang.float_to_binary(n * 1.0, decimals: 2)
+  end
+
+  defp buy_sell(qty) do
+    case to_number(qty) do
+      n when is_number(n) and n < 0 -> "SELL"
+      _ -> "BUY"
+    end
   end
 end

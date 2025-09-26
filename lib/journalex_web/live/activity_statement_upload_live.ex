@@ -29,24 +29,25 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
   def handle_event("save", _params, socket) do
     uploaded_files =
       consume_uploaded_entries(socket, :csv_file, fn %{path: path}, _entry ->
-        # In a real application, you would process the CSV file here
-        # For now, we'll just simulate processing
-        case process_csv_file(path) do
-          {:ok, data} ->
-            {:ok, %{path: path, data: data, processed_at: DateTime.utc_now()}}
-
-          {:error, reason} ->
-            {:postpone, reason}
+        # Persist the uploaded file to priv/uploads and parse it
+        case save_and_process_csv(path) do
+          {:ok, info} -> {:ok, info}
+          {:error, reason} -> {:postpone, reason}
         end
       end)
 
     case uploaded_files do
       [file | _] ->
+        # Schedule redirect after 3 seconds and start countdown ticks
+        Process.send_after(self(), :redirect_to_activity, 3_000)
+        Process.send_after(self(), :countdown_tick, 1_000)
+
         {:noreply,
          socket
          |> assign(:uploaded_files, uploaded_files)
          |> assign(:upload_status, :success)
-         |> put_flash(:info, "CSV file uploaded and processed successfully!")}
+         |> assign(:redirect_countdown, 3)
+         |> put_flash(:info, "CSV file uploaded and processed successfully! Redirecting in 3s…")}
 
       [] ->
         {:noreply,
@@ -56,24 +57,42 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
     end
   end
 
-  defp process_csv_file(path) do
-    # Simulate CSV processing - in a real app, you'd use a CSV parsing library
-    # like NimbleCSV or CSV
+  @impl true
+  def handle_info(:redirect_to_activity, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/activity_statement")}
+  end
+
+  @impl true
+  def handle_info(:countdown_tick, socket) do
+    case Map.get(socket.assigns, :redirect_countdown) do
+      n when is_integer(n) and n > 1 ->
+        n1 = n - 1
+        Process.send_after(self(), :countdown_tick, 1_000)
+        {:noreply,
+         socket
+         |> assign(:redirect_countdown, n1)
+         |> put_flash(:info, "CSV file uploaded and processed successfully! Redirecting in #{n1}s…")}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  defp save_and_process_csv(temp_path) do
     try do
-      # Read file content for demo
-      content = File.read!(path)
-      lines = String.split(content, "\n", trim: true)
-      
-      # Simulate processing
-      processed_data = %{
-        total_lines: length(lines),
-        sample_content: Enum.take(lines, 3),
-        file_size: byte_size(content)
-      }
-      
-      {:ok, processed_data}
+      uploads_dir = Path.join([:code.priv_dir(:journalex), "uploads"]) |> to_string()
+      File.mkdir_p!(uploads_dir)
+      dest_path = Path.join(uploads_dir, "latest_activity_statement.csv")
+
+      File.cp!(temp_path, dest_path)
+
+      content = File.read!(dest_path)
+      line_count = content |> String.split("\n", trim: true) |> length()
+      file_size = byte_size(content)
+
+      {:ok, %{path: dest_path, data: %{total_lines: line_count, file_size: file_size}, processed_at: DateTime.utc_now()}}
     rescue
-      _ -> {:error, "Failed to read or process CSV file"}
+      e -> {:error, Exception.message(e)}
     end
   end
 
@@ -103,7 +122,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                 <label class="block text-sm font-medium text-gray-700">
                   CSV File
                 </label>
-                
+
                 <div class="mt-2 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-gray-400 transition-colors"
                      phx-drop-target={@uploads.csv_file.ref}>
                   <div class="space-y-2 text-center">
@@ -131,8 +150,8 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         </svg>
                         <span class="text-sm font-medium text-gray-900"><%= entry.client_name %></span>
                       </div>
-                      <button type="button" 
-                              phx-click="cancel-upload" 
+                      <button type="button"
+                              phx-click="cancel-upload"
                               phx-value-ref={entry.ref}
                               class="text-gray-400 hover:text-gray-600">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -140,10 +159,10 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         </svg>
                       </button>
                     </div>
-                    
+
                     <!-- Progress Bar -->
                     <div class="w-full bg-gray-200 rounded-full h-2">
-                      <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                      <div class="bg-blue-600 h-2 rounded-full transition-all duration-300"
                            style={"width: #{entry.progress}%"}></div>
                     </div>
                     <div class="flex justify-between mt-1">
@@ -192,7 +211,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
 
               <!-- Submit Button -->
               <div class="flex justify-end">
-                <button type="submit" 
+                <button type="submit"
                         disabled={Enum.empty?(@uploads.csv_file.entries) || !upload_complete?(@uploads.csv_file)}
                         class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
                   <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -217,10 +236,10 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                   <h3 class="text-sm font-medium text-green-800">File Processed Successfully</h3>
                   <%= for file <- @uploaded_files do %>
                     <div class="mt-2 text-sm text-green-700">
-                      <p><strong>Total records:</strong> <%= file.data.total_lines %></p>
+                      <p><strong>Total lines:</strong> <%= file.data.total_lines %></p>
                       <p><strong>File size:</strong> <%= Float.round(file.data.file_size / 1024, 1) %>KB</p>
                       <p><strong>Processed at:</strong> <%= Calendar.strftime(file.processed_at, "%Y-%m-%d %H:%M:%S UTC") %></p>
-                      
+
                       <div class="mt-3">
                         <.link navigate={~p"/activity_statement"} class="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700">
                           View Activity Statement
