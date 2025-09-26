@@ -9,6 +9,7 @@ defmodule Journalex.ActivityStatement do
   schema "activity_statements" do
     field :datetime, :utc_datetime_usec
     field :side, :string
+  field :position_action, :string
     field :symbol, :string
     field :asset_category, :string
     field :currency, :string
@@ -22,7 +23,7 @@ defmodule Journalex.ActivityStatement do
     timestamps(type: :utc_datetime_usec)
   end
 
-  @required ~w(datetime side symbol asset_category currency quantity trade_price)a
+  @required ~w(datetime side position_action symbol asset_category currency quantity trade_price)a
   @optional ~w(proceeds comm_fee realized_pl)a
 
   def changeset(struct, attrs) do
@@ -30,5 +31,6 @@ defmodule Journalex.ActivityStatement do
     |> cast(attrs, @required ++ @optional)
     |> validate_required(@required)
     |> validate_inclusion(:side, ["buy", "sell"])
+  |> validate_inclusion(:position_action, ["build", "close"])
   end
 end

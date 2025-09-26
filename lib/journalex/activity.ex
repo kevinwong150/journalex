@@ -189,6 +189,7 @@ defmodule Journalex.Activity do
     %{
       datetime: parse_datetime(Map.get(row, :datetime) || Map.get(row, "datetime")),
       side: infer_side(Map.get(row, :quantity) || Map.get(row, "quantity")),
+  position_action: infer_position_action(Map.get(row, :realized_pl) || Map.get(row, "realized_pl")),
       symbol: get_row(row, :symbol),
       asset_category: get_row(row, :asset_category),
       currency: get_row(row, :currency),
@@ -236,6 +237,15 @@ defmodule Journalex.Activity do
     end
   end
 
+  defp infer_position_action(val) do
+    n = to_number(val)
+    if n == 0 do
+      "build"
+    else
+      "close"
+    end
+  end
+
   defp ensure_usec(%DateTime{microsecond: {usec, _}} = dt),
     do: %DateTime{dt | microsecond: {usec, 6}}
 
@@ -249,6 +259,9 @@ defmodule Journalex.Activity do
   defp to_decimal(nil), do: nil
   defp to_decimal(""), do: nil
 
+  defp to_decimal(%Decimal{} = d), do: d
+  defp to_decimal(n) when is_integer(n) or is_float(n), do: Decimal.from_float(n * 1.0)
+
   defp to_decimal(val) when is_binary(val) do
     val
     |> String.trim()
@@ -258,20 +271,17 @@ defmodule Journalex.Activity do
     _ -> nil
   end
 
-  defp to_decimal(%Decimal{} = d), do: d
-  defp to_decimal(n) when is_integer(n) or is_float(n), do: Decimal.from_float(n * 1.0)
-
+  # Converts various number-ish values to float for comparisons (Decimal safe)
   defp to_number(nil), do: 0.0
   defp to_number(""), do: 0.0
-
+  defp to_number(%Decimal{} = d), do: Decimal.to_float(d)
+  defp to_number(val) when is_number(val), do: val * 1.0
   defp to_number(val) when is_binary(val) do
     val
     |> String.trim()
     |> String.replace(",", "")
     |> case do
-      "" ->
-        0.0
-
+      "" -> 0.0
       s ->
         case Float.parse(s) do
           {n, _} -> n
@@ -280,5 +290,5 @@ defmodule Journalex.Activity do
     end
   end
 
-  defp to_number(val) when is_number(val), do: val * 1.0
+
 end
