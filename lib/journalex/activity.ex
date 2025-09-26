@@ -54,6 +54,42 @@ defmodule Journalex.Activity do
   end
 
   @doc """
+  List saved activity statements.
+
+  Options:
+  - :limit (default 200)
+  - :order (:desc or :asc by datetime, default :desc)
+  """
+  def list_activity_statements(opts \\ []) do
+    limit = Keyword.get(opts, :limit, 200)
+    order = Keyword.get(opts, :order, :desc)
+
+    order_by_expr = case order do
+      :asc -> [asc: :datetime]
+      _ -> [desc: :datetime]
+    end
+
+    from(s in ActivityStatement,
+      order_by: ^order_by_expr,
+      limit: ^limit
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  Get a single activity statement by id. Returns nil if not found.
+  """
+  def get_activity_statement(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {int, _} -> Repo.get(ActivityStatement, int)
+      :error -> nil
+    end
+  end
+
+  def get_activity_statement(id) when is_integer(id),
+    do: Repo.get(ActivityStatement, id)
+
+  @doc """
   For a list of parsed rows, returns a list of booleans indicating if each row exists.
   """
   def rows_exist_flags(rows) when is_list(rows) do

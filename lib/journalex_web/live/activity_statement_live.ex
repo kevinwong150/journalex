@@ -23,7 +23,7 @@ defmodule JournalexWeb.ActivityStatementLive do
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
      |> assign(:statement_period, period)
-     |> assign(:summary_expanded, true)
+  |> assign(:summary_expanded, false)
      |> assign(:activity_expanded, true)}
   end
 

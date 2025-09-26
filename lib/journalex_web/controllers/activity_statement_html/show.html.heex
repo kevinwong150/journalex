@@ -1,0 +1,11 @@
+<div class="mx-auto max-w-4xl p-6">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold">Activity Statement</h1>
+    <div class="space-x-4">
+      <.link navigate={~p"/activity_statement/all"} class="text-blue-600 hover:underline">All</.link>
+      <.link navigate={~p"/activity_statement"} class="text-blue-600 hover:underline">Latest</.link>
+    </div>
+  </div>
+
+  <.statement_table statement={@statement} />
+</div>
