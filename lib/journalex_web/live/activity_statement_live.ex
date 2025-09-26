@@ -3,6 +3,7 @@ defmodule JournalexWeb.ActivityStatementLive do
   alias Journalex.ActivityStatementParser
   alias Journalex.Activity
   alias JournalexWeb.ActivityStatementSummary
+  alias JournalexWeb.ActivityStatementList
 
   @impl true
   def mount(_params, _session, socket) do
@@ -85,192 +86,19 @@ defmodule JournalexWeb.ActivityStatementLive do
           id="summary-table"
         />
 
-        <div class="px-6 py-4 border-b border-gray-200">
-          <div class="flex items-center justify-between gap-3">
-            <div class="flex items-center gap-3">
-              <h2 class="text-lg font-semibold text-gray-900">Recent Activity</h2>
-
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                {length(@activity_data)}
-              </span>
-
-              <button
-                phx-click="toggle_activity"
-                class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
-                aria-expanded={@activity_expanded}
-                aria-controls="activity-table"
-              >
-                <%= if @activity_expanded do %>
-                  Collapse
-                <% else %>
-                  Expand
-                <% end %>
-              </button>
-            </div>
-
-            <div class="flex items-center gap-2">
-              <button
-                phx-click="save_all"
-                class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-50"
-                disabled={Enum.empty?(@activity_data)}
-              >
-                Save All to DB
-              </button>
-
-              <.link
-                navigate={~p"/activity_statement/upload"}
-                class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
-              >
-                Upload New Statement
-              </.link>
-            </div>
-          </div>
-        </div>
-
-        <div class={"overflow-x-auto #{unless @activity_expanded, do: "hidden"}"} id="activity-table">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-              <tr>
-                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Save
-                </th>
-
-                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date/Time
-                </th>
-
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Side
-                </th>
-
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Build/Close
-                </th>
-
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Symbol
-                </th>
-
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Asset
-                </th>
-
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Currency
-                </th>
-
-                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Qty
-                </th>
-
-                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Trade Px
-                </th>
-
-                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Proceeds
-                </th>
-
-                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Comm/Fee
-                </th>
-
-                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Realized P/L
-                </th>
-              </tr>
-            </thead>
-
-            <tbody class="bg-white divide-y divide-gray-200">
-              <%= for {activity, idx} <- Enum.with_index(@activity_data) do %>
-                <tr class="hover:bg-gray-50">
-                  <td class="px-3 py-4 whitespace-nowrap text-sm">
-                    <button
-                      phx-click="save_row"
-                      phx-value-index={idx}
-                      class="inline-flex items-center px-2 py-1 bg-emerald-600 text-white text-xs font-medium rounded hover:bg-emerald-700 disabled:opacity-50"
-                      disabled={activity[:exists] == true}
-                    >
-                      Save
-                    </button>
-                  </td>
-
-                  <td class="px-3 py-4 whitespace-nowrap text-sm">
-                    <%= if activity[:exists] == true do %>
-                      <span class="inline-flex items-center text-green-600" title="Already saved">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M5 13l4 4L19 7"
-                          />
-                        </svg>
-                      </span>
-                    <% else %>
-                      <span class="inline-flex items-center text-red-500" title="Not saved">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                      </span>
-                    <% end %>
-                  </td>
-
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {activity.datetime}
-                  </td>
-
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {buy_sell(activity.quantity)}
-                  </td>
-
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {build_close(activity)}
-                  </td>
-
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{activity.symbol}</td>
-
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {activity.asset_category}
-                  </td>
-
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {activity.currency}
-                  </td>
-
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                    {activity.quantity}
-                  </td>
-
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                    {activity.trade_price}
-                  </td>
-
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                    {activity.proceeds}
-                  </td>
-
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                    {activity.comm_fee}
-                  </td>
-
-                  <td class={"px-6 py-4 whitespace-nowrap text-sm text-right #{pl_class(activity.realized_pl)}"}>
-                    {activity.realized_pl}
-                  </td>
-                </tr>
-              <% end %>
-            </tbody>
-          </table>
-        </div>
+        <ActivityStatementList.list
+          id="activity-table"
+          title="Recent Activity"
+          count={length(@activity_data)}
+          rows={@activity_data}
+          expanded={@activity_expanded}
+          toggle_event="toggle_activity"
+          show_save_controls?={true}
+          on_save_all?="save_all"
+          on_upload_path?={~p"/activity_statement/upload"}
+          on_save_row_event="save_row"
+          show_values?={true}
+        />
 
         <%= if Enum.empty?(@activity_data) do %>
           <div class="px-6 py-12 text-center">
