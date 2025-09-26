@@ -9,7 +9,7 @@ defmodule Journalex.ActivityStatement do
   schema "activity_statements" do
     field :datetime, :utc_datetime_usec
     field :side, :string
-  field :position_action, :string
+    field :position_action, :string
     field :symbol, :string
     field :asset_category, :string
     field :currency, :string
@@ -31,6 +31,6 @@ defmodule Journalex.ActivityStatement do
     |> cast(attrs, @required ++ @optional)
     |> validate_required(@required)
     |> validate_inclusion(:side, ["buy", "sell"])
-  |> validate_inclusion(:position_action, ["build", "close"])
+    |> validate_inclusion(:position_action, ["build", "close"])
   end
 end

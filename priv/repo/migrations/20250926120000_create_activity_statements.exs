@@ -5,7 +5,7 @@ defmodule Journalex.Repo.Migrations.CreateActivityStatements do
     create table(:activity_statements) do
       add :datetime, :utc_datetime_usec, null: false
       add :side, :string, null: false
-  add :position_action, :string, null: false
+      add :position_action, :string, null: false
       add :symbol, :string, null: false
       add :asset_category, :string, null: false
       add :currency, :string, null: false
@@ -22,7 +22,7 @@ defmodule Journalex.Repo.Migrations.CreateActivityStatements do
     create index(:activity_statements, [:datetime])
     create index(:activity_statements, [:symbol])
     create index(:activity_statements, [:side])
-  create index(:activity_statements, [:position_action])
+    create index(:activity_statements, [:position_action])
 
     create constraint(
              :activity_statements,
@@ -30,10 +30,10 @@ defmodule Journalex.Repo.Migrations.CreateActivityStatements do
              check: "side in ('buy','sell')"
            )
 
-      create constraint(
-               :activity_statements,
-               :position_action_must_be_build_or_close,
-               check: "position_action in ('build','close')"
-             )
+    create constraint(
+             :activity_statements,
+             :position_action_must_be_build_or_close,
+             check: "position_action in ('build','close')"
+           )
   end
 end

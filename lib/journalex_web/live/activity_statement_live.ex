@@ -464,6 +464,7 @@ defmodule JournalexWeb.ActivityStatementLive do
 
       true ->
         n = to_number(Map.get(row, :realized_pl))
+
         if n == 0 do
           "BUILD"
         else

@@ -78,6 +78,65 @@ defmodule Journalex.Activity do
   end
 
   @doc """
+  List activity statements between two dates, inclusive.
+
+  Accepts start_date and end_date as Date structs or strings formatted as "yyyymmdd".
+  Returns statements ordered ascending by datetime by default; can override with :order option.
+  """
+  def list_activity_statements_between(start_date, end_date, opts \\ []) do
+    with {:ok, start_dt} <- normalize_date_start(start_date),
+         {:ok, end_dt} <- normalize_date_end(end_date) do
+      order = Keyword.get(opts, :order, :asc)
+
+      order_by_expr =
+        case order do
+          :desc -> [desc: :datetime]
+          _ -> [asc: :datetime]
+        end
+
+      from(s in ActivityStatement,
+        where: s.datetime >= ^start_dt and s.datetime <= ^end_dt,
+        order_by: ^order_by_expr
+      )
+      |> Repo.all()
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Normalize inputs like %Date{} or "yyyymmdd" to DateTime bounds
+  defp normalize_date_start(%Date{} = d), do: {:ok, DateTime.new!(d, ~T[00:00:00], "Etc/UTC")}
+
+  defp normalize_date_start(%NaiveDateTime{} = ndt),
+    do: {:ok, DateTime.from_naive!(ndt, "Etc/UTC")}
+
+  defp normalize_date_start(%DateTime{} = dt), do: {:ok, dt}
+
+  defp normalize_date_start(<<y::binary-size(4), m::binary-size(2), d::binary-size(2)>> = _str) do
+    case Date.from_iso8601(y <> "-" <> m <> "-" <> d) do
+      {:ok, date} -> {:ok, DateTime.new!(date, ~T[00:00:00], "Etc/UTC")}
+      _ -> {:error, :invalid_start_date}
+    end
+  end
+
+  defp normalize_date_start(_), do: {:error, :invalid_start_date}
+
+  defp normalize_date_end(%Date{} = d),
+    do: {:ok, DateTime.new!(d, ~T[23:59:59.999999], "Etc/UTC")}
+
+  defp normalize_date_end(%NaiveDateTime{} = ndt), do: {:ok, DateTime.from_naive!(ndt, "Etc/UTC")}
+  defp normalize_date_end(%DateTime{} = dt), do: {:ok, dt}
+
+  defp normalize_date_end(<<y::binary-size(4), m::binary-size(2), d::binary-size(2)>> = _str) do
+    case Date.from_iso8601(y <> "-" <> m <> "-" <> d) do
+      {:ok, date} -> {:ok, DateTime.new!(date, ~T[23:59:59.999999], "Etc/UTC")}
+      _ -> {:error, :invalid_end_date}
+    end
+  end
+
+  defp normalize_date_end(_), do: {:error, :invalid_end_date}
+
+  @doc """
   Get a single activity statement by id. Returns nil if not found.
   """
   def get_activity_statement(id) when is_binary(id) do
@@ -189,7 +248,8 @@ defmodule Journalex.Activity do
     %{
       datetime: parse_datetime(Map.get(row, :datetime) || Map.get(row, "datetime")),
       side: infer_side(Map.get(row, :quantity) || Map.get(row, "quantity")),
-  position_action: infer_position_action(Map.get(row, :realized_pl) || Map.get(row, "realized_pl")),
+      position_action:
+        infer_position_action(Map.get(row, :realized_pl) || Map.get(row, "realized_pl")),
       symbol: get_row(row, :symbol),
       asset_category: get_row(row, :asset_category),
       currency: get_row(row, :currency),
@@ -239,6 +299,7 @@ defmodule Journalex.Activity do
 
   defp infer_position_action(val) do
     n = to_number(val)
+
     if n == 0 do
       "build"
     else
@@ -276,12 +337,15 @@ defmodule Journalex.Activity do
   defp to_number(""), do: 0.0
   defp to_number(%Decimal{} = d), do: Decimal.to_float(d)
   defp to_number(val) when is_number(val), do: val * 1.0
+
   defp to_number(val) when is_binary(val) do
     val
     |> String.trim()
     |> String.replace(",", "")
     |> case do
-      "" -> 0.0
+      "" ->
+        0.0
+
       s ->
         case Float.parse(s) do
           {n, _} -> n
@@ -289,6 +353,4 @@ defmodule Journalex.Activity do
         end
     end
   end
-
-
 end

@@ -1,12 +1,30 @@
 defmodule JournalexWeb.ActivityStatementUploadLive do
   use JournalexWeb, :live_view
+  alias Journalex.Activity
 
   @impl true
   def mount(_params, _session, socket) do
+    # Build current month's dates grid with ticks for days having records
+    today = Date.utc_today()
+    first = %Date{year: today.year, month: today.month, day: 1}
+    last = end_of_month(first)
+
+    sd = yyyymmdd(first)
+    ed = yyyymmdd(last)
+
+    results =
+      case Activity.list_activity_statements_between(sd, ed) do
+        {:error, _} -> []
+        list when is_list(list) -> list
+      end
+
+    date_grid = build_single_month_grid(first, last, results)
+
     {:ok,
      socket
      |> assign(:uploaded_files, [])
      |> assign(:upload_status, nil)
+     |> assign(:date_grid, date_grid)
      |> allow_upload(:csv_file,
        accept: ~w(.csv),
        max_entries: 1,
@@ -126,12 +144,23 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
             Back to Activity Statement
           </.link>
         </div>
-        
+
         <h1 class="text-3xl font-bold text-gray-900">Upload Activity Statement</h1>
-        
+
         <p class="mt-2 text-gray-600">Upload a CSV file containing your activity statement data</p>
+
+        <%= if assigns[:date_grid] && not Enum.empty?(@date_grid) do %>
+          <div class="mt-6">
+            <JournalexWeb.MonthGrid.month_grid
+              months={@date_grid}
+              show_nav={false}
+              current_month={nil}
+              title="This Month's Activity"
+            />
+          </div>
+        <% end %>
       </div>
-      
+
       <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg">
         <div class="px-6 py-8">
           <form id="upload-form" phx-submit="save" phx-change="validate">
@@ -141,7 +170,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                 <label class="block text-sm font-medium text-gray-700">
                   CSV File
                 </label>
-                
+
                 <div
                   class="mt-2 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-gray-400 transition-colors"
                   phx-drop-target={@uploads.csv_file.ref}
@@ -160,7 +189,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         stroke-linejoin="round"
                       />
                     </svg>
-                    
+
                     <div class="text-sm text-gray-600">
                       <label
                         for={@uploads.csv_file.ref}
@@ -169,9 +198,9 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         <span>Upload a file</span>
                         <.live_file_input upload={@uploads.csv_file} class="sr-only" />
                       </label>
-                       <span class="pl-1">or drag and drop</span>
+                      <span class="pl-1">or drag and drop</span>
                     </div>
-                    
+
                     <p class="text-xs text-gray-500">CSV files up to 10MB</p>
                   </div>
                 </div>
@@ -194,9 +223,9 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                             d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                           />
                         </svg>
-                         <span class="text-sm font-medium text-gray-900">{entry.client_name}</span>
+                        <span class="text-sm font-medium text-gray-900">{entry.client_name}</span>
                       </div>
-                      
+
                       <button
                         type="button"
                         phx-click="cancel-upload"
@@ -222,7 +251,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                       >
                       </div>
                     </div>
-                    
+
                     <div class="flex justify-between mt-1">
                       <span class="text-xs text-gray-500">{entry.progress}% uploaded</span>
                       <span class="text-xs text-gray-500">
@@ -265,18 +294,18 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                       />
                     </svg>
                   </div>
-                  
+
                   <div class="ml-3">
                     <h3 class="text-sm font-medium text-blue-800">CSV File Requirements</h3>
-                    
+
                     <div class="mt-2 text-sm text-blue-700">
                       <ul class="list-disc pl-5 space-y-1">
                         <li>File must be in CSV format</li>
-                        
+
                         <li>Maximum file size: 10MB</li>
-                        
+
                         <li>Expected columns: Date, Description, Amount, Type</li>
-                        
+
                         <li>Date format: YYYY-MM-DD</li>
                       </ul>
                     </div>
@@ -326,25 +355,25 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                     />
                   </svg>
                 </div>
-                
+
                 <div class="ml-3">
                   <h3 class="text-sm font-medium text-green-800">File Processed Successfully</h3>
-                  
+
                   <%= for file <- @uploaded_files do %>
                     <div class="mt-2 text-sm text-green-700">
                       <p><strong>Total lines:</strong> {file.data.total_lines}</p>
-                      
+
                       <p>
                         <strong>File size:</strong> {Float.round(file.data.file_size / 1024, 1)}KB
                       </p>
-                      
+
                       <p>
                         <strong>Processed at:</strong> {Calendar.strftime(
                           file.processed_at,
                           "%Y-%m-%d %H:%M:%S UTC"
                         )}
                       </p>
-                      
+
                       <div class="mt-3">
                         <.link
                           navigate={~p"/activity_statement"}
@@ -373,4 +402,55 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
   defp error_to_string(:too_many_files), do: "Only one file allowed"
   defp error_to_string(:not_accepted), do: "File type not accepted (CSV only)"
   defp error_to_string(err), do: "Upload error: #{inspect(err)}"
+
+  # Helpers copied to render the dates calendar
+  defp build_single_month_grid(%Date{} = first, %Date{} = last, statements) do
+    present =
+      statements
+      |> Enum.map(fn s -> s.datetime |> DateTime.to_date() end)
+      |> MapSet.new()
+
+    # Sunday-first leading blanks
+    dow = Date.day_of_week(first)
+    leading = rem(dow, 7)
+
+    month_days = Date.range(first, last) |> Enum.to_list()
+
+    cells =
+      List.duplicate(%{date: nil}, leading) ++
+        Enum.map(month_days, fn d ->
+          %{
+            date: d,
+            in_range: true,
+            has: MapSet.member?(present, d)
+          }
+        end)
+
+    trailing = rem(7 - rem(length(cells), 7), 7)
+    padded = cells ++ List.duplicate(%{date: nil}, trailing)
+
+    [%{label: month_label(first), weeks: Enum.chunk_every(padded, 7)}]
+  end
+
+  defp end_of_month(%Date{year: y, month: m}) do
+    last_day = :calendar.last_day_of_the_month(y, m)
+    Date.new!(y, m, last_day)
+  end
+
+  defp yyyymmdd(%Date{year: y, month: m, day: d}) do
+    y_str = Integer.to_string(y) |> String.pad_leading(4, "0")
+    m_str = Integer.to_string(m) |> String.pad_leading(2, "0")
+    d_str = Integer.to_string(d) |> String.pad_leading(2, "0")
+    y_str <> m_str <> d_str
+  end
+
+  defp month_label(%Date{year: y, month: m}) do
+    month_names =
+      ~w(January February March April May June July August September October November December)
+
+    name = Enum.at(month_names, m - 1)
+    "#{name} #{y}"
+  end
+
+  defp day_of_month(%Date{day: d}), do: d
 end
