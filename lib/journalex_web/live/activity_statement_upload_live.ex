@@ -10,6 +10,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
      |> allow_upload(:csv_file,
        accept: ~w(.csv),
        max_entries: 1,
+       auto_upload: true,
        max_file_size: 10_000_000
      )}
   end
