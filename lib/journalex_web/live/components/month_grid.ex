@@ -104,13 +104,17 @@ defmodule JournalexWeb.MonthGrid do
 
                   <div class="text-center">
                     <%= if date do %>
-                      <span class={[
-                        "inline-block text-lg font-bold",
-                        cell[:has] && "text-green-600",
-                        (not cell[:has]) && "text-red-600"
-                      ]}>
-                        {if cell[:has], do: "✓", else: "✗"}
-                      </span>
+                      <%= if weekend?(date) do %>
+                        <span class="inline-block text-lg text-transparent">-</span>
+                      <% else %>
+                        <span class={[
+                          "inline-block text-lg font-bold",
+                          cell[:has] && "text-green-600",
+                          (not cell[:has]) && "text-red-600"
+                        ]}>
+                          {if cell[:has], do: "✓", else: "✗"}
+                        </span>
+                      <% end %>
                     <% else %>
                       <span class="inline-block text-lg text-transparent">-</span>
                     <% end %>
@@ -143,5 +147,13 @@ defmodule JournalexWeb.MonthGrid do
   defp in_range?(%Date{} = date, %Date{} = s, %Date{} = e, _fallback) do
     {start_d, end_d} = if Date.compare(s, e) == :gt, do: {e, s}, else: {s, e}
     Date.compare(date, start_d) in [:eq, :gt] and Date.compare(date, end_d) in [:eq, :lt]
+  end
+
+  defp weekend?(%Date{} = date) do
+    case Date.day_of_week(date) do
+      6 -> true
+      7 -> true
+      _ -> false
+    end
   end
 end

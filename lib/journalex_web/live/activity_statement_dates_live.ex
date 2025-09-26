@@ -81,6 +81,8 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
             prev_event="prev_month"
             next_event="next_month"
             title="Dates"
+            start_date={@start_date && parse_yyyymmdd(@start_date)}
+            end_date={@end_date && parse_yyyymmdd(@end_date)}
           />
         </div>
       <% end %>
@@ -242,23 +244,23 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{s.currency}</td>
 
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                    {s.quantity}
+                    {display_trimmed(s.quantity)}
                   </td>
 
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                    {s.trade_price}
+                    {display_trimmed(s.trade_price)}
                   </td>
 
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                    {s.proceeds}
+                    {display_trimmed(s.proceeds)}
                   </td>
 
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                    {s.comm_fee}
+                    {display_trimmed(s.comm_fee)}
                   </td>
 
                   <td class={"px-6 py-4 whitespace-nowrap text-sm text-right #{pl_class_amount(to_number(s.realized_pl))}"}>
-                    {s.realized_pl}
+                    {display_trimmed(s.realized_pl)}
                   </td>
                 </tr>
               <% end %>
@@ -415,6 +417,34 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
     end
   end
 
+  # Display helper: empty string for 0, otherwise trim trailing zeros and decimal point.
+  defp display_trimmed(nil), do: ""
+  defp display_trimmed(%Decimal{} = d), do: display_trimmed(Decimal.to_float(d))
+  defp display_trimmed(n) when is_number(n), do: n |> :erlang.float_to_binary([{:decimals, 8}, :compact]) |> trim_trailing()
+  defp display_trimmed(val) when is_binary(val) do
+    case String.trim(val) do
+      "" -> ""
+      s ->
+        case Float.parse(String.replace(s, ",", "")) do
+          {n, _} -> display_trimmed(n)
+          :error -> s
+        end
+    end
+  end
+
+  defp trim_trailing(str) when is_binary(str) do
+    # remove trailing zeros after decimal and any trailing dot
+    str
+    |> String.replace(~r/\.0+$/, "")
+    |> String.replace(~r/(\.\d*?)0+$/, "\\1")
+    |> String.replace(~r/\.$/, "")
+    |> case do
+      "0" -> ""
+      "0.0" -> ""
+      other -> other
+    end
+  end
+
   defp pl_class_amount(n) when is_number(n) do
     cond do
       n < 0 -> "text-red-600"
@@ -533,4 +563,14 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
     do: y <> "-" <> m <> "-" <> d
 
   defp format_input(other), do: other
+
+  # Convert "yyyymmdd" to %Date{} or nil
+  defp parse_yyyymmdd(nil), do: nil
+  defp parse_yyyymmdd(<<y::binary-size(4), m::binary-size(2), d::binary-size(2)>>) do
+    case Date.from_iso8601(y <> "-" <> m <> "-" <> d) do
+      {:ok, date} -> date
+      _ -> nil
+    end
+  end
+  defp parse_yyyymmdd(_), do: nil
 end
