@@ -18,6 +18,8 @@ defmodule JournalexWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    live "/activity_statement", ActivityStatementLive
+    live "/activity_statement/upload", ActivityStatementUploadLive
   end
 
   # Other scopes may use custom stacks.
