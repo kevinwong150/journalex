@@ -13,7 +13,7 @@ defmodule Journalex.Activity do
   def save_activity_rows(rows) when is_list(rows) do
     rows
     |> Enum.map(&to_attrs/1)
-  |> Enum.reject(&is_nil(&1.datetime))
+    |> Enum.reject(&is_nil(&1.datetime))
     |> Enum.chunk_every(500)
     |> Enum.map(fn chunk ->
       Repo.insert_all(ActivityStatement, chunk, on_conflict: :nothing)
@@ -47,15 +47,22 @@ defmodule Journalex.Activity do
   end
 
   defp parse_datetime(nil), do: nil
-  defp parse_datetime(<< year::binary-size(4), "-", mon::binary-size(2), "-", day::binary-size(2), ", ", rest::binary >>) do
+
+  defp parse_datetime(
+         <<year::binary-size(4), "-", mon::binary-size(2), "-", day::binary-size(2), ", ",
+           rest::binary>>
+       ) do
     case NaiveDateTime.from_iso8601(year <> "-" <> mon <> "-" <> day <> " " <> rest) do
       {:ok, ndt} ->
         ndt
         |> DateTime.from_naive!("Etc/UTC")
         |> ensure_usec()
-      _ -> nil
+
+      _ ->
+        nil
     end
   end
+
   defp parse_datetime(str) when is_binary(str) do
     with {:ok, dt, _} <- DateTime.from_iso8601(str) do
       dt |> ensure_usec()
@@ -64,14 +71,19 @@ defmodule Journalex.Activity do
     end
   end
 
-  defp ensure_usec(%DateTime{microsecond: {usec, _}} = dt), do: %DateTime{dt | microsecond: {usec, 6}}
-  defp ensure_usec(%NaiveDateTime{} = ndt), do: ndt |> DateTime.from_naive!("Etc/UTC") |> ensure_usec()
+  defp ensure_usec(%DateTime{microsecond: {usec, _}} = dt),
+    do: %DateTime{dt | microsecond: {usec, 6}}
+
+  defp ensure_usec(%NaiveDateTime{} = ndt),
+    do: ndt |> DateTime.from_naive!("Etc/UTC") |> ensure_usec()
+
   defp ensure_usec(other), do: other
 
   defp now_usec, do: DateTime.utc_now() |> ensure_usec()
 
   defp to_decimal(nil), do: nil
-  defp to_decimal("") , do: nil
+  defp to_decimal(""), do: nil
+
   defp to_decimal(val) when is_binary(val) do
     val
     |> String.trim()
@@ -80,17 +92,21 @@ defmodule Journalex.Activity do
   rescue
     _ -> nil
   end
+
   defp to_decimal(%Decimal{} = d), do: d
   defp to_decimal(n) when is_integer(n) or is_float(n), do: Decimal.from_float(n * 1.0)
 
   defp to_number(nil), do: 0.0
-  defp to_number("") , do: 0.0
+  defp to_number(""), do: 0.0
+
   defp to_number(val) when is_binary(val) do
     val
     |> String.trim()
     |> String.replace(",", "")
     |> case do
-      "" -> 0.0
+      "" ->
+        0.0
+
       s ->
         case Float.parse(s) do
           {n, _} -> n
@@ -98,5 +114,6 @@ defmodule Journalex.Activity do
         end
     end
   end
+
   defp to_number(val) when is_number(val), do: val * 1.0
 end

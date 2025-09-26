@@ -83,7 +83,9 @@ defmodule Journalex.ActivityStatementParser do
       end)
 
     case headers do
-      nil -> []
+      nil ->
+        []
+
       header_cols ->
         # Build index map for column access
         idx =
