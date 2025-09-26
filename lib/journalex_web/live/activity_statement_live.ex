@@ -23,7 +23,7 @@ defmodule JournalexWeb.ActivityStatementLive do
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
      |> assign(:statement_period, period)
-  |> assign(:summary_expanded, false)
+     |> assign(:summary_expanded, false)
      |> assign(:activity_expanded, true)}
   end
 
@@ -33,25 +33,27 @@ defmodule JournalexWeb.ActivityStatementLive do
     <div class="mx-auto max-w-6xl">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-gray-900">Activity Statement</h1>
-
+        
         <p class="mt-2 text-gray-600">View your account activity and transaction history</p>
-
+        
         <%= if @statement_period do %>
           <p class="mt-1 text-sm text-gray-500">
             Statement Date: <span class="font-medium text-gray-700">{@statement_period}</span>
           </p>
         <% end %>
       </div>
-
+      
       <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg">
         <!-- Summary: Realized P/L by Symbol -->
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
               <h2 class="text-lg font-semibold text-gray-900">Summary (Realized P/L by Symbol)</h2>
+              
               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                 {length(@summary_by_symbol)}
               </span>
+              
               <button
                 phx-click="toggle_summary"
                 class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -65,7 +67,7 @@ defmodule JournalexWeb.ActivityStatementLive do
                 <% end %>
               </button>
             </div>
-
+            
             <.link
               navigate={~p"/activity_statement/upload"}
               class="inline-flex items-center px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-md hover:bg-blue-100"
@@ -74,7 +76,7 @@ defmodule JournalexWeb.ActivityStatementLive do
             </.link>
           </div>
         </div>
-
+        
         <%= if @summary_expanded do %>
           <div class="overflow-x-auto" id="summary-table">
             <table class="min-w-full divide-y divide-gray-200">
@@ -83,27 +85,27 @@ defmodule JournalexWeb.ActivityStatementLive do
                   <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Symbol
                   </th>
-
+                  
                   <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Aggregated Realized P/L
                   </th>
                 </tr>
               </thead>
-
+              
               <tbody class="bg-white divide-y divide-gray-200">
                 <%= for row <- @summary_by_symbol do %>
                   <tr class="hover:bg-gray-50">
                     <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900">{row.symbol}</td>
-
+                    
                     <td class={"px-6 py-3 whitespace-nowrap text-sm text-right #{pl_class_amount(row.realized_pl)}"}>
                       {format_amount(row.realized_pl)}
                     </td>
                   </tr>
                 <% end %>
-
+                
                 <tr class="bg-gray-50 font-semibold">
                   <td class="px-6 py-3 text-sm text-gray-900">Total</td>
-
+                  
                   <td class={"px-6 py-3 text-sm text-right #{pl_class_amount(@summary_total)}"}>
                     {format_amount(@summary_total)}
                   </td>
@@ -119,14 +121,17 @@ defmodule JournalexWeb.ActivityStatementLive do
                   <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Symbol
                   </th>
+                  
                   <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Aggregated Realized P/L
                   </th>
                 </tr>
               </thead>
+              
               <tbody class="bg-white divide-y divide-gray-200">
                 <tr class="bg-gray-50 font-semibold">
                   <td class="px-6 py-3 text-sm text-gray-900">Total</td>
+                  
                   <td class={"px-6 py-3 text-sm text-right #{pl_class_amount(@summary_total)}"}>
                     {format_amount(@summary_total)}
                   </td>
@@ -135,14 +140,16 @@ defmodule JournalexWeb.ActivityStatementLive do
             </table>
           </div>
         <% end %>
-
+        
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between gap-3">
             <div class="flex items-center gap-3">
               <h2 class="text-lg font-semibold text-gray-900">Recent Activity</h2>
+              
               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                 {length(@activity_data)}
               </span>
+              
               <button
                 phx-click="toggle_activity"
                 class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -156,7 +163,7 @@ defmodule JournalexWeb.ActivityStatementLive do
                 <% end %>
               </button>
             </div>
-
+            
             <div class="flex items-center gap-2">
               <button
                 phx-click="save_all"
@@ -165,7 +172,7 @@ defmodule JournalexWeb.ActivityStatementLive do
               >
                 Save All to DB
               </button>
-
+              
               <.link
                 navigate={~p"/activity_statement/upload"}
                 class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
@@ -175,6 +182,7 @@ defmodule JournalexWeb.ActivityStatementLive do
             </div>
           </div>
         </div>
+        
         <div class={"overflow-x-auto #{unless @activity_expanded, do: "hidden"}"} id="activity-table">
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
@@ -182,50 +190,53 @@ defmodule JournalexWeb.ActivityStatementLive do
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Save
                 </th>
+                
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
+                
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Date/Time
                 </th>
-
+                
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Side
                 </th>
-
+                
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Symbol
                 </th>
-
+                
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Asset
                 </th>
-
+                
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Currency
                 </th>
-
+                
                 <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Qty
                 </th>
-
+                
                 <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Trade Px
                 </th>
-
+                
                 <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Proceeds
                 </th>
-
+                
                 <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Comm/Fee
                 </th>
-
+                
                 <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Realized P/L
                 </th>
               </tr>
             </thead>
+            
             <tbody class="bg-white divide-y divide-gray-200">
               <%= for {activity, idx} <- Enum.with_index(@activity_data) do %>
                 <tr class="hover:bg-gray-50">
@@ -239,6 +250,7 @@ defmodule JournalexWeb.ActivityStatementLive do
                       Save
                     </button>
                   </td>
+                  
                   <td class="px-3 py-4 whitespace-nowrap text-sm">
                     <%= if activity[:exists] == true do %>
                       <span class="inline-flex items-center text-green-600" title="Already saved">
@@ -264,40 +276,41 @@ defmodule JournalexWeb.ActivityStatementLive do
                       </span>
                     <% end %>
                   </td>
+                  
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {activity.datetime}
                   </td>
-
+                  
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {buy_sell(activity.quantity)}
                   </td>
-
+                  
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{activity.symbol}</td>
-
+                  
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {activity.asset_category}
                   </td>
-
+                  
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {activity.currency}
                   </td>
-
+                  
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
                     {activity.quantity}
                   </td>
-
+                  
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
                     {activity.trade_price}
                   </td>
-
+                  
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
                     {activity.proceeds}
                   </td>
-
+                  
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
                     {activity.comm_fee}
                   </td>
-
+                  
                   <td class={"px-6 py-4 whitespace-nowrap text-sm text-right #{pl_class(activity.realized_pl)}"}>
                     {activity.realized_pl}
                   </td>
@@ -306,7 +319,7 @@ defmodule JournalexWeb.ActivityStatementLive do
             </tbody>
           </table>
         </div>
-
+        
         <%= if Enum.empty?(@activity_data) do %>
           <div class="px-6 py-12 text-center">
             <div class="mx-auto w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -319,13 +332,13 @@ defmodule JournalexWeb.ActivityStatementLive do
                 />
               </svg>
             </div>
-
+            
             <h3 class="text-sm font-medium text-gray-900 mb-2">No activity data available</h3>
-
+            
             <p class="text-sm text-gray-500 mb-4">
               Upload a CSV file to view your activity statement
             </p>
-
+            
             <.link
               navigate={~p"/activity_statement/upload"}
               class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"

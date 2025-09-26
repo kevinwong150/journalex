@@ -64,10 +64,11 @@ defmodule Journalex.Activity do
     limit = Keyword.get(opts, :limit, 200)
     order = Keyword.get(opts, :order, :desc)
 
-    order_by_expr = case order do
-      :asc -> [asc: :datetime]
-      _ -> [desc: :datetime]
-    end
+    order_by_expr =
+      case order do
+        :asc -> [asc: :datetime]
+        _ -> [desc: :datetime]
+      end
 
     from(s in ActivityStatement,
       order_by: ^order_by_expr,

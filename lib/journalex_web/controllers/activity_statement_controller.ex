@@ -13,6 +13,7 @@ defmodule JournalexWeb.ActivityStatementController do
         conn
         |> put_flash(:error, "Activity statement not found")
         |> redirect(to: ~p"/activity_statement/all")
+
       stmt ->
         render(conn, :show, statement: stmt)
     end
