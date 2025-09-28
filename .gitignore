@@ -10,6 +10,10 @@ erl_crash.dump
 # The directory NPM downloads your dependencies sources to.
 /assets/node_modules/
 
+document.txt
+
+.env
+
 apps/journalex/db
 
 /db
