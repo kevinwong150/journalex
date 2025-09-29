@@ -78,6 +78,16 @@ defmodule Journalex.Activity do
   end
 
   @doc """
+  List all activity statements ordered by datetime descending.
+
+  Use carefully for large datasets.
+  """
+  def list_all_activity_statements do
+    from(s in ActivityStatement, order_by: [desc: s.datetime])
+    |> Repo.all()
+  end
+
+  @doc """
   List activity statements between two dates, inclusive.
 
   Accepts start_date and end_date as Date structs or strings formatted as "yyyymmdd".

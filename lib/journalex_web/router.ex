@@ -23,6 +23,9 @@ defmodule JournalexWeb.Router do
     live "/activity_statement/dates", ActivityStatementDatesLive
     live "/activity_statement/upload", ActivityStatementUploadLive
 
+    # Statement dump page
+    live "/statement/dump", StatementDumpLive
+
     # Saved statements pages
     get "/activity_statement/all", ActivityStatementController, :index
     get "/activity_statement/:id", ActivityStatementController, :show

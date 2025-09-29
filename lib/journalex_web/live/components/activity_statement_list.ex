@@ -25,6 +25,12 @@ defmodule JournalexWeb.ActivityStatementList do
   attr :on_save_row_event, :string, default: nil
   # Whether to render numeric/text values in the table cells. Dates view keeps them blank.
   attr :show_values?, :boolean, default: true
+  # Optional row selection controls
+  attr :selectable?, :boolean, default: false
+  attr :selected_ids, :any, default: MapSet.new()
+  attr :all_selected?, :boolean, default: false
+  attr :on_toggle_row_event, :string, default: nil
+  attr :on_toggle_all_event, :string, default: nil
 
   slot :inner_block
 
@@ -35,11 +41,11 @@ defmodule JournalexWeb.ActivityStatementList do
         <div class="flex items-center justify-between gap-3">
           <div class="flex items-center gap-3">
             <h2 class="text-lg font-semibold text-gray-900">{@title}</h2>
-            
+
             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
               {@count}
             </span>
-            
+
             <%= if @toggle_event do %>
               <button
                 phx-click={@toggle_event}
@@ -55,7 +61,7 @@ defmodule JournalexWeb.ActivityStatementList do
               </button>
             <% end %>
           </div>
-          
+
           <div :if={@show_save_controls?} class="flex items-center gap-2">
             <button
               :if={@on_save_all?}
@@ -65,7 +71,7 @@ defmodule JournalexWeb.ActivityStatementList do
             >
               Save All to DB
             </button>
-            
+
             <.link
               :if={@on_upload_path?}
               navigate={@on_upload_path?}
@@ -76,74 +82,80 @@ defmodule JournalexWeb.ActivityStatementList do
           </div>
         </div>
       </div>
-      
+
       <div class={"overflow-x-auto #{unless @expanded, do: "hidden"}"} id={@id}>
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
+              <th :if={@selectable?} class="px-4 py-3">
+                <input type="checkbox" phx-click={@on_toggle_all_event} checked={@all_selected?} />
+              </th>
               <th
                 :if={@show_save_controls?}
                 class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
               >
                 Save
               </th>
-              
+
               <th
                 :if={@show_save_controls?}
                 class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
               >
                 Status
               </th>
-              
+
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Date/Time
               </th>
-              
+
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Side
               </th>
-              
+
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Build/Close
               </th>
-              
+
               <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Realized P/L
               </th>
-              
+
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Symbol
               </th>
-              
+
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Asset
               </th>
-              
+
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Currency
               </th>
-              
+
               <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Qty
               </th>
-              
+
               <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Trade Px
               </th>
-              
+
               <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Proceeds
               </th>
-              
+
               <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Comm/Fee
               </th>
             </tr>
           </thead>
-          
+
           <tbody class="bg-white divide-y divide-gray-200">
             <%= for {row, idx} <- Enum.with_index(@rows) do %>
               <tr class="hover:bg-gray-50">
+                <td :if={@selectable?} class="px-4 py-3">
+                  <input type="checkbox" phx-click={@on_toggle_row_event} phx-value-id={Map.get(row, :id)} checked={MapSet.member?(@selected_ids, Map.get(row, :id))} />
+                </td>
                 <td :if={@show_save_controls?} class="px-3 py-4 whitespace-nowrap text-sm">
                   <button
                     phx-click={@on_save_row_event}
@@ -154,7 +166,7 @@ defmodule JournalexWeb.ActivityStatementList do
                     Save
                   </button>
                 </td>
-                
+
                 <td :if={@show_save_controls?} class="px-3 py-4 whitespace-nowrap text-sm">
                   <%= if Map.get(row, :exists) == true do %>
                     <span class="inline-flex items-center text-green-600" title="Already saved">
@@ -180,55 +192,57 @@ defmodule JournalexWeb.ActivityStatementList do
                     </span>
                   <% end %>
                 </td>
-                
+
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {display_datetime(row)}
                 </td>
-                
+
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{display_side(row)}</td>
-                
+
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {display_build_close(row)}
                 </td>
-                
+
                 <td class={"px-6 py-4 whitespace-nowrap text-sm text-right #{pl_class(realized(row))}"}>
                   {if @show_values?, do: display_number(realized(row)), else: ""}
                 </td>
-                
+
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {Map.get(row, :symbol)}
                 </td>
-                
+
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {Map.get(row, :asset_category)}
                 </td>
-                
+
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {Map.get(row, :currency)}
                 </td>
-                
+
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
                   {if @show_values?, do: display_number(Map.get(row, :quantity)), else: ""}
                 </td>
-                
+
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
                   {if @show_values?, do: display_number(Map.get(row, :trade_price)), else: ""}
                 </td>
-                
+
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
                   {if @show_values?, do: display_number(Map.get(row, :proceeds)), else: ""}
                 </td>
-                
+
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
                   {if @show_values?, do: display_number(Map.get(row, :comm_fee)), else: ""}
                 </td>
               </tr>
             <% end %>
-            
+
             <%= if Enum.empty?(@rows) do %>
               <tr>
                 <td
-                  colspan={if @show_save_controls?, do: 13, else: 11}
+                  colspan={
+                    (if @show_save_controls?, do: 13, else: 11) + (if @selectable?, do: 1, else: 0)
+                  }
                   class="px-6 py-8 text-center text-sm text-gray-500"
                 >
                 </td>
@@ -258,10 +272,8 @@ defmodule JournalexWeb.ActivityStatementList do
   defp display_build_close(%{position_action: pa}) when is_binary(pa), do: String.upcase(pa)
 
   defp display_build_close(row) when is_map(row) do
-    case to_number(Map.get(row, :realized_pl)) do
-      0.0 -> "BUILD"
-      _ -> "CLOSE"
-    end
+    n = to_number(Map.get(row, :realized_pl))
+    if n == 0.0, do: "BUILD", else: "CLOSE"
   end
 
   defp display_build_close(_), do: ""
