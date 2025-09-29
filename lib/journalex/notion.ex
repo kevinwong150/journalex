@@ -120,7 +120,7 @@ defmodule Journalex.Notion do
 
         base_props = %{
           title_prop => %{title: [%{text: %{content: title}}]},
-          ts_prop => %{date: %{start: iso}},
+          ts_prop => %{date: iso},
           tk_prop => %{rich_text: %{text: ticker}}
         }
 
