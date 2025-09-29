@@ -74,15 +74,11 @@ defmodule Journalex.Notion.Client do
   """
   @spec query_database(binary(), map()) :: {:ok, map()} | {:error, term()}
   def query_database(database_id, body \\ %{}) do
-    body
-    |> IO.inspect(label: "Notion Query DB Body")
-
     case request(
            :post,
-           "/data_sources/#{database_id}/query" |> IO.inspect(label: :notion_query_db),
+           "/data_sources/#{database_id}/query",
            body
-         )
-         |> IO.inspect(label: "Notion Query DB") do
+         ) do
       {:ok, status, map} when status in 200..299 -> {:ok, map}
       {:ok, status, map} -> {:error, {:http_error, status, map}}
       {:error, reason} -> {:error, reason}
@@ -109,7 +105,7 @@ defmodule Journalex.Notion.Client do
   """
   @spec create_page(map()) :: {:ok, map()} | {:error, term()}
   def create_page(payload) when is_map(payload) do
-    case request(:post, "/data_sources", payload |> IO.inspect(label: :create_page_payload)) do
+    case request(:post, "/data_sources", payload) do
       {:ok, status, map} when status in 200..299 -> {:ok, map}
       {:ok, status, map} -> {:error, {:http_error, status, map}}
       {:error, reason} -> {:error, reason}

@@ -64,8 +64,7 @@ defmodule JournalexWeb.StatementDumpLive do
     # For now, use the statement's datetime as the matching timestamp
     {row_statuses, exists_count, missing_count} =
       Enum.reduce(selected_rows, {%{}, 0, 0}, fn row, {acc, ec, mc} ->
-        case Notion.exists_by_timestamp_and_ticker?(row.datetime, row.symbol)
-             |> IO.inspect(label: "Notion Check") do
+        case Notion.exists_by_timestamp_and_ticker?(row.datetime, row.symbol) do
           {:ok, true} -> {Map.put(acc, row.id, :exists), ec + 1, mc}
           {:ok, false} -> {Map.put(acc, row.id, :missing), ec, mc + 1}
           {:error, _} -> {Map.put(acc, row.id, :error), ec, mc}
@@ -116,9 +115,6 @@ defmodule JournalexWeb.StatementDumpLive do
     ds_id = Keyword.get(notion_conf, :data_source_id)
     db_res = if ds_id, do: NotionClient.retrieve_database(ds_id), else: {:ok, :no_db_configured}
 
-    {notion_conf, ds_id, db_res}
-    |> IO.inspect(label: "Notion Config, DS ID, DB Res")
-
     case {user_res, db_res} do
       {{:ok, _user}, {:ok, :no_db_configured}} ->
         {:noreply,
@@ -142,33 +138,33 @@ defmodule JournalexWeb.StatementDumpLive do
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <h1 class="text-xl font-semibold">Statement Dump</h1>
-        
+
         <div class="flex items-center gap-3">
           <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
             Selected: {MapSet.size(@selected_ids)}
           </span>
-          
+
           <span
             :if={@notion_exists_count + @notion_missing_count > 0}
             class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"
           >
             Exists: {@notion_exists_count}
           </span>
-          
+
           <span
             :if={@notion_exists_count + @notion_missing_count > 0}
             class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
           >
             Missing: {@notion_missing_count}
           </span>
-          
+
           <span
             :if={@notion_conn_status == :ok}
             class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
           >
             Notion: Connected
           </span>
-          
+
           <span
             :if={@notion_conn_status == :error}
             class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"
@@ -176,14 +172,14 @@ defmodule JournalexWeb.StatementDumpLive do
           >
             Notion: Failed
           </span>
-          
+
           <button
             phx-click="toggle_select_all"
             class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
           >
             {if @all_selected?, do: "Clear All", else: "Select All"}
           </button>
-          
+
           <button
             phx-click="check_notion_connection"
             class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
@@ -191,7 +187,7 @@ defmodule JournalexWeb.StatementDumpLive do
           >
             Check Connection
           </button>
-          
+
           <button
             phx-click="check_notion"
             class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50 disabled:opacity-50"
@@ -200,7 +196,7 @@ defmodule JournalexWeb.StatementDumpLive do
           >
             Check Notion
           </button>
-          
+
           <button
             phx-click="insert_missing_notion"
             class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50 disabled:opacity-50"
@@ -211,7 +207,7 @@ defmodule JournalexWeb.StatementDumpLive do
           </button>
         </div>
       </div>
-      
+
       <ActivityStatementList.list
         id="statement-dump"
         title="All Statements"
