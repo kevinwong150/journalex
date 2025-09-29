@@ -81,6 +81,7 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
             current_month={@calendar_month}
             prev_event="prev_month"
             next_event="next_month"
+            reset_event="current_month"
             title="Dates"
             start_date={@start_date && parse_yyyymmdd(@start_date)}
             end_date={@end_date && parse_yyyymmdd(@end_date)}
@@ -244,6 +245,16 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
 
       _ ->
         {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("current_month", _params, socket) do
+    case socket.assigns do
+      _ ->
+        today = Date.utc_today()
+        first = %Date{year: today.year, month: today.month, day: 1}
+        update_calendar_month(socket, first)
     end
   end
 

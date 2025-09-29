@@ -24,6 +24,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
      socket
      |> assign(:uploaded_files, [])
      |> assign(:upload_status, nil)
+     |> assign(:calendar_month, first)
      |> assign(:date_grid, date_grid)
      |> allow_upload(:csv_file,
        accept: ~w(.csv),
@@ -154,7 +155,8 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
             <JournalexWeb.MonthGrid.month_grid
               months={@date_grid}
               show_nav={true}
-              current_month={nil}
+              current_month={@calendar_month}
+              reset_event="current_month"
               title="This Month's Activity"
             />
           </div>
@@ -204,7 +206,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                     <p class="text-xs text-gray-500">CSV files up to 10MB</p>
                   </div>
                 </div>
-                
+
     <!-- Upload Progress -->
                 <%= for entry <- @uploads.csv_file.entries do %>
                   <div class="bg-gray-50 rounded-lg p-4">
@@ -242,7 +244,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         </svg>
                       </button>
                     </div>
-                    
+
     <!-- Progress Bar -->
                     <div class="w-full bg-gray-200 rounded-full h-2">
                       <div
@@ -258,7 +260,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         {Float.round(entry.client_size / 1024, 1)}KB
                       </span>
                     </div>
-                    
+
     <!-- Upload Errors -->
                     <%= for err <- upload_errors(@uploads.csv_file, entry) do %>
                       <div class="mt-2 text-sm text-red-600">
@@ -267,7 +269,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                     <% end %>
                   </div>
                 <% end %>
-                
+
     <!-- General Upload Errors -->
                 <%= for err <- upload_errors(@uploads.csv_file) do %>
                   <div class="text-sm text-red-600">
@@ -275,7 +277,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                   </div>
                 <% end %>
               </div>
-              
+
     <!-- File Requirements -->
               <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div class="flex">
@@ -312,7 +314,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                   </div>
                 </div>
               </div>
-              
+
     <!-- Submit Button -->
               <div class="flex justify-end">
                 <button
@@ -335,7 +337,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
               </div>
             </div>
           </form>
-          
+
     <!-- Upload Results -->
           <%= if @upload_status == :success and not Enum.empty?(@uploaded_files) do %>
             <div class="mt-8 bg-green-50 border border-green-200 rounded-lg p-4">
@@ -450,5 +452,55 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
 
     name = Enum.at(month_names, m - 1)
     "#{name} #{y}"
+  end
+
+  # Month navigation from the calendar component
+  @impl true
+  def handle_event("prev_month", _params, socket) do
+    case socket.assigns[:calendar_month] do
+      %Date{} = cm -> refresh_calendar_month(socket, shift_month(cm, -1))
+      _ -> {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("next_month", _params, socket) do
+    case socket.assigns[:calendar_month] do
+      %Date{} = cm -> refresh_calendar_month(socket, shift_month(cm, 1))
+      _ -> {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("current_month", _params, socket) do
+    today = Date.utc_today()
+    first = %Date{year: today.year, month: today.month, day: 1}
+    refresh_calendar_month(socket, first)
+  end
+
+  defp refresh_calendar_month(socket, %Date{} = first) do
+    last = end_of_month(first)
+    sd = yyyymmdd(first)
+    ed = yyyymmdd(last)
+
+    results =
+      case Activity.list_activity_statements_between(sd, ed) do
+        {:error, _} -> []
+        list when is_list(list) -> list
+      end
+
+    grid = build_single_month_grid(first, last, results)
+
+    {:noreply,
+     socket
+     |> assign(:calendar_month, first)
+     |> assign(:date_grid, grid)}
+  end
+
+  defp shift_month(%Date{year: y, month: m}, delta) when is_integer(delta) do
+    total = y * 12 + (m - 1) + delta
+    ny = div(total, 12)
+    nm = rem(total, 12) + 1
+    Date.new!(ny, nm, 1)
   end
 end

@@ -25,6 +25,7 @@ defmodule JournalexWeb.MonthGrid do
   attr :current_month, :any, default: nil
   attr :prev_event, :string, default: "prev_month"
   attr :next_event, :string, default: "next_month"
+  attr :reset_event, :string, default: "current_month"
   attr :title, :string, default: "Dates"
   # New optional selection attrs
   attr :start_date, :any, default: nil
@@ -38,6 +39,16 @@ defmodule JournalexWeb.MonthGrid do
 
         <%= if @show_nav do %>
           <div class="flex items-center gap-2">
+            <%= if show_reset?(@current_month) do %>
+              <button
+                phx-click={@reset_event}
+                class="px-2 py-1 text-sm border rounded-md hover:bg-gray-50"
+                title="Jump to current month"
+              >
+                This Month
+              </button>
+            <% end %>
+
             <button
               phx-click={@prev_event}
               class="px-2 py-1 text-sm border rounded-md hover:bg-gray-50"
@@ -154,5 +165,13 @@ defmodule JournalexWeb.MonthGrid do
       7 -> true
       _ -> false
     end
+  end
+
+  # Only show the reset button if the currently displayed month is not today's month
+  defp show_reset?(nil), do: false
+
+  defp show_reset?(%Date{} = cm) do
+    today = Date.utc_today()
+    cm.year != today.year or cm.month != today.month
   end
 end
