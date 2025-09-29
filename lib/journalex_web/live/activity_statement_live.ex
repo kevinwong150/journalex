@@ -174,10 +174,6 @@ defmodule JournalexWeb.ActivityStatementLive do
     end
   end
 
-  defp pl_class(nil), do: "text-gray-900"
-  defp pl_class(<<"-", _rest::binary>>), do: "text-red-600"
-  defp pl_class(_), do: "text-green-600"
-
   # Summary helpers
   defp summarize_realized_pl(trades) do
     groups = Enum.group_by(trades, & &1.symbol)
@@ -190,6 +186,7 @@ defmodule JournalexWeb.ActivityStatementLive do
         closes = Enum.filter(ts, fn r -> build_close(r) == "CLOSE" end)
         close_count = length(closes)
         close_positive_count = closes |> Enum.count(fn r -> to_number(r.realized_pl) > 0.0 end)
+
         days_traded =
           ts
           |> Enum.map(&date_only(Map.get(&1, :datetime)))
@@ -214,7 +211,12 @@ defmodule JournalexWeb.ActivityStatementLive do
   defp date_only(nil), do: nil
   defp date_only(%DateTime{} = dt), do: Date.to_iso8601(DateTime.to_date(dt))
   defp date_only(%NaiveDateTime{} = ndt), do: Date.to_iso8601(NaiveDateTime.to_date(ndt))
-  defp date_only(<<y::binary-size(4), "-", m::binary-size(2), "-", d::binary-size(2), _::binary>>), do: y <> "-" <> m <> "-" <> d
+
+  defp date_only(
+         <<y::binary-size(4), "-", m::binary-size(2), "-", d::binary-size(2), _::binary>>
+       ),
+       do: y <> "-" <> m <> "-" <> d
+
   defp date_only(bin) when is_binary(bin) do
     case String.split(bin) do
       [date | _] -> date_only(date)
@@ -253,25 +255,6 @@ defmodule JournalexWeb.ActivityStatementLive do
   end
 
   defp to_number(val) when is_number(val), do: val * 1.0
-
-  defp pl_class_amount(n) when is_number(n) do
-    cond do
-      n < 0 -> "text-red-600"
-      n > 0 -> "text-green-600"
-      true -> "text-gray-900"
-    end
-  end
-
-  defp format_amount(n) when is_number(n) do
-    :erlang.float_to_binary(n * 1.0, decimals: 2)
-  end
-
-  defp buy_sell(qty) do
-    case to_number(qty) do
-      n when is_number(n) and n < 0 -> "SELL"
-      _ -> "BUY"
-    end
-  end
 
   defp build_close(row) do
     # Prefer existing persisted flag if available; else infer from realized_pl as requested

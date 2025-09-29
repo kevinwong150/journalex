@@ -32,8 +32,8 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
      |> assign(:activity_expanded, true)
      |> assign(:calendar_month, first)
      |> assign(:date_grid, default_grid)
-  |> assign(:selected_days, 0)
-  |> assign(:error, nil)}
+     |> assign(:selected_days, 0)
+     |> assign(:error, nil)}
   end
 
   defp sanitize_date(nil), do: nil
@@ -284,9 +284,15 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
       groups
       |> Enum.map(fn {symbol, ts} ->
         sum = ts |> Enum.map(&to_number(&1.realized_pl)) |> Enum.sum()
-        closes = Enum.filter(ts, fn r -> display_position_action(r.position_action) == "CLOSE" or infer_close?(r) end)
+
+        closes =
+          Enum.filter(ts, fn r ->
+            display_position_action(r.position_action) == "CLOSE" or infer_close?(r)
+          end)
+
         close_count = length(closes)
         close_positive_count = closes |> Enum.count(fn r -> to_number(r.realized_pl) > 0.0 end)
+
         days_traded =
           ts
           |> Enum.map(&date_only(Map.get(&1, :datetime)))
@@ -311,7 +317,12 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
   defp date_only(nil), do: nil
   defp date_only(%DateTime{} = dt), do: Date.to_iso8601(DateTime.to_date(dt))
   defp date_only(%NaiveDateTime{} = ndt), do: Date.to_iso8601(NaiveDateTime.to_date(ndt))
-  defp date_only(<<y::binary-size(4), "-", m::binary-size(2), "-", d::binary-size(2), _::binary>>), do: y <> "-" <> m <> "-" <> d
+
+  defp date_only(
+         <<y::binary-size(4), "-", m::binary-size(2), "-", d::binary-size(2), _::binary>>
+       ),
+       do: y <> "-" <> m <> "-" <> d
+
   defp date_only(bin) when is_binary(bin) do
     case String.split(bin) do
       [date | _] -> date_only(date)
@@ -346,47 +357,6 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
         end
     end
   end
-
-  # Display helper: empty string for 0, otherwise trim trailing zeros and decimal point.
-  defp display_trimmed(nil), do: ""
-  defp display_trimmed(%Decimal{} = d), do: display_trimmed(Decimal.to_float(d))
-  defp display_trimmed(n) when is_number(n), do: n |> :erlang.float_to_binary([{:decimals, 8}, :compact]) |> trim_trailing()
-  defp display_trimmed(val) when is_binary(val) do
-    case String.trim(val) do
-      "" -> ""
-      s ->
-        case Float.parse(String.replace(s, ",", "")) do
-          {n, _} -> display_trimmed(n)
-          :error -> s
-        end
-    end
-  end
-
-  defp trim_trailing(str) when is_binary(str) do
-    # remove trailing zeros after decimal and any trailing dot
-    str
-    |> String.replace(~r/\.0+$/, "")
-    |> String.replace(~r/(\.\d*?)0+$/, "\\1")
-    |> String.replace(~r/\.$/, "")
-    |> case do
-      "0" -> ""
-      "0.0" -> ""
-      other -> other
-    end
-  end
-
-  defp pl_class_amount(n) when is_number(n) do
-    cond do
-      n < 0 -> "text-red-600"
-      n > 0 -> "text-green-600"
-      true -> "text-gray-900"
-    end
-  end
-
-  defp format_amount(n) when is_number(n), do: :erlang.float_to_binary(n * 1.0, decimals: 2)
-
-  defp display_side(nil), do: ""
-  defp display_side(side) when is_binary(side), do: String.upcase(side)
 
   defp display_position_action(nil), do: ""
   defp display_position_action(val) when is_binary(val), do: String.upcase(val)
@@ -471,8 +441,6 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
     "#{name} #{y}"
   end
 
-  defp day_of_month(%Date{day: d}), do: d
-
   defp yyyymmdd(%Date{year: y, month: m, day: d}) do
     y_str = Integer.to_string(y) |> String.pad_leading(4, "0")
     m_str = Integer.to_string(m) |> String.pad_leading(2, "0")
@@ -487,7 +455,6 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
     Date.new!(ny, nm, 1)
   end
 
-
   defp format_input(nil), do: nil
 
   defp format_input(<<y::binary-size(4), m::binary-size(2), d::binary-size(2)>>),
@@ -497,11 +464,13 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
 
   # Convert "yyyymmdd" to %Date{} or nil
   defp parse_yyyymmdd(nil), do: nil
+
   defp parse_yyyymmdd(<<y::binary-size(4), m::binary-size(2), d::binary-size(2)>>) do
     case Date.from_iso8601(y <> "-" <> m <> "-" <> d) do
       {:ok, date} -> date
       _ -> nil
     end
   end
+
   defp parse_yyyymmdd(_), do: nil
 end

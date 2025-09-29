@@ -14,12 +14,19 @@ defmodule JournalexWeb.ActivityStatementSummary do
 
   use JournalexWeb, :html
 
-  attr :rows, :list, required: true, doc: "List of maps like %{symbol: String.t, realized_pl: number, winrate?: number | Decimal.t | String.t, close_positive_count?: integer, close_count?: integer, close_trades?: list}"
+  attr :rows, :list,
+    required: true,
+    doc:
+      "List of maps like %{symbol: String.t, realized_pl: number, winrate?: number | Decimal.t | String.t, close_positive_count?: integer, close_count?: integer, close_trades?: list}"
+
   attr :total, :any, required: true, doc: "Numeric total realized P/L"
   attr :expanded, :boolean, default: false, doc: "Whether to render the expanded rows view"
   attr :id, :string, default: "summary-table", doc: "DOM id for aria-controls"
   attr :total_winrate, :any, default: nil, doc: "Optional total winrate (0..1 or 0..100)"
-  attr :selected_days, :any, default: nil, doc: "Optional total number of selected business days (Mon-Fri)"
+
+  attr :selected_days, :any,
+    default: nil,
+    doc: "Optional total number of selected business days (Mon-Fri)"
 
   def summary_table(assigns) do
     ~H"""
@@ -145,6 +152,7 @@ defmodule JournalexWeb.ActivityStatementSummary do
 
   defp format_winrate(bin) when is_binary(bin) do
     cleaned = bin |> String.replace([",", "%"], "") |> String.trim()
+
     case Float.parse(cleaned) do
       {n, _} -> format_winrate(n)
       :error -> "-"
@@ -161,6 +169,7 @@ defmodule JournalexWeb.ActivityStatementSummary do
   defp format_count(n) when is_integer(n), do: Integer.to_string(n)
   defp format_count(n) when is_number(n), do: n |> trunc() |> Integer.to_string()
   defp format_count(%Decimal{} = d), do: d |> Decimal.to_integer() |> Integer.to_string()
+
   defp format_count(bin) when is_binary(bin) do
     case Integer.parse(String.trim(bin)) do
       {i, _} -> Integer.to_string(i)
@@ -176,7 +185,9 @@ defmodule JournalexWeb.ActivityStatementSummary do
   # - fallback: :winrate if provided (interpreted as fraction or percentage)
   defp per_row_winrate(row) when is_map(row) do
     case row_trade_counts(row) do
-      {wins, total} when is_integer(wins) and is_integer(total) and total > 0 -> wins / total
+      {wins, total} when is_integer(wins) and is_integer(total) and total > 0 ->
+        wins / total
+
       _ ->
         case Map.get(row, :winrate) do
           nil -> nil
@@ -208,17 +219,23 @@ defmodule JournalexWeb.ActivityStatementSummary do
   # Days traded helpers. A row may already contain :days_traded; else try :dates or :trades with datetime.
   defp row_days_traded(row) do
     case Map.get(row, :days_traded) do
-      n when is_integer(n) and n >= 0 -> n
+      n when is_integer(n) and n >= 0 ->
+        n
+
       _ ->
         cond do
-          is_list(Map.get(row, :dates)) -> Map.get(row, :dates) |> Enum.uniq() |> length()
+          is_list(Map.get(row, :dates)) ->
+            Map.get(row, :dates) |> Enum.uniq() |> length()
+
           is_list(Map.get(row, :close_trades)) ->
             Map.get(row, :close_trades)
             |> Enum.map(&date_only(Map.get(&1, :datetime)))
             |> Enum.reject(&is_nil/1)
             |> Enum.uniq()
             |> length()
-          true -> Map.get(row, :days) || 0
+
+          true ->
+            Map.get(row, :days) || 0
         end
     end
   end
@@ -230,8 +247,15 @@ defmodule JournalexWeb.ActivityStatementSummary do
   defp date_only(nil), do: nil
   defp date_only(%DateTime{} = dt), do: Date.to_iso8601(DateTime.to_date(dt))
   defp date_only(%NaiveDateTime{} = ndt), do: Date.to_iso8601(NaiveDateTime.to_date(ndt))
-  defp date_only(<<y::binary-size(4), "-", m::binary-size(2), "-", d::binary-size(2), _::binary>>), do: y <> "-" <> m <> "-" <> d
-  defp date_only(<<y::binary-size(4), m::binary-size(2), d::binary-size(2)>>), do: y <> "-" <> m <> "-" <> d
+
+  defp date_only(
+         <<y::binary-size(4), "-", m::binary-size(2), "-", d::binary-size(2), _::binary>>
+       ),
+       do: y <> "-" <> m <> "-" <> d
+
+  defp date_only(<<y::binary-size(4), m::binary-size(2), d::binary-size(2)>>),
+    do: y <> "-" <> m <> "-" <> d
+
   defp date_only(bin) when is_binary(bin) do
     case String.split(bin) do
       [date | _] -> date_only(date)
@@ -266,7 +290,8 @@ defmodule JournalexWeb.ActivityStatementSummary do
             wins = round(frac * total)
             {wins, total}
 
-          true -> {nil, nil}
+          true ->
+            {nil, nil}
         end
     end
   end
@@ -275,15 +300,19 @@ defmodule JournalexWeb.ActivityStatementSummary do
   # Accepts numbers (<=1 assumed fraction, >1 assumed percent), Decimal, and strings (may contain '%').
   defp to_fraction(nil), do: nil
   defp to_fraction(%Decimal{} = d), do: d |> Decimal.to_float() |> to_fraction()
+
   defp to_fraction(bin) when is_binary(bin) do
     cleaned = bin |> String.replace([",", "%"], "") |> String.trim()
+
     case Float.parse(cleaned) do
       {n, _} -> to_fraction(n)
       :error -> nil
     end
   end
+
   defp to_fraction(n) when is_number(n) do
     frac = if n <= 1.0, do: n * 1.0, else: n / 100.0
+
     frac
     |> max(0.0)
     |> min(1.0)
@@ -292,6 +321,7 @@ defmodule JournalexWeb.ActivityStatementSummary do
   defp to_float(nil), do: 0.0
   defp to_float(n) when is_number(n), do: n * 1.0
   defp to_float(%Decimal{} = d), do: Decimal.to_float(d)
+
   defp to_float(bin) when is_binary(bin) do
     case Float.parse(String.replace(bin, ",", "") |> String.trim()) do
       {n, _} -> n * 1.0

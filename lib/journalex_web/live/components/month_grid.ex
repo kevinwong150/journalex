@@ -85,20 +85,16 @@ defmodule JournalexWeb.MonthGrid do
               <%= for cell <- List.flatten(month.weeks) do %>
                 <% date = cell[:date] %>
                 <% selected? = in_range?(date, @start_date, @end_date, false) %>
-                <div class={
-                       [
-                         "h-16 border rounded-md p-1 flex flex-col justify-between",
-                         date == nil && "bg-gray-50",
-                         selected? && "bg-indigo-50 ring-1 ring-indigo-300"
-                       ]
-                     }>
-                  <div class={
-                         [
-                           "text-[10px] text-right",
-                           selected? && "text-indigo-800",
-                           (not selected?) && "text-gray-400"
-                         ]
-                       }>
+                <div class={[
+                  "h-16 border rounded-md p-1 flex flex-col justify-between",
+                  date == nil && "bg-gray-50",
+                  selected? && "bg-indigo-50 ring-1 ring-indigo-300"
+                ]}>
+                  <div class={[
+                    "text-[10px] text-right",
+                    selected? && "text-indigo-800",
+                    not selected? && "text-gray-400"
+                  ]}>
                     {if date, do: day_of_month(date), else: ""}
                   </div>
 
@@ -110,7 +106,7 @@ defmodule JournalexWeb.MonthGrid do
                         <span class={[
                           "inline-block text-lg font-bold",
                           cell[:has] && "text-green-600",
-                          (not cell[:has]) && "text-red-600"
+                          not cell[:has] && "text-red-600"
                         ]}>
                           {if cell[:has], do: "✓", else: "✗"}
                         </span>
@@ -129,6 +125,8 @@ defmodule JournalexWeb.MonthGrid do
     """
   end
 
+  defp month_label(nil), do: ""
+
   defp month_label(%Date{year: y, month: m}) do
     month_names =
       ~w(January February March April May June July August September October November December)
@@ -144,6 +142,7 @@ defmodule JournalexWeb.MonthGrid do
   defp in_range?(nil, _s, _e, _fallback), do: false
   defp in_range?(%Date{} = _date, nil, _e, _fallback), do: false
   defp in_range?(%Date{} = _date, _s, nil, _fallback), do: false
+
   defp in_range?(%Date{} = date, %Date{} = s, %Date{} = e, _fallback) do
     {start_d, end_d} = if Date.compare(s, e) == :gt, do: {e, s}, else: {s, e}
     Date.compare(date, start_d) in [:eq, :gt] and Date.compare(date, end_d) in [:eq, :lt]
