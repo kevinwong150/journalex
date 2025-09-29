@@ -206,7 +206,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                     <p class="text-xs text-gray-500">CSV files up to 10MB</p>
                   </div>
                 </div>
-
+                
     <!-- Upload Progress -->
                 <%= for entry <- @uploads.csv_file.entries do %>
                   <div class="bg-gray-50 rounded-lg p-4">
@@ -244,7 +244,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         </svg>
                       </button>
                     </div>
-
+                    
     <!-- Progress Bar -->
                     <div class="w-full bg-gray-200 rounded-full h-2">
                       <div
@@ -260,7 +260,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         {Float.round(entry.client_size / 1024, 1)}KB
                       </span>
                     </div>
-
+                    
     <!-- Upload Errors -->
                     <%= for err <- upload_errors(@uploads.csv_file, entry) do %>
                       <div class="mt-2 text-sm text-red-600">
@@ -269,7 +269,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                     <% end %>
                   </div>
                 <% end %>
-
+                
     <!-- General Upload Errors -->
                 <%= for err <- upload_errors(@uploads.csv_file) do %>
                   <div class="text-sm text-red-600">
@@ -277,7 +277,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                   </div>
                 <% end %>
               </div>
-
+              
     <!-- File Requirements -->
               <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div class="flex">
@@ -314,7 +314,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                   </div>
                 </div>
               </div>
-
+              
     <!-- Submit Button -->
               <div class="flex justify-end">
                 <button
@@ -337,7 +337,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
               </div>
             </div>
           </form>
-
+          
     <!-- Upload Results -->
           <%= if @upload_status == :success and not Enum.empty?(@uploaded_files) do %>
             <div class="mt-8 bg-green-50 border border-green-200 rounded-lg p-4">

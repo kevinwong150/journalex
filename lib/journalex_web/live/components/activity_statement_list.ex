@@ -31,6 +31,8 @@ defmodule JournalexWeb.ActivityStatementList do
   attr :all_selected?, :boolean, default: false
   attr :on_toggle_row_event, :string, default: nil
   attr :on_toggle_all_event, :string, default: nil
+  # Optional map of row id => :exists | :missing | :error to color rows
+  attr :row_statuses, :map, default: %{}
 
   slot :inner_block
 
@@ -152,9 +154,17 @@ defmodule JournalexWeb.ActivityStatementList do
 
           <tbody class="bg-white divide-y divide-gray-200">
             <%= for {row, idx} <- Enum.with_index(@rows) do %>
-              <tr class="hover:bg-gray-50">
+              <tr class={[
+                "hover:bg-gray-50",
+                status_class(@row_statuses, Map.get(row, :id))
+              ]}>
                 <td :if={@selectable?} class="px-4 py-3">
-                  <input type="checkbox" phx-click={@on_toggle_row_event} phx-value-id={Map.get(row, :id)} checked={MapSet.member?(@selected_ids, Map.get(row, :id))} />
+                  <input
+                    type="checkbox"
+                    phx-click={@on_toggle_row_event}
+                    phx-value-id={Map.get(row, :id)}
+                    checked={MapSet.member?(@selected_ids, Map.get(row, :id))}
+                  />
                 </td>
                 <td :if={@show_save_controls?} class="px-3 py-4 whitespace-nowrap text-sm">
                   <button
@@ -241,7 +251,7 @@ defmodule JournalexWeb.ActivityStatementList do
               <tr>
                 <td
                   colspan={
-                    (if @show_save_controls?, do: 13, else: 11) + (if @selectable?, do: 1, else: 0)
+                    if(@show_save_controls?, do: 13, else: 11) + if @selectable?, do: 1, else: 0
                   }
                   class="px-6 py-8 text-center text-sm text-gray-500"
                 >
@@ -256,6 +266,15 @@ defmodule JournalexWeb.ActivityStatementList do
   end
 
   # Helpers shared by pages
+  defp status_class(statuses, id) do
+    case Map.get(statuses || %{}, id) do
+      :exists -> "bg-red-50"
+      :missing -> "bg-green-50"
+      :error -> "bg-yellow-50"
+      _ -> ""
+    end
+  end
+
   defp display_datetime(%{datetime: dt}), do: dt
   defp display_datetime(_), do: ""
 

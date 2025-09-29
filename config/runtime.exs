@@ -20,6 +20,22 @@ if System.get_env("PHX_SERVER") do
   config :journalex, JournalexWeb.Endpoint, server: true
 end
 
+# Notion API configuration (shared across envs)
+# Prefer environment variables; optionally set defaults in config/dev.exs for local use.
+config :journalex, Journalex.Notion.Client,
+  token: System.get_env("NOTION_API_TOKEN"),
+  version: System.get_env("NOTION_VERSION") || "2025-09-03"
+
+# Notion app-level defaults for Journalex.Notion
+config :journalex, Journalex.Notion,
+  # Prefer new var, fall back to old for compatibility
+  data_source_id: System.get_env("NOTION_DATA_SOURCE_ID") || System.get_env("NOTION_DATABASE_ID"),
+  datetime_property:
+    System.get_env("NOTION_DATETIME_PROPERTY") || System.get_env("NOTION_TIMESTAMP_PROPERTY") ||
+      "Datetime",
+  ticker_property: System.get_env("NOTION_TICKER_PROPERTY") || "Ticker",
+  title_property: System.get_env("NOTION_TITLE_PROPERTY") || "Trademark"
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
