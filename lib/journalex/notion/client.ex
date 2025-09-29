@@ -5,7 +5,7 @@ defmodule Journalex.Notion.Client do
   Configure via runtime.exs (env variables suggested):
 
     * NOTION_API_TOKEN - the internal integration token
-    * NOTION_VERSION   - Notion API version header (default: "2022-06-28")
+    * NOTION_VERSION   - Notion API version header (default: "2025-09-03")
 
   Example:
 
@@ -105,7 +105,7 @@ defmodule Journalex.Notion.Client do
   """
   @spec create_page(map()) :: {:ok, map()} | {:error, term()}
   def create_page(payload) when is_map(payload) do
-    case request(:post, "/data_sources", payload) do
+    case request(:post, "/pages", payload) do
       {:ok, status, map} when status in 200..299 -> {:ok, map}
       {:ok, status, map} -> {:error, {:http_error, status, map}}
       {:error, reason} -> {:error, reason}

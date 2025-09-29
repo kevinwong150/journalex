@@ -54,15 +54,18 @@ defmodule Journalex.Notion do
     data_source_id = Keyword.get(opts, :data_source_id, conf[:data_source_id])
     ts_prop = Keyword.get(opts, :datetime_property, conf[:datetime_property] || "Datetime")
     tk_prop = Keyword.get(opts, :ticker_property, conf[:ticker_property] || "Ticker")
+    title_prop = Keyword.get(opts, :title_property, conf[:title_property] || "Trademark")
 
     if is_nil(data_source_id) do
       {:error, :missing_data_source_id}
     else
       iso = DateTime.to_iso8601(dt)
+      title = ticker <> "@" <> iso
 
       body = %{
         filter: %{
           "and" => [
+            %{property: title_prop, rich_text: %{equals: title}},
             %{property: ts_prop, date: %{equals: iso}},
             %{property: tk_prop, rich_text: %{equals: ticker}}
           ]
@@ -111,8 +114,12 @@ defmodule Journalex.Notion do
         title = ticker <> "@" <> iso
 
         # Optional fields (if present in the row) mapped to sensible Notion types
-        side = Map.get(row, :side) || Map.get(row, "side")
-        position_action = Map.get(row, :position_action) || Map.get(row, "position_action")
+        side = (Map.get(row, :side) || Map.get(row, "side")) |> capitalize_words()
+
+        position_action =
+          (Map.get(row, :position_action) || Map.get(row, "position_action"))
+          |> capitalize_words()
+
         currency = Map.get(row, :currency) || Map.get(row, "currency")
         qty = to_number(Map.get(row, :quantity) || Map.get(row, "quantity"))
         realized = to_number(Map.get(row, :realized_pl) || Map.get(row, "realized_pl"))
@@ -121,7 +128,7 @@ defmodule Journalex.Notion do
         base_props = %{
           title_prop => %{title: [%{text: %{content: title}}]},
           ts_prop => %{date: %{start: iso}},
-          tk_prop => %{rich_text: %{text: ticker}}
+          tk_prop => %{rich_text: [%{text: %{content: ticker}}]}
         }
 
         extra_props =
@@ -134,7 +141,7 @@ defmodule Journalex.Notion do
           |> maybe_put_number("Trade Price", trade_price)
 
         payload = %{
-          "parent" => %{"database_id" => data_source_id},
+          "parent" => %{"data_source_id" => data_source_id},
           "properties" => Map.merge(base_props, extra_props)
         }
 
@@ -183,4 +190,18 @@ defmodule Journalex.Notion do
         end
     end
   end
+
+  # Capitalize each word (title-case) in a string; returns nil unchanged
+  defp capitalize_words(nil), do: nil
+
+  defp capitalize_words(s) when is_binary(s) do
+    s
+    |> String.trim()
+    |> String.downcase()
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.map(&String.capitalize/1)
+    |> Enum.join(" ")
+  end
+
+  defp capitalize_words(other), do: other
 end

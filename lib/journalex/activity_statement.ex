@@ -30,7 +30,7 @@ defmodule Journalex.ActivityStatement do
     struct
     |> cast(attrs, @required ++ @optional)
     |> validate_required(@required)
-    |> validate_inclusion(:side, ["buy", "sell"])
+    |> validate_inclusion(:side, ["long", "short"])
     |> validate_inclusion(:position_action, ["build", "close"])
   end
 end

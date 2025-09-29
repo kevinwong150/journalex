@@ -26,8 +26,8 @@ defmodule Journalex.Repo.Migrations.CreateActivityStatements do
 
     create constraint(
              :activity_statements,
-             :side_must_be_buy_or_sell,
-             check: "side in ('buy','sell')"
+             :side_must_be_long_or_short,
+             check: "side in ('long','short')"
            )
 
     create constraint(

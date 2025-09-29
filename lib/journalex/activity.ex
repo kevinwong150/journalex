@@ -277,8 +277,8 @@ defmodule Journalex.Activity do
 
   defp infer_side(qty) do
     case to_number(qty) do
-      n when is_number(n) and n < 0 -> "sell"
-      _ -> "buy"
+      n when is_number(n) and n < 0 -> "short"
+      _ -> "long"
     end
   end
 

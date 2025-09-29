@@ -282,7 +282,7 @@ defmodule JournalexWeb.ActivityStatementList do
   defp display_side(%{side: side}) when is_binary(side), do: String.upcase(side)
 
   defp display_side(%{quantity: q}) do
-    if(to_number(q) < 0, do: "SELL", else: "BUY")
+    if(to_number(q) < 0, do: "SHORT", else: "LONG")
   end
 
   defp display_side(_), do: ""
