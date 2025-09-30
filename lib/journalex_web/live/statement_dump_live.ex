@@ -108,6 +108,15 @@ defmodule JournalexWeb.StatementDumpLive do
      )}
   end
 
+  def handle_event("clear_row_statuses", _params, socket) do
+    {:noreply,
+     assign(socket,
+       row_statuses: %{},
+       notion_exists_count: 0,
+       notion_missing_count: 0
+     )}
+  end
+
   def handle_event("check_notion_connection", _params, socket) do
     user_res = NotionClient.me()
 
@@ -205,6 +214,13 @@ defmodule JournalexWeb.StatementDumpLive do
           >
             Insert Missing
           </button>
+
+              <button
+                phx-click="clear_row_statuses"
+                class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
+              >
+                Clear Highlights
+              </button>
         </div>
       </div>
 
