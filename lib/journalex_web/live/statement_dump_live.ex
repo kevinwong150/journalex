@@ -216,6 +216,15 @@ defmodule JournalexWeb.StatementDumpLive do
   def render(assigns) do
     ~H"""
     <div class="space-y-4">
+      <% total_count = length(@statements) %>
+      <% filtered_rows = if @hide_exists? do
+        Enum.reject(@statements, fn s -> Map.get(@row_statuses, s.id) == :exists end)
+      else
+        @statements
+      end %>
+      <% visible_count = length(filtered_rows) %>
+      <% hidden_count = total_count - visible_count %>
+
       <div class="space-y-2">
         <!-- Row 1: Title and primary toggles -->
         <div class="flex items-center justify-between gap-3 flex-wrap">
@@ -224,21 +233,21 @@ defmodule JournalexWeb.StatementDumpLive do
           <div class="flex items-center gap-2 flex-wrap">
             <button
               phx-click="toggle_select_all"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white text-gray-800 hover:bg-gray-50"
             >
               {if @all_selected?, do: "Clear All", else: "Select All"}
             </button>
 
             <button
               phx-click="toggle_hide_exists"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white text-gray-800 hover:bg-gray-50"
             >
               {if @hide_exists?, do: "Show All", else: "Hide Existing"}
             </button>
 
             <button
               phx-click="clear_row_statuses"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-red-300 text-sm bg-white text-red-600 hover:bg-red-50"
             >
               Clear Highlights
             </button>
@@ -252,16 +261,24 @@ defmodule JournalexWeb.StatementDumpLive do
               Selected: {MapSet.size(@selected_ids)}
             </span>
 
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+              Visible: {visible_count}
+            </span>
+
+            <span :if={@hide_exists?} class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+              Hidden: {hidden_count}
+            </span>
+
             <span
               :if={@notion_exists_count + @notion_missing_count > 0}
-              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
             >
               Exists: {@notion_exists_count}
             </span>
 
             <span
               :if={@notion_exists_count + @notion_missing_count > 0}
-              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"
             >
               Missing: {@notion_missing_count}
             </span>
@@ -285,7 +302,7 @@ defmodule JournalexWeb.StatementDumpLive do
           <div class="flex items-center gap-2 flex-wrap">
             <button
               phx-click="check_notion_connection"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white text-gray-800 hover:bg-gray-50"
               phx-disable-with="Checking..."
             >
               Check Connection
@@ -293,7 +310,7 @@ defmodule JournalexWeb.StatementDumpLive do
 
             <button
               phx-click="check_notion"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50 disabled:opacity-50"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
               disabled={MapSet.size(@selected_ids) == 0}
               phx-disable-with="Checking..."
             >
@@ -302,7 +319,7 @@ defmodule JournalexWeb.StatementDumpLive do
 
             <button
               phx-click="insert_missing_notion"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50 disabled:opacity-50"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
               disabled={MapSet.size(@selected_ids) == 0}
               phx-disable-with="Inserting..."
             >
@@ -311,12 +328,6 @@ defmodule JournalexWeb.StatementDumpLive do
           </div>
         </div>
       </div>
-
-      <% filtered_rows = if @hide_exists? do
-        Enum.reject(@statements, fn s -> Map.get(@row_statuses, s.id) == :exists end)
-      else
-        @statements
-      end %>
 
       <ActivityStatementList.list
         id="statement-dump"
