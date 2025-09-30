@@ -204,4 +204,127 @@ defmodule Journalex.Notion do
   end
 
   defp capitalize_words(other), do: other
+
+  @doc """
+  List all pages in the configured Notion data source and return a Set of
+  "Trademark" property values (or the configured title property).
+
+  Options:
+    * :data_source_id - overrides configured data source id
+    * :title_property - overrides the title property name (default "Trademark")
+    * :page_size - query page size for pagination (default 100)
+
+  Returns `{:ok, MapSet.t()}` or `{:error, reason}`.
+  """
+  def list_all_trademarks(opts \\ []) do
+    conf = Application.get_env(:journalex, __MODULE__, [])
+    data_source_id = Keyword.get(opts, :data_source_id, conf[:data_source_id])
+    title_prop = Keyword.get(opts, :title_property, conf[:title_property] || "Trademark")
+    page_size = Keyword.get(opts, :page_size, 10000)
+
+    if is_nil(data_source_id) do
+      {:error, :missing_data_source_id}
+    else
+      # Prefer retrieving the whole database in one request
+      case Client.retrieve_database(data_source_id) do
+        {:ok, resp} ->
+          case extract_pages_from_db_response(resp) do
+            {:ok, pages} ->
+              titles =
+                pages
+                |> Enum.map(&extract_title(&1, title_prop))
+                |> Enum.reject(&is_nil/1)
+                |> MapSet.new()
+
+              {:ok, titles}
+
+            {:error, _} ->
+              # Fallback to paginated queries if the response didn't include records
+              with {:ok, pages} <- paginate_all_pages(data_source_id, page_size) do
+                titles =
+                  pages
+                  |> Enum.map(&extract_title(&1, title_prop))
+                  |> Enum.reject(&is_nil/1)
+                  |> MapSet.new()
+
+                {:ok, titles}
+              end
+          end
+
+        {:error, _reason} ->
+          # Fallback to paginated queries on error
+          with {:ok, pages} <- paginate_all_pages(data_source_id, page_size) do
+            titles =
+              pages
+              |> Enum.map(&extract_title(&1, title_prop))
+              |> Enum.reject(&is_nil/1)
+              |> MapSet.new()
+
+            {:ok, titles}
+          end
+      end
+    end
+  end
+
+  # --- Internal helpers for pagination and parsing ---
+
+  defp paginate_all_pages(data_source_id, page_size) do
+    do_page(data_source_id, page_size, nil, [])
+  end
+
+  defp do_page(data_source_id, page_size, start_cursor, acc) do
+    body =
+      %{
+        page_size: page_size
+      }
+      |> maybe_put_start_cursor(start_cursor)
+
+    case Client.query_database(data_source_id, body) do
+      {:ok, %{"results" => results} = resp} when is_list(results) ->
+        acc = acc ++ results
+
+        case resp do
+          %{"has_more" => true, "next_cursor" => cursor} when is_binary(cursor) ->
+            do_page(data_source_id, page_size, cursor, acc)
+
+          _ ->
+            {:ok, acc}
+        end
+
+      {:ok, other} ->
+        {:error, {:unexpected_response, other}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp maybe_put_start_cursor(map, nil), do: map
+  defp maybe_put_start_cursor(map, cursor) when is_binary(cursor), do: Map.put(map, :start_cursor, cursor)
+
+  defp extract_title(page, title_prop) do
+    case get_in(page, ["properties", title_prop, "title"]) do
+      list when is_list(list) and list != [] ->
+        first = hd(list)
+        # Prefer plain_text if present, fallback to nested text.content
+        Map.get(first, "plain_text") || get_in(first, ["text", "content"]) ||
+          get_in(first, ["annotations", "plain_text"]) || nil
+
+      _ ->
+        nil
+    end
+  end
+
+  # Try to extract a list of page objects from different possible response shapes
+  defp extract_pages_from_db_response(%{"results" => results}) when is_list(results),
+    do: {:ok, results}
+
+  defp extract_pages_from_db_response(%{"pages" => pages}) when is_list(pages), do: {:ok, pages}
+
+  defp extract_pages_from_db_response(%{"items" => items}) when is_list(items), do: {:ok, items}
+
+  defp extract_pages_from_db_response(%{"data" => %{"results" => results}}) when is_list(results),
+    do: {:ok, results}
+
+  defp extract_pages_from_db_response(_), do: {:error, :no_pages_in_response}
 end

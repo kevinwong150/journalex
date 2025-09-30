@@ -20,6 +20,10 @@ defmodule JournalexWeb.StatementDumpLive do
       |> assign(:notion_missing_count, 0)
       |> assign(:notion_conn_status, :unknown)
       |> assign(:notion_conn_message, nil)
+      |> assign(:hide_exists?, false)
+
+    # Kick off an automatic Notion check after the socket connects
+    if connected?(socket), do: send(self(), :auto_check_notion)
 
     {:ok, socket}
   end
@@ -61,22 +65,44 @@ defmodule JournalexWeb.StatementDumpLive do
 
     selected_rows = Enum.filter(statements, fn s -> MapSet.member?(selected_ids, s.id) end)
 
-    # For now, use the statement's datetime as the matching timestamp
-    {row_statuses, exists_count, missing_count} =
-      Enum.reduce(selected_rows, {%{}, 0, 0}, fn row, {acc, ec, mc} ->
-        case Notion.exists_by_timestamp_and_ticker?(row.datetime, row.symbol) do
-          {:ok, true} -> {Map.put(acc, row.id, :exists), ec + 1, mc}
-          {:ok, false} -> {Map.put(acc, row.id, :missing), ec, mc + 1}
-          {:error, _} -> {Map.put(acc, row.id, :error), ec, mc}
-        end
-      end)
+    # New logic: bulk fetch all Notion records and compare via Trademark field
+    case Notion.list_all_trademarks() do
+      {:ok, trademark_set} ->
+        {row_statuses, exists_count, missing_count} =
+          Enum.reduce(selected_rows, {%{}, 0, 0}, fn row, {acc, ec, mc} ->
+            # Trademark format mirrors creation: "<Ticker>@<ISO8601(datetime)>"
+            title = row.symbol <> "@" <> DateTime.to_iso8601(row.datetime)
 
-    {:noreply,
-     assign(socket,
-       row_statuses: Map.merge(socket.assigns.row_statuses, row_statuses),
-       notion_exists_count: exists_count,
-       notion_missing_count: missing_count
-     )}
+            if MapSet.member?(trademark_set, title) do
+              {Map.put(acc, row.id, :exists), ec + 1, mc}
+            else
+              {Map.put(acc, row.id, :missing), ec, mc + 1}
+            end
+          end)
+
+        {:noreply,
+         assign(socket,
+           row_statuses: Map.merge(socket.assigns.row_statuses, row_statuses),
+           notion_exists_count: exists_count,
+           notion_missing_count: missing_count
+         )}
+
+      {:error, reason} ->
+        msg = inspect(reason)
+        {row_statuses, exists_count, missing_count} =
+          Enum.reduce(selected_rows, {%{}, 0, 0}, fn row, {acc, ec, mc} ->
+            {Map.put(acc, row.id, :error), ec, mc}
+          end)
+
+        {:noreply,
+         assign(socket,
+           row_statuses: Map.merge(socket.assigns.row_statuses, row_statuses),
+           notion_exists_count: exists_count,
+           notion_missing_count: missing_count,
+           notion_conn_status: :error,
+           notion_conn_message: "Failed to fetch Notion records: " <> msg
+         )}
+    end
   end
 
   def handle_event("insert_missing_notion", _params, socket) do
@@ -93,10 +119,10 @@ defmodule JournalexWeb.StatementDumpLive do
              {:ok, _page} <- Notion.create_from_statement(row) do
           {Map.put(acc, row.id, :exists), ec + 1, mc}
         else
-          {:ok, true} -> {Map.put(acc, row.id, :exists), ec + 1, mc}
-          {:error, _} -> {Map.put(acc, row.id, :error), ec, mc}
+          # exists? was true -> already exists
           true -> {Map.put(acc, row.id, :exists), ec + 1, mc}
-          false -> {Map.put(acc, row.id, :missing), ec, mc + 1}
+          # any API error (exists? check or create)
+          {:error, _} -> {Map.put(acc, row.id, :error), ec, mc}
         end
       end)
 
@@ -115,6 +141,10 @@ defmodule JournalexWeb.StatementDumpLive do
        notion_exists_count: 0,
        notion_missing_count: 0
      )}
+  end
+
+  def handle_event("toggle_hide_exists", _params, socket) do
+    {:noreply, assign(socket, hide_exists?: !socket.assigns.hide_exists?)}
   end
 
   def handle_event("check_notion_connection", _params, socket) do
@@ -141,94 +171,158 @@ defmodule JournalexWeb.StatementDumpLive do
     end
   end
 
+  # Auto-run Notion check for all statements on initial page load
+  @impl true
+  def handle_info(:auto_check_notion, socket) do
+    rows = socket.assigns.statements || []
+
+    case Notion.list_all_trademarks() do
+      {:ok, trademark_set} ->
+        {row_statuses, exists_count, missing_count} =
+          Enum.reduce(rows, {%{}, 0, 0}, fn row, {acc, ec, mc} ->
+            title = row.symbol <> "@" <> DateTime.to_iso8601(row.datetime)
+
+            if MapSet.member?(trademark_set, title) do
+              {Map.put(acc, row.id, :exists), ec + 1, mc}
+            else
+              {Map.put(acc, row.id, :missing), ec, mc + 1}
+            end
+          end)
+
+        {:noreply,
+         assign(socket,
+           row_statuses: Map.merge(socket.assigns.row_statuses, row_statuses),
+           notion_exists_count: exists_count,
+           notion_missing_count: missing_count,
+           notion_conn_status: :ok,
+           notion_conn_message: nil
+         )}
+
+      {:error, reason} ->
+        row_statuses =
+          rows
+          |> Enum.reduce(%{}, fn row, acc -> Map.put(acc, row.id, :error) end)
+
+        {:noreply,
+         assign(socket,
+           row_statuses: Map.merge(socket.assigns.row_statuses, row_statuses),
+           notion_conn_status: :error,
+           notion_conn_message: "Failed to fetch Notion records: " <> inspect(reason)
+         )}
+    end
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
     <div class="space-y-4">
-      <div class="flex items-center justify-between">
-        <h1 class="text-xl font-semibold">Statement Dump</h1>
+      <div class="space-y-2">
+        <!-- Row 1: Title and primary toggles -->
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <h1 class="text-xl font-semibold">Statement Dump</h1>
 
-        <div class="flex items-center gap-3">
-          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-            Selected: {MapSet.size(@selected_ids)}
-          </span>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button
+              phx-click="toggle_select_all"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
+            >
+              {if @all_selected?, do: "Clear All", else: "Select All"}
+            </button>
 
-          <span
-            :if={@notion_exists_count + @notion_missing_count > 0}
-            class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"
-          >
-            Exists: {@notion_exists_count}
-          </span>
+            <button
+              phx-click="toggle_hide_exists"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
+            >
+              {if @hide_exists?, do: "Show All", else: "Hide Existing"}
+            </button>
 
-          <span
-            :if={@notion_exists_count + @notion_missing_count > 0}
-            class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
-          >
-            Missing: {@notion_missing_count}
-          </span>
+            <button
+              phx-click="clear_row_statuses"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
+            >
+              Clear Highlights
+            </button>
+          </div>
+        </div>
 
-          <span
-            :if={@notion_conn_status == :ok}
-            class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
-          >
-            Notion: Connected
-          </span>
+        <!-- Row 2: Status badges on left, action buttons on right -->
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+              Selected: {MapSet.size(@selected_ids)}
+            </span>
 
-          <span
-            :if={@notion_conn_status == :error}
-            class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"
-            title={@notion_conn_message}
-          >
-            Notion: Failed
-          </span>
+            <span
+              :if={@notion_exists_count + @notion_missing_count > 0}
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"
+            >
+              Exists: {@notion_exists_count}
+            </span>
 
-          <button
-            phx-click="toggle_select_all"
-            class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
-          >
-            {if @all_selected?, do: "Clear All", else: "Select All"}
-          </button>
+            <span
+              :if={@notion_exists_count + @notion_missing_count > 0}
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
+            >
+              Missing: {@notion_missing_count}
+            </span>
 
-          <button
-            phx-click="check_notion_connection"
-            class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
-            phx-disable-with="Checking..."
-          >
-            Check Connection
-          </button>
+            <span
+              :if={@notion_conn_status == :ok}
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
+            >
+              Notion: Connected
+            </span>
 
-          <button
-            phx-click="check_notion"
-            class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50 disabled:opacity-50"
-            disabled={MapSet.size(@selected_ids) == 0}
-            phx-disable-with="Checking..."
-          >
-            Check Notion
-          </button>
+            <span
+              :if={@notion_conn_status == :error}
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"
+              title={@notion_conn_message}
+            >
+              Notion: Failed
+            </span>
+          </div>
 
-          <button
-            phx-click="insert_missing_notion"
-            class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50 disabled:opacity-50"
-            disabled={MapSet.size(@selected_ids) == 0}
-            phx-disable-with="Inserting..."
-          >
-            Insert Missing
-          </button>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button
+              phx-click="check_notion_connection"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
+              phx-disable-with="Checking..."
+            >
+              Check Connection
+            </button>
 
-              <button
-                phx-click="clear_row_statuses"
-                class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50"
-              >
-                Clear Highlights
-              </button>
+            <button
+              phx-click="check_notion"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50 disabled:opacity-50"
+              disabled={MapSet.size(@selected_ids) == 0}
+              phx-disable-with="Checking..."
+            >
+              Check Notion
+            </button>
+
+            <button
+              phx-click="insert_missing_notion"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white hover:bg-gray-50 disabled:opacity-50"
+              disabled={MapSet.size(@selected_ids) == 0}
+              phx-disable-with="Inserting..."
+            >
+              Insert Missing
+            </button>
+          </div>
         </div>
       </div>
+
+      <% filtered_rows = if @hide_exists? do
+        Enum.reject(@statements, fn s -> Map.get(@row_statuses, s.id) == :exists end)
+      else
+        @statements
+      end %>
 
       <ActivityStatementList.list
         id="statement-dump"
         title="All Statements"
-        count={length(@statements)}
-        rows={@statements}
+        count={length(filtered_rows)}
+        rows={filtered_rows}
         expanded={true}
         show_save_controls?={false}
         show_values?={true}
@@ -252,14 +346,12 @@ defmodule JournalexWeb.StatementDumpLive do
       case user_res do
         {:ok, _} -> nil
         {:error, reason} -> "user: #{inspect(reason)}"
-        other -> "user: #{inspect(other)}"
       end
 
     dr =
       case db_res do
         {:ok, _} -> nil
         {:error, reason} -> "db: #{inspect(reason)}"
-        other -> "db: #{inspect(other)}"
       end
 
     [ur, dr]
