@@ -11,30 +11,38 @@ defmodule JournalexWeb.ActivityStatementLive do
     # annotate each row with existence flag
     exists_flags = Activity.rows_exist_flags(trades)
 
-    trades =
+    annotated_trades =
       trades
       |> Enum.with_index()
       |> Enum.map(fn {row, idx} -> Map.put(row, :exists, Enum.at(exists_flags, idx)) end)
 
-  {summary_by_symbol, summary_total} = summarize_realized_pl(trades)
-  period = compute_period_from_trades(trades)
+    # Build day list and selection map (default ON)
+    days = unique_trade_dates(annotated_trades)
+    day_selection = days |> Map.new(fn d -> {d, true} end)
 
-    # Compute selected business days (Mon-Fri) present in trades
-    selected_days =
-      trades
-      |> Enum.map(&date_only(Map.get(&1, :datetime)))
-      |> Enum.reject(&is_nil/1)
-      |> Enum.uniq()
-      |> Enum.map(&parse_date!/1)
-      |> Enum.filter(fn %Date{} = d -> Date.day_of_week(d) in 1..5 end)
+    # Filtered trades based on selection
+    filtered_trades = filter_trades_by_days(annotated_trades, day_selection)
+
+    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    period = compute_period_from_trades(annotated_trades)
+  unsaved_count = count_unsaved(filtered_trades)
+
+    # Selected business days (Mon-Fri) count from selected toggles
+    selected_days_count =
+      day_selection
+      |> Enum.filter(fn {d, on?} -> on? and weekday?(parse_date!(d)) end)
       |> length()
 
     {:ok,
      socket
-     |> assign(:activity_data, trades)
+     |> assign(:all_trades, annotated_trades)
+     |> assign(:activity_data, filtered_trades)
+  |> assign(:unsaved_count, unsaved_count)
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
-     |> assign(:selected_days, selected_days)
+     |> assign(:days, days)
+     |> assign(:day_selection, day_selection)
+     |> assign(:selected_days, selected_days_count)
      |> assign(:statement_period, period)
      |> assign(:summary_expanded, false)
      |> assign(:activity_expanded, true)}
@@ -57,6 +65,34 @@ defmodule JournalexWeb.ActivityStatementLive do
       </div>
 
       <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg">
+        <!-- Day toggles -->
+        <div class="px-6 pt-4 pb-2 border-b border-gray-200">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-sm text-gray-600 mr-2">Filter days:</span>
+              <%= for day <- @days do %>
+                <% on? = Map.get(@day_selection, day, true) %>
+                <button
+                  type="button"
+                  phx-click="toggle_day"
+                  phx-value-day={day}
+                  class={[
+                    "inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded-md border",
+                    if(on?, do: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100", else: "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100")
+                  ]}
+                  aria-pressed={on?}
+                >
+                  <%= friendly_day_label(day) %>
+                </button>
+              <% end %>
+            </div>
+            <div class="flex items-center gap-2">
+              <button phx-click="select_all_days" class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">All</button>
+              <button phx-click="deselect_all_days" class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">None</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Summary: Realized P/L by Symbol -->
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
@@ -97,6 +133,22 @@ defmodule JournalexWeb.ActivityStatementLive do
           selected_days={@selected_days}
           id="summary-table"
         />
+
+        <!-- Unsaved records indicator -->
+        <div class="px-6 py-3 border-b border-gray-200 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-sm text-gray-600">Unsaved records:</span>
+            <span class={[
+              "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
+              if(@unsaved_count > 0, do: "bg-yellow-100 text-yellow-800", else: "bg-green-100 text-green-800")
+            ]}>
+              {@unsaved_count}
+            </span>
+          </div>
+          <%= if @unsaved_count > 0 do %>
+            <span class="text-xs text-gray-500">Click "Save all" or save individual rows.</span>
+          <% end %>
+        </div>
 
         <ActivityStatementList.list
           id="activity-table"
@@ -168,6 +220,15 @@ defmodule JournalexWeb.ActivityStatementLive do
     end)
   end
 
+  # Get unique trade dates as ISO date strings, sorted ascending
+  defp unique_trade_dates(trades) do
+    trades
+    |> Enum.map(&date_only(Map.get(&1, :datetime)))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
   # Build a human-friendly period string from the min/max trade dates present
   defp compute_period_from_trades(trades) do
     dates =
@@ -223,6 +284,16 @@ defmodule JournalexWeb.ActivityStatementLive do
     {rows, total}
   end
 
+  # Filter helpers
+  defp filter_trades_by_days(trades, day_selection) when is_map(day_selection) do
+    Enum.filter(trades, fn row ->
+      case date_only(Map.get(row, :datetime)) do
+        nil -> false
+        d -> Map.get(day_selection, d, true)
+      end
+    end)
+  end
+
   defp date_only(nil), do: nil
   defp date_only(%DateTime{} = dt), do: Date.to_iso8601(DateTime.to_date(dt))
   defp date_only(%NaiveDateTime{} = ndt), do: Date.to_iso8601(NaiveDateTime.to_date(ndt))
@@ -243,6 +314,8 @@ defmodule JournalexWeb.ActivityStatementLive do
     {:ok, dt} = Date.from_iso8601(y <> "-" <> m <> "-" <> d)
     dt
   end
+
+  defp weekday?(%Date{} = d), do: Date.day_of_week(d) in 1..5
 
   defp to_number(nil), do: 0.0
   defp to_number(""), do: 0.0
@@ -305,6 +378,7 @@ defmodule JournalexWeb.ActivityStatementLive do
       {:noreply,
        socket
        |> assign(:activity_data, updated)
+       |> assign(:unsaved_count, count_unsaved(updated))
        |> put_flash(:info, "Saved #{inserted} new rows to DB")}
     rescue
       e ->
@@ -336,6 +410,7 @@ defmodule JournalexWeb.ActivityStatementLive do
           {:noreply,
            socket
            |> assign(:activity_data, updated)
+           |> assign(:unsaved_count, count_unsaved(updated))
            |> put_flash(:info, "Row saved")}
 
         {:error, reason} ->
@@ -344,5 +419,85 @@ defmodule JournalexWeb.ActivityStatementLive do
     else
       _ -> {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_event("toggle_day", %{"day" => day}, socket) do
+    day_selection = Map.update(socket.assigns.day_selection, day, true, &(!&1))
+
+    filtered_trades = filter_trades_by_days(socket.assigns.all_trades, day_selection)
+    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    unsaved_count = count_unsaved(filtered_trades)
+
+    selected_days_count =
+      day_selection
+      |> Enum.filter(fn {d, on?} -> on? and weekday?(parse_date!(d)) end)
+      |> length()
+
+    {:noreply,
+     socket
+     |> assign(:day_selection, day_selection)
+     |> assign(:activity_data, filtered_trades)
+     |> assign(:unsaved_count, unsaved_count)
+     |> assign(:summary_by_symbol, summary_by_symbol)
+     |> assign(:summary_total, summary_total)
+     |> assign(:selected_days, selected_days_count)}
+  end
+
+  @impl true
+  def handle_event("select_all_days", _params, socket) do
+    day_selection = socket.assigns.days |> Map.new(fn d -> {d, true} end)
+
+    filtered_trades = filter_trades_by_days(socket.assigns.all_trades, day_selection)
+    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    unsaved_count = count_unsaved(filtered_trades)
+
+    selected_days_count =
+      day_selection
+      |> Enum.filter(fn {d, on?} -> on? and weekday?(parse_date!(d)) end)
+      |> length()
+
+    {:noreply,
+     socket
+     |> assign(:day_selection, day_selection)
+     |> assign(:activity_data, filtered_trades)
+     |> assign(:unsaved_count, unsaved_count)
+     |> assign(:summary_by_symbol, summary_by_symbol)
+     |> assign(:summary_total, summary_total)
+     |> assign(:selected_days, selected_days_count)}
+  end
+
+  @impl true
+  def handle_event("deselect_all_days", _params, socket) do
+    day_selection = socket.assigns.days |> Map.new(fn d -> {d, false} end)
+
+    filtered_trades = filter_trades_by_days(socket.assigns.all_trades, day_selection)
+    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    unsaved_count = count_unsaved(filtered_trades)
+
+    selected_days_count =
+      day_selection
+      |> Enum.filter(fn {d, on?} -> on? and weekday?(parse_date!(d)) end)
+      |> length()
+
+    {:noreply,
+     socket
+     |> assign(:day_selection, day_selection)
+     |> assign(:activity_data, filtered_trades)
+     |> assign(:unsaved_count, unsaved_count)
+     |> assign(:summary_by_symbol, summary_by_symbol)
+     |> assign(:summary_total, summary_total)
+     |> assign(:selected_days, selected_days_count)}
+  end
+
+  # Friendly label like "Mon, Sep 30" for a YYYY-MM-DD string
+  defp friendly_day_label(<<_::binary>> = iso_date) do
+    d = parse_date!(iso_date)
+    Calendar.strftime(d, "%a, %b %-d")
+  end
+
+  # Count trades that are not yet saved (exists is not true)
+  defp count_unsaved(trades) when is_list(trades) do
+    Enum.count(trades, fn row -> Map.get(row, :exists, false) != true end)
   end
 end
