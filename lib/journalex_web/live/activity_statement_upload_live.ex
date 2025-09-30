@@ -28,7 +28,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
      |> assign(:date_grid, date_grid)
      |> allow_upload(:csv_file,
        accept: ~w(.csv),
-       max_entries: 1,
+       max_entries: 10,
        auto_upload: true,
        max_file_size: 10_000_000
      )}
@@ -47,9 +47,9 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
   @impl true
   def handle_event("save", _params, socket) do
     uploaded_files =
-      consume_uploaded_entries(socket, :csv_file, fn %{path: path}, _entry ->
-        # Persist the uploaded file to priv/uploads and parse it
-        case save_and_process_csv(path) do
+      consume_uploaded_entries(socket, :csv_file, fn %{path: path}, entry ->
+        # Persist the uploaded file(s) to priv/uploads and parse each one
+        case save_and_process_csv(path, entry) do
           {:ok, info} -> {:ok, info}
           {:error, reason} -> {:postpone, reason}
         end
@@ -61,19 +61,43 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
         Process.send_after(self(), :redirect_to_activity, 3_000)
         Process.send_after(self(), :countdown_tick, 1_000)
 
-        {:noreply,
-         socket
-         |> assign(:uploaded_files, uploaded_files)
-         |> assign(:upload_status, :success)
-         |> assign(:redirect_countdown, 3)
-         |> put_flash(:info, "CSV file uploaded and processed successfully! Redirecting in 3s…")}
+  {:noreply,
+   socket
+   |> assign(:uploaded_files, uploaded_files)
+   |> assign(:upload_status, :success)
+   |> assign(:redirect_countdown, 3)
+   |> put_flash(:info, "CSV file(s) uploaded and processed successfully! Redirecting in 3s…")}
 
       [] ->
-        {:noreply,
-         socket
-         |> assign(:upload_status, :error)
-         |> put_flash(:error, "Failed to process the uploaded file.")}
+  {:noreply,
+   socket
+   |> assign(:upload_status, :error)
+   |> put_flash(:error, "Failed to process the uploaded file(s).")}
     end
+  end
+
+  # Month navigation from the calendar component (grouped with other handle_event clauses)
+  @impl true
+  def handle_event("prev_month", _params, socket) do
+    case socket.assigns[:calendar_month] do
+      %Date{} = cm -> refresh_calendar_month(socket, shift_month(cm, -1))
+      _ -> {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("next_month", _params, socket) do
+    case socket.assigns[:calendar_month] do
+      %Date{} = cm -> refresh_calendar_month(socket, shift_month(cm, 1))
+      _ -> {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("current_month", _params, socket) do
+    today = Date.utc_today()
+    first = %Date{year: today.year, month: today.month, day: 1}
+    refresh_calendar_month(socket, first)
   end
 
   @impl true
@@ -93,7 +117,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
          |> assign(:redirect_countdown, n1)
          |> put_flash(
            :info,
-           "CSV file uploaded and processed successfully! Redirecting in #{n1}s…"
+           "CSV file(s) uploaded and processed successfully! Redirecting in #{n1}s…"
          )}
 
       _ ->
@@ -101,11 +125,23 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
     end
   end
 
-  defp save_and_process_csv(temp_path) do
+  defp save_and_process_csv(temp_path, entry) do
     try do
       uploads_dir = Path.join([:code.priv_dir(:journalex), "uploads"]) |> to_string()
       File.mkdir_p!(uploads_dir)
-      dest_path = Path.join(uploads_dir, "latest_activity_statement.csv")
+      # Build a unique, filesystem-safe destination filename per entry
+      timestamp =
+        DateTime.utc_now()
+        |> Calendar.strftime("%Y%m%dT%H%M%S")
+
+      base_name =
+        entry.client_name
+        |> to_string()
+        |> String.replace(~r/[^A-Za-z0-9._-]/, "_")
+
+      unique_suffix = Integer.to_string(System.unique_integer([:positive]))
+      dest_filename = "#{timestamp}-#{unique_suffix}-#{base_name}"
+      dest_path = Path.join(uploads_dir, dest_filename)
 
       File.cp!(temp_path, dest_path)
 
@@ -116,6 +152,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
       {:ok,
        %{
          path: dest_path,
+         name: base_name,
          data: %{total_lines: line_count, file_size: file_size},
          processed_at: DateTime.utc_now()
        }}
@@ -148,7 +185,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
 
         <h1 class="text-3xl font-bold text-gray-900">Upload Activity Statement</h1>
 
-        <p class="mt-2 text-gray-600">Upload a CSV file containing your activity statement data</p>
+    <p class="mt-2 text-gray-600">Upload one or more CSV files containing your activity statement data</p>
 
         <%= if assigns[:date_grid] && not Enum.empty?(@date_grid) do %>
           <div class="mt-6">
@@ -170,7 +207,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
               <!-- File Upload Area -->
               <div class="space-y-4">
                 <label class="block text-sm font-medium text-gray-700">
-                  CSV File
+                  CSV Files
                 </label>
 
                 <div
@@ -197,16 +234,16 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         for={@uploads.csv_file.ref}
                         class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
                       >
-                        <span>Upload a file</span>
+                        <span>Upload files</span>
                         <.live_file_input upload={@uploads.csv_file} class="sr-only" />
                       </label>
                       <span class="pl-1">or drag and drop</span>
                     </div>
 
-                    <p class="text-xs text-gray-500">CSV files up to 10MB</p>
+                    <p class="text-xs text-gray-500">CSV files up to 10MB each (max 10 files)</p>
                   </div>
                 </div>
-                
+
     <!-- Upload Progress -->
                 <%= for entry <- @uploads.csv_file.entries do %>
                   <div class="bg-gray-50 rounded-lg p-4">
@@ -244,7 +281,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         </svg>
                       </button>
                     </div>
-                    
+
     <!-- Progress Bar -->
                     <div class="w-full bg-gray-200 rounded-full h-2">
                       <div
@@ -260,7 +297,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         {Float.round(entry.client_size / 1024, 1)}KB
                       </span>
                     </div>
-                    
+
     <!-- Upload Errors -->
                     <%= for err <- upload_errors(@uploads.csv_file, entry) do %>
                       <div class="mt-2 text-sm text-red-600">
@@ -269,7 +306,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                     <% end %>
                   </div>
                 <% end %>
-                
+
     <!-- General Upload Errors -->
                 <%= for err <- upload_errors(@uploads.csv_file) do %>
                   <div class="text-sm text-red-600">
@@ -277,7 +314,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                   </div>
                 <% end %>
               </div>
-              
+
     <!-- File Requirements -->
               <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div class="flex">
@@ -304,7 +341,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                       <ul class="list-disc pl-5 space-y-1">
                         <li>File must be in CSV format</li>
 
-                        <li>Maximum file size: 10MB</li>
+                        <li>Maximum file size: 10MB per file</li>
 
                         <li>Expected columns: Date, Description, Amount, Type</li>
 
@@ -314,7 +351,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                   </div>
                 </div>
               </div>
-              
+
     <!-- Submit Button -->
               <div class="flex justify-end">
                 <button
@@ -332,12 +369,12 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                       d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
                     />
                   </svg>
-                  Process File
+                  Process Files
                 </button>
               </div>
             </div>
           </form>
-          
+
     <!-- Upload Results -->
           <%= if @upload_status == :success and not Enum.empty?(@uploaded_files) do %>
             <div class="mt-8 bg-green-50 border border-green-200 rounded-lg p-4">
@@ -359,10 +396,11 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                 </div>
 
                 <div class="ml-3">
-                  <h3 class="text-sm font-medium text-green-800">File Processed Successfully</h3>
+                  <h3 class="text-sm font-medium text-green-800">File(s) Processed Successfully</h3>
 
                   <%= for file <- @uploaded_files do %>
                     <div class="mt-2 text-sm text-green-700">
+                      <p><strong>File name:</strong> {file.name}</p>
                       <p><strong>Total lines:</strong> {file.data.total_lines}</p>
 
                       <p>
@@ -401,7 +439,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
   end
 
   defp error_to_string(:too_large), do: "File is too large (max 10MB)"
-  defp error_to_string(:too_many_files), do: "Only one file allowed"
+  defp error_to_string(:too_many_files), do: "Too many files selected (max 10)"
   defp error_to_string(:not_accepted), do: "File type not accepted (CSV only)"
   defp error_to_string(err), do: "Upload error: #{inspect(err)}"
 
@@ -454,29 +492,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
     "#{name} #{y}"
   end
 
-  # Month navigation from the calendar component
-  @impl true
-  def handle_event("prev_month", _params, socket) do
-    case socket.assigns[:calendar_month] do
-      %Date{} = cm -> refresh_calendar_month(socket, shift_month(cm, -1))
-      _ -> {:noreply, socket}
-    end
-  end
-
-  @impl true
-  def handle_event("next_month", _params, socket) do
-    case socket.assigns[:calendar_month] do
-      %Date{} = cm -> refresh_calendar_month(socket, shift_month(cm, 1))
-      _ -> {:noreply, socket}
-    end
-  end
-
-  @impl true
-  def handle_event("current_month", _params, socket) do
-    today = Date.utc_today()
-    first = %Date{year: today.year, month: today.month, day: 1}
-    refresh_calendar_month(socket, first)
-  end
+  # Month navigation handlers moved above alongside other handle_event clauses
 
   defp refresh_calendar_month(socket, %Date{} = first) do
     last = end_of_month(first)

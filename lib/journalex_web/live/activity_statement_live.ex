@@ -7,7 +7,7 @@ defmodule JournalexWeb.ActivityStatementLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    trades = load_latest_trades()
+    trades = load_all_trades()
     # annotate each row with existence flag
     exists_flags = Activity.rows_exist_flags(trades)
 
@@ -16,8 +16,8 @@ defmodule JournalexWeb.ActivityStatementLive do
       |> Enum.with_index()
       |> Enum.map(fn {row, idx} -> Map.put(row, :exists, Enum.at(exists_flags, idx)) end)
 
-    {summary_by_symbol, summary_total} = summarize_realized_pl(trades)
-    period = load_latest_period()
+  {summary_by_symbol, summary_total} = summarize_realized_pl(trades)
+  period = compute_period_from_trades(trades)
 
     # Compute selected business days (Mon-Fri) present in trades
     selected_days =
@@ -128,7 +128,7 @@ defmodule JournalexWeb.ActivityStatementLive do
             <h3 class="text-sm font-medium text-gray-900 mb-2">No activity data available</h3>
 
             <p class="text-sm text-gray-500 mb-4">
-              Upload a CSV file to view your activity statement
+              Upload CSV file(s) to view your activity statement
             </p>
 
             <.link
@@ -144,33 +144,48 @@ defmodule JournalexWeb.ActivityStatementLive do
     """
   end
 
-  defp load_latest_trades do
+  # Load and combine trades from all CSV files saved in priv/uploads
+  defp load_all_trades do
     uploads_dir = Path.join([:code.priv_dir(:journalex), "uploads"]) |> to_string()
-    file_path = Path.join(uploads_dir, "latest_activity_statement.csv")
 
-    if File.exists?(file_path) do
+    csv_files =
+      case File.ls(uploads_dir) do
+        {:ok, files} ->
+          files
+          |> Enum.filter(&String.ends_with?(&1, ".csv"))
+          |> Enum.map(&Path.join(uploads_dir, &1))
+        _ ->
+          []
+      end
+
+    csv_files
+    |> Enum.flat_map(fn path ->
       try do
-        ActivityStatementParser.parse_trades_file(file_path)
+        ActivityStatementParser.parse_trades_file(path)
       rescue
         _ -> []
       end
-    else
-      []
-    end
+    end)
   end
 
-  defp load_latest_period do
-    uploads_dir = Path.join([:code.priv_dir(:journalex), "uploads"]) |> to_string()
-    file_path = Path.join(uploads_dir, "latest_activity_statement.csv")
+  # Build a human-friendly period string from the min/max trade dates present
+  defp compute_period_from_trades(trades) do
+    dates =
+      trades
+      |> Enum.map(&date_only(Map.get(&1, :datetime)))
+      |> Enum.reject(&is_nil/1)
+      |> Enum.map(&parse_date!/1)
 
-    if File.exists?(file_path) do
-      try do
-        ActivityStatementParser.parse_period_file(file_path)
-      rescue
-        _ -> nil
-      end
-    else
-      nil
+    case dates do
+      [] -> nil
+      list ->
+        min_d = Enum.min(list, Date)
+        max_d = Enum.max(list, Date)
+
+        cond do
+          Date.compare(min_d, max_d) == :eq -> Calendar.strftime(min_d, "%B %-d, %Y")
+          true -> Calendar.strftime(min_d, "%B %-d, %Y") <> " – " <> Calendar.strftime(max_d, "%B %-d, %Y")
+        end
     end
   end
 
