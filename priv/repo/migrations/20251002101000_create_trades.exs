@@ -20,6 +20,9 @@ defmodule Journalex.Repo.Migrations.CreateTrades do
 
     # Basic data validation at DB level
     create constraint(:trades, :result_valid, check: "result in ('WIN','LOSE')")
-    create constraint(:trades, :aggregated_side_valid, check: "aggregated_side in ('LONG','SHORT','-')")
+
+    create constraint(:trades, :aggregated_side_valid,
+             check: "aggregated_side in ('LONG','SHORT','-')"
+           )
   end
 end

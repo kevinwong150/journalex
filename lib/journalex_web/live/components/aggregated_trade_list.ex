@@ -37,11 +37,38 @@ defmodule JournalexWeb.AggregatedTradeList do
   attr :default_sort_dir, :atom, default: :desc, doc: "Default sort direction: :asc | :desc"
 
   # Optional: show Save/Status columns like ActivityStatementList and handle per-row save
-  attr :show_save_controls?, :boolean, default: false,
+  attr :show_save_controls?, :boolean,
+    default: false,
     doc: "Show Save and Status columns with row-level save button"
 
-  attr :on_save_row_event, :string, default: nil,
+  attr :on_save_row_event, :string,
+    default: nil,
     doc: "Event name to emit on row Save click (receives phx-value-index)"
+
+  # Optional row selection and statuses (to mirror statement list UX)
+  attr :selectable?, :boolean,
+    default: false,
+    doc: "Show a selection checkbox column and emit toggle events"
+
+  attr :selected_idx, :any,
+    default: MapSet.new(),
+    doc: "Set of selected row indexes (MapSet of integers)"
+
+  attr :all_selected?, :boolean,
+    default: false,
+    doc: "Whether the Select All checkbox is checked"
+
+  attr :on_toggle_row_event, :string,
+    default: nil,
+    doc: "Event name to emit when a row checkbox is toggled (phx-value-index)"
+
+  attr :on_toggle_all_event, :string,
+    default: nil,
+    doc: "Event name to emit when the header Select All checkbox is clicked"
+
+  attr :row_statuses, :map,
+    default: %{},
+    doc: "Map index => :exists | :missing | :error for row highlight"
 
   def aggregated_trade_list(assigns) do
     ~H"""
@@ -57,10 +84,19 @@ defmodule JournalexWeb.AggregatedTradeList do
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-100">
             <tr>
-              <th :if={@show_save_controls?} class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th :if={@selectable?} class="px-3 py-2">
+                <input type="checkbox" phx-click={@on_toggle_all_event} checked={@all_selected?} />
+              </th>
+              <th
+                :if={@show_save_controls?}
+                class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+              >
                 Save
               </th>
-              <th :if={@show_save_controls?} class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th
+                :if={@show_save_controls?}
+                class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+              >
                 Status
               </th>
               <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider select-none">
@@ -186,7 +222,10 @@ defmodule JournalexWeb.AggregatedTradeList do
             <%= for {item, idx} <- Enum.with_index(sorted_items) do %>
               <% res = result_label(Map.get(item, :realized_pl)) %>
               <tr
-                class="hover:bg-blue-50 transition-colors"
+                class={[
+                  "hover:bg-blue-50 transition-colors",
+                  status_class(@row_statuses, idx)
+                ]}
                 data-date={Integer.to_string(item_sort_date(item))}
                 data-ticker={String.upcase(item_ticker(item) || "-")}
                 data-side={
@@ -202,6 +241,14 @@ defmodule JournalexWeb.AggregatedTradeList do
                   ])
                 }
               >
+                <td :if={@selectable?} class="px-3 py-2 whitespace-nowrap text-sm">
+                  <input
+                    type="checkbox"
+                    phx-click={@on_toggle_row_event}
+                    phx-value-index={idx}
+                    checked={MapSet.member?(@selected_idx || MapSet.new(), idx)}
+                  />
+                </td>
                 <td :if={@show_save_controls?} class="px-3 py-2 whitespace-nowrap text-sm">
                   <button
                     :if={not is_nil(@on_save_row_event)}
@@ -209,8 +256,15 @@ defmodule JournalexWeb.AggregatedTradeList do
                     phx-value-index={idx}
                     phx-value-datetime={item_datetime_value(item)}
                     phx-value-ticker={item_ticker(item)}
-                    phx-value-side={Map.get(item, :aggregated_side) || Map.get(item, "aggregated_side") || "-"}
-                    phx-value-pl={:erlang.float_to_binary(to_float(Map.get(item, :realized_pl)), [:compact, {:decimals, 8}])}
+                    phx-value-side={
+                      Map.get(item, :aggregated_side) || Map.get(item, "aggregated_side") || "-"
+                    }
+                    phx-value-pl={
+                      :erlang.float_to_binary(to_float(Map.get(item, :realized_pl)), [
+                        :compact,
+                        {:decimals, 8}
+                      ])
+                    }
                     class="inline-flex items-center px-2 py-1 bg-emerald-600 text-white text-xs font-medium rounded hover:bg-emerald-700 disabled:opacity-50"
                     disabled={Map.get(item, :exists) == true}
                   >
@@ -222,13 +276,23 @@ defmodule JournalexWeb.AggregatedTradeList do
                   <%= if Map.get(item, :exists) == true do %>
                     <span class="inline-flex items-center text-green-600" title="Already saved">
                       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M5 13l4 4L19 7"
+                        />
                       </svg>
                     </span>
                   <% else %>
                     <span class="inline-flex items-center text-red-500" title="Not saved">
                       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M6 18L18 6M6 6l12 12"
+                        />
                       </svg>
                     </span>
                   <% end %>
@@ -318,6 +382,15 @@ defmodule JournalexWeb.AggregatedTradeList do
   end
 
   # Local helpers (duplicated for component independence). These mirror the
+  defp status_class(statuses, idx) do
+    case Map.get(statuses || %{}, idx) do
+      :exists -> "bg-red-50"
+      :missing -> "bg-green-50"
+      :error -> "bg-yellow-50"
+      _ -> ""
+    end
+  end
+
   # helpers used in ActivityStatementSummary for consistent formatting.
   defp pl_class_amount(n) when is_number(n) do
     cond do
@@ -469,9 +542,15 @@ defmodule JournalexWeb.AggregatedTradeList do
   # Prefer full datetime string if present; else fall back to date only
   defp item_datetime_value(item) when is_map(item) do
     case Map.get(item, :datetime) || Map.get(item, "datetime") do
-      %DateTime{} = dt -> DateTime.to_iso8601(dt)
-      %NaiveDateTime{} = ndt -> NaiveDateTime.to_iso8601(ndt)
-      s when is_binary(s) -> String.trim(s)
+      %DateTime{} = dt ->
+        DateTime.to_iso8601(dt)
+
+      %NaiveDateTime{} = ndt ->
+        NaiveDateTime.to_iso8601(ndt)
+
+      s when is_binary(s) ->
+        String.trim(s)
+
       _ ->
         case Map.get(item, :date) || Map.get(item, "date") do
           %Date{} = d -> Date.to_iso8601(d)

@@ -9,14 +9,15 @@ defmodule Journalex.Notion do
   Checks whether a page exists in the data source matching the given timestamp.
 
   Uses configuration from `:journalex, Journalex.Notion` for defaults:
-  * :data_source_id
+  * :activity_statements_data_source_id
   * :datetime_property (default "Datetime")
 
   Returns `{:ok, true | false}` or `{:error, reason}`.
   """
   def exists_by_timestamp?(%DateTime{} = dt, opts \\ []) do
     conf = Application.get_env(:journalex, __MODULE__, [])
-    data_source_id = Keyword.get(opts, :data_source_id, conf[:data_source_id])
+    # Allow choosing which Notion database to use; default to activity statements
+    data_source_id = resolve_data_source_id(opts, conf, :activity)
     property = Keyword.get(opts, :datetime_property, conf[:datetime_property] || "Datetime")
 
     if is_nil(data_source_id) do
@@ -51,7 +52,8 @@ defmodule Journalex.Notion do
   def exists_by_timestamp_and_ticker?(%DateTime{} = dt, ticker, opts \\ [])
       when is_binary(ticker) do
     conf = Application.get_env(:journalex, __MODULE__, [])
-    data_source_id = Keyword.get(opts, :data_source_id, conf[:data_source_id])
+    # Allow choosing which Notion database to use; default to activity statements
+    data_source_id = resolve_data_source_id(opts, conf, :activity)
     ts_prop = Keyword.get(opts, :datetime_property, conf[:datetime_property] || "Datetime")
     tk_prop = Keyword.get(opts, :ticker_property, conf[:ticker_property] || "Ticker")
     title_prop = Keyword.get(opts, :title_property, conf[:title_property] || "Trademark")
@@ -85,7 +87,7 @@ defmodule Journalex.Notion do
   Creates a Notion page for a given statement row.
 
   Required configured keys in `:journalex, Journalex.Notion`:
-    * :data_source_id - the Notion data source id (new API)
+    * :activity_statements_data_source_id - the Notion data source id for activity statements
     * :datetime_property (default "Datetime")
     * :ticker_property (default "Ticker")
     * :title_property (default "Trademark")
@@ -94,7 +96,8 @@ defmodule Journalex.Notion do
   """
   def create_from_statement(row, opts \\ []) when is_map(row) do
     conf = Application.get_env(:journalex, __MODULE__, [])
-    data_source_id = Keyword.get(opts, :data_source_id, conf[:data_source_id])
+    # Force using the activity statements database unless explicitly overridden
+    data_source_id = resolve_data_source_id(opts, conf, :activity)
     ts_prop = Keyword.get(opts, :datetime_property, conf[:datetime_property] || "Datetime")
     tk_prop = Keyword.get(opts, :ticker_property, conf[:ticker_property] || "Ticker")
     title_prop = Keyword.get(opts, :title_property, conf[:title_property] || "Trademark")
@@ -148,7 +151,78 @@ defmodule Journalex.Notion do
         case Client.create_page(payload) do
           {:ok, map} -> {:ok, map}
           {:error, reason} -> {:error, reason}
-          other -> other
+        end
+    end
+  end
+
+  @doc """
+  Creates a Notion page for a given aggregated trade row.
+
+  Required configured keys in `:journalex, Journalex.Notion`:
+    * :trades_data_source_id - the Notion data source id for trades (preferred)
+      Falls back to :activity_statements_data_source_id if not set.
+    * :datetime_property (default "Datetime")
+    * :ticker_property (default "Ticker")
+    * :title_property (default "Trademark")
+
+  Expects a map with keys:
+    - :datetime (DateTime)
+    - :ticker (string) or :symbol
+    - optional: :aggregated_side ("LONG"|"SHORT"|"-")
+    - optional: :result ("WIN"|"LOSE")
+    - optional: :realized_pl (number|Decimal|string)
+  """
+  def create_from_trade(row, opts \\ []) when is_map(row) do
+    conf = Application.get_env(:journalex, __MODULE__, [])
+    # Prefer the trades database for trades, with sensible fallbacks
+    data_source_id = resolve_data_source_id(opts, conf, :trades)
+
+    ts_prop = Keyword.get(opts, :datetime_property, conf[:datetime_property] || "Datetime")
+    tk_prop = Keyword.get(opts, :ticker_property, conf[:ticker_property] || "Ticker")
+    title_prop = Keyword.get(opts, :title_property, conf[:title_property] || "Trademark")
+
+    dt = Map.get(row, :datetime) || Map.get(row, "datetime")
+
+    ticker =
+      Map.get(row, :ticker) || Map.get(row, :symbol) || Map.get(row, "ticker") ||
+        Map.get(row, "symbol")
+
+    cond do
+      is_nil(data_source_id) ->
+        {:error, :missing_data_source_id}
+
+      is_nil(dt) or is_nil(ticker) ->
+        {:error, :missing_required_fields}
+
+      true ->
+        iso = DateTime.to_iso8601(dt)
+        title = ticker <> "@" <> iso
+
+        agg_side = Map.get(row, :aggregated_side) || Map.get(row, "aggregated_side")
+        result = Map.get(row, :result) || Map.get(row, "result")
+        realized = to_number(Map.get(row, :realized_pl) || Map.get(row, "realized_pl"))
+
+        base_props = %{
+          title_prop => %{title: [%{text: %{content: title}}]},
+          ts_prop => %{date: %{start: iso}},
+          tk_prop => %{rich_text: [%{text: %{content: to_string(ticker)}}]}
+        }
+
+        extra_props =
+          %{}
+          |> maybe_put_select("Side", agg_side)
+          |> maybe_put_select("Result", result)
+          |> maybe_put_number("Realized P/L", realized)
+
+        payload = %{
+          "parent" => %{"data_source_id" => data_source_id},
+          "properties" => Map.merge(base_props, extra_props)
+        }
+
+        case Client.create_page(payload |> IO.inspect(label: :payload))
+             |> IO.inspect(label: :create_page) do
+          {:ok, map} -> {:ok, map}
+          {:error, reason} -> {:error, reason}
         end
     end
   end
@@ -168,7 +242,7 @@ defmodule Journalex.Notion do
     Map.put(map, key, %{number: value})
   end
 
-  defp maybe_put_number(map, _key, _), do: map
+  # Catch-all removed as to_number returns nil | number
 
   defp to_number(nil), do: nil
   defp to_number(""), do: nil
@@ -218,7 +292,8 @@ defmodule Journalex.Notion do
   """
   def list_all_trademarks(opts \\ []) do
     conf = Application.get_env(:journalex, __MODULE__, [])
-    data_source_id = Keyword.get(opts, :data_source_id, conf[:data_source_id])
+    # Allow picking which database to list titles from; default to activity
+    data_source_id = resolve_data_source_id(opts, conf, Keyword.get(opts, :source, :activity))
     title_prop = Keyword.get(opts, :title_property, conf[:title_property] || "Trademark")
     page_size = Keyword.get(opts, :page_size, 10000)
 
@@ -329,4 +404,31 @@ defmodule Journalex.Notion do
     do: {:ok, results}
 
   defp extract_pages_from_db_response(_), do: {:error, :no_pages_in_response}
+
+  # --- Data source resolution ---
+  # Centralized resolver to pick the right Notion database ID depending on the context.
+  # Priority: explicit opts[:data_source_id] > context-specific configured ids > generic :data_source_id
+  defp resolve_data_source_id(opts, conf, kind) do
+    case Keyword.get(opts, :data_source_id) do
+      id when is_binary(id) and id != "" ->
+        id
+
+      _ ->
+        case kind do
+          :trades ->
+            conf[:trades_data_source_id] || conf[:activity_statements_data_source_id] ||
+              conf[:data_source_id]
+
+          :activity ->
+            conf[:activity_statements_data_source_id] || conf[:data_source_id]
+
+          other when other in ["trades", :trade] ->
+            conf[:trades_data_source_id] || conf[:activity_statements_data_source_id] ||
+              conf[:data_source_id]
+
+          _ ->
+            conf[:activity_statements_data_source_id] || conf[:data_source_id]
+        end
+    end
+  end
 end

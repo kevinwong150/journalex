@@ -138,14 +138,21 @@ defmodule Journalex.ActivityStatementParser do
   #   "2025-09-24T13:45:33Z"   -> unchanged
   # If only a date is present, return it unchanged (downstream will handle defaults).
   defp normalize_datetime(nil), do: nil
+
   defp normalize_datetime(bin) when is_binary(bin) do
     s = String.trim(bin)
 
     # Handle already ISO-ish values quickly
     cond do
-      String.contains?(s, "T") and String.contains?(s, ":") -> s
-      Regex.match?(~r/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/, s) -> s
-      Regex.match?(~r/^\d{4}-\d{2}-\d{2}$/ , s) -> s
+      String.contains?(s, "T") and String.contains?(s, ":") ->
+        s
+
+      Regex.match?(~r/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/, s) ->
+        s
+
+      Regex.match?(~r/^\d{4}-\d{2}-\d{2}$/, s) ->
+        s
+
       true ->
         # Common IB format: "YYYY-MM-DD, HH:MM:SS [Zone?]" or "YYYY-MM-DD,HH:MM:SS"
         # Extract only the first time token and drop any trailing timezone labels.

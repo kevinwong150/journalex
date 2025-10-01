@@ -22,11 +22,14 @@ defmodule JournalexWeb.Router do
     live "/activity_statement", ActivityStatementLive
     live "/activity_statement/dates", ActivityStatementDatesLive
     live "/activity_statement/upload", ActivityStatementUploadLive
-    # Aggregated trades page
-    live "/trade", TradesLive
 
     # Statement dump page
     live "/statement/dump", StatementDumpLive
+
+    # Aggregated trades page
+    live "/trade/all", TradesLive
+    # Trades dump page
+    live "/trade/dump", TradesDumpLive
 
     # Saved statements pages
     get "/activity_statement/all", ActivityStatementController, :index

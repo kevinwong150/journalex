@@ -24,9 +24,9 @@ defmodule JournalexWeb.ActivityStatementLive do
     # Filtered trades based on selection
     filtered_trades = filter_trades_by_days(annotated_trades, day_selection)
 
-  {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
-  # Mark aggregated items that already exist in DB so Save/Status reflect reality
-  summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
+    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    # Mark aggregated items that already exist in DB so Save/Status reflect reality
+    summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
     period = compute_period_from_trades(annotated_trades)
     unsaved_count = count_unsaved(filtered_trades)
 
@@ -108,7 +108,7 @@ defmodule JournalexWeb.ActivityStatementLive do
             </div>
           </div>
         </div>
-
+        
     <!-- Summary: Realized P/L by Symbol -->
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
@@ -151,7 +151,7 @@ defmodule JournalexWeb.ActivityStatementLive do
           on_save_all_aggregated?="save_all_aggregated"
           on_save_row_event="save_aggregated_row"
         />
-
+        
     <!-- Unsaved records indicator -->
         <div class="px-6 py-3 border-b border-gray-200 flex items-center justify-between">
           <div class="flex items-center gap-2">
@@ -366,12 +366,17 @@ defmodule JournalexWeb.ActivityStatementLive do
   end
 
   defp parse_param_datetime(nil), do: nil
+
   defp parse_param_datetime(s) when is_binary(s) do
     case DateTime.from_iso8601(s) do
-      {:ok, dt, _} -> DateTime.truncate(dt, :second)
+      {:ok, dt, _} ->
+        DateTime.truncate(dt, :second)
+
       _ ->
         case NaiveDateTime.from_iso8601(s) do
-          {:ok, ndt} -> NaiveDateTime.truncate(ndt, :second)
+          {:ok, ndt} ->
+            NaiveDateTime.truncate(ndt, :second)
+
           _ ->
             case date_only(s) do
               <<_::binary-size(10)>> = iso -> NaiveDateTime.new!(parse_date!(iso), ~T[00:00:00])
@@ -396,31 +401,43 @@ defmodule JournalexWeb.ActivityStatementLive do
       s when is_binary(s) ->
         case DateTime.from_iso8601(s) do
           {:ok, dt, _} ->
-            dt |> DateTime.shift_zone!("Etc/UTC") |> DateTime.truncate(:second) |> DateTime.to_naive()
+            dt
+            |> DateTime.shift_zone!("Etc/UTC")
+            |> DateTime.truncate(:second)
+            |> DateTime.to_naive()
 
           _ ->
             case NaiveDateTime.from_iso8601(s) do
-              {:ok, ndt} -> NaiveDateTime.truncate(ndt, :second)
+              {:ok, ndt} ->
+                NaiveDateTime.truncate(ndt, :second)
+
               _ ->
                 case date_only(s) do
                   <<_::binary-size(10)>> = iso ->
                     d = parse_date!(iso)
                     NaiveDateTime.new!(d, ~T[00:00:00])
-                  _ -> DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_naive()
+
+                  _ ->
+                    DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_naive()
                 end
             end
         end
 
       nil ->
         case Map.get(item, :date) || Map.get(item, "date") do
-          %Date{} = d -> NaiveDateTime.new!(d, ~T[00:00:00])
+          %Date{} = d ->
+            NaiveDateTime.new!(d, ~T[00:00:00])
+
           <<_::binary-size(10)>> = iso ->
             d = parse_date!(iso)
             NaiveDateTime.new!(d, ~T[00:00:00])
-          _ -> DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_naive()
+
+          _ ->
+            DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_naive()
         end
 
-      _ -> DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_naive()
+      _ ->
+        DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_naive()
     end
   end
 
@@ -515,7 +532,8 @@ defmodule JournalexWeb.ActivityStatementLive do
       |> Enum.map(fn item ->
         %{
           datetime: coerce_item_datetime(item),
-          ticker: Map.get(item, :symbol) || Map.get(item, :ticker) || Map.get(item, :underlying) || "-",
+          ticker:
+            Map.get(item, :symbol) || Map.get(item, :ticker) || Map.get(item, :underlying) || "-",
           aggregated_side: Map.get(item, :aggregated_side) || "-",
           result: if(to_number(Map.get(item, :realized_pl)) > 0.0, do: "WIN", else: "LOSE"),
           realized_pl: to_number(Map.get(item, :realized_pl)) |> Decimal.from_float(),
@@ -525,7 +543,13 @@ defmodule JournalexWeb.ActivityStatementLive do
       end)
 
     try do
-      {count, _} = Journalex.Repo.insert_all("trades", rows, on_conflict: :nothing)
+      {count, _} =
+        Journalex.Repo.insert_all(
+          "trades",
+          rows,
+          on_conflict: :nothing,
+          conflict_target: [:datetime, :ticker, :aggregated_side, :realized_pl]
+        )
 
       # Refresh the summary rows with existence markers so UI updates immediately
       updated_summary = annotate_summary_with_exists(socket.assigns.summary_by_symbol)
@@ -536,7 +560,8 @@ defmodule JournalexWeb.ActivityStatementLive do
        |> put_flash(:info, "Saved #{count} aggregated trade records")}
     rescue
       e ->
-        {:noreply, socket |> put_flash(:error, "Failed to save aggregated trades: #{Exception.message(e)}")}
+        {:noreply,
+         socket |> put_flash(:error, "Failed to save aggregated trades: #{Exception.message(e)}")}
     end
   end
 
@@ -546,6 +571,7 @@ defmodule JournalexWeb.ActivityStatementLive do
     ticker = Map.get(params, "ticker") || "-"
     side = Map.get(params, "side") || "-"
     pl_str = Map.get(params, "pl") || "0"
+
     pl =
       case Float.parse(to_string(pl_str)) do
         {n, _} -> n
@@ -565,7 +591,13 @@ defmodule JournalexWeb.ActivityStatementLive do
     }
 
     try do
-      {count, _} = Journalex.Repo.insert_all("trades", [row], on_conflict: :nothing)
+      {count, _} =
+        Journalex.Repo.insert_all(
+          "trades",
+          [row],
+          on_conflict: :nothing,
+          conflict_target: [:datetime, :ticker, :aggregated_side, :realized_pl]
+        )
 
       updated_summary =
         if count > 0 do
@@ -631,8 +663,8 @@ defmodule JournalexWeb.ActivityStatementLive do
     day_selection = Map.update(socket.assigns.day_selection, day, true, &(!&1))
 
     filtered_trades = filter_trades_by_days(socket.assigns.all_trades, day_selection)
-  {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
-  summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
+    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
     unsaved_count = count_unsaved(filtered_trades)
 
     selected_days_count =
@@ -641,7 +673,7 @@ defmodule JournalexWeb.ActivityStatementLive do
       |> length()
 
     {:noreply,
-    socket
+     socket
      |> assign(:day_selection, day_selection)
      |> assign(:activity_data, filtered_trades)
      |> assign(:unsaved_count, unsaved_count)
@@ -655,8 +687,8 @@ defmodule JournalexWeb.ActivityStatementLive do
     day_selection = socket.assigns.days |> Map.new(fn d -> {d, true} end)
 
     filtered_trades = filter_trades_by_days(socket.assigns.all_trades, day_selection)
-  {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
-  summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
+    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
     unsaved_count = count_unsaved(filtered_trades)
 
     selected_days_count =
@@ -665,7 +697,7 @@ defmodule JournalexWeb.ActivityStatementLive do
       |> length()
 
     {:noreply,
-    socket
+     socket
      |> assign(:day_selection, day_selection)
      |> assign(:activity_data, filtered_trades)
      |> assign(:unsaved_count, unsaved_count)
@@ -679,8 +711,8 @@ defmodule JournalexWeb.ActivityStatementLive do
     day_selection = socket.assigns.days |> Map.new(fn d -> {d, false} end)
 
     filtered_trades = filter_trades_by_days(socket.assigns.all_trades, day_selection)
-  {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
-  summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
+    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
     unsaved_count = count_unsaved(filtered_trades)
 
     selected_days_count =
@@ -689,7 +721,7 @@ defmodule JournalexWeb.ActivityStatementLive do
       |> length()
 
     {:noreply,
-    socket
+     socket
      |> assign(:day_selection, day_selection)
      |> assign(:activity_data, filtered_trades)
      |> assign(:unsaved_count, unsaved_count)
@@ -719,20 +751,29 @@ defmodule JournalexWeb.ActivityStatementLive do
     Enum.map(rows, fn row ->
       {list_key, items} =
         cond do
-          is_list(Map.get(row, :aggregated_trades)) -> {:aggregated_trades, Map.get(row, :aggregated_trades)}
-          is_list(Map.get(row, :close_trades)) -> {:close_trades, Map.get(row, :close_trades)}
-          true -> {nil, []}
+          is_list(Map.get(row, :aggregated_trades)) ->
+            {:aggregated_trades, Map.get(row, :aggregated_trades)}
+
+          is_list(Map.get(row, :close_trades)) ->
+            {:close_trades, Map.get(row, :close_trades)}
+
+          true ->
+            {nil, []}
         end
 
       new_items =
         items
         |> Enum.map(fn item ->
           item_date = date_only(Map.get(item, :datetime)) || Map.get(item, :date)
-          item_ticker = Map.get(item, :symbol) || Map.get(item, :ticker) || Map.get(item, :underlying)
+
+          item_ticker =
+            Map.get(item, :symbol) || Map.get(item, :ticker) || Map.get(item, :underlying)
+
           item_side = Map.get(item, :aggregated_side)
           item_pl = to_number(Map.get(item, :realized_pl))
 
-          if item_date == target_date and item_ticker == target_ticker and item_side == target_side and item_pl == target_pl do
+          if item_date == target_date and item_ticker == target_ticker and
+               item_side == target_side and item_pl == target_pl do
             Map.put(item, :exists, true)
           else
             item
@@ -755,23 +796,36 @@ defmodule JournalexWeb.ActivityStatementLive do
     items = collect_aggregated_items(rows)
 
     case items do
-      [] -> rows
+      [] ->
+        rows
+
       list ->
         keyset = persisted_trades_keyset(list)
 
         Enum.map(rows, fn row ->
           {list_key, agg_items} =
             cond do
-              is_list(Map.get(row, :aggregated_trades)) -> {:aggregated_trades, Map.get(row, :aggregated_trades)}
-              is_list(Map.get(row, :close_trades)) -> {:close_trades, Map.get(row, :close_trades)}
-              true -> {nil, []}
+              is_list(Map.get(row, :aggregated_trades)) ->
+                {:aggregated_trades, Map.get(row, :aggregated_trades)}
+
+              is_list(Map.get(row, :close_trades)) ->
+                {:close_trades, Map.get(row, :close_trades)}
+
+              true ->
+                {nil, []}
             end
 
           new_items =
             Enum.map(agg_items, fn item ->
-              dt = Map.get(item, :datetime) || Map.get(item, "datetime") || Map.get(item, :date) || Map.get(item, "date")
+              dt =
+                Map.get(item, :datetime) || Map.get(item, "datetime") || Map.get(item, :date) ||
+                  Map.get(item, "date")
+
               date = date_only(dt)
-              ticker = Map.get(item, :symbol) || Map.get(item, :ticker) || Map.get(item, :underlying)
+
+              ticker =
+                Map.get(item, :symbol) || Map.get(item, :ticker) || Map.get(item, :underlying)
+
               side = Map.get(item, :aggregated_side) || Map.get(item, "aggregated_side")
               pl = Map.get(item, :realized_pl)
               key = {date, ticker, side, round2(to_number(pl))}
@@ -795,17 +849,26 @@ defmodule JournalexWeb.ActivityStatementLive do
     # Compute min/max dates and involved tickers to limit query scope
     dates =
       items
-      |> Enum.map(fn it -> date_only(Map.get(it, :datetime) || Map.get(it, "datetime") || Map.get(it, :date) || Map.get(it, "date")) end)
+      |> Enum.map(fn it ->
+        date_only(
+          Map.get(it, :datetime) || Map.get(it, "datetime") || Map.get(it, :date) ||
+            Map.get(it, "date")
+        )
+      end)
       |> Enum.reject(&is_nil/1)
 
     tickers =
       items
-      |> Enum.map(fn it -> Map.get(it, :symbol) || Map.get(it, :ticker) || Map.get(it, :underlying) end)
+      |> Enum.map(fn it ->
+        Map.get(it, :symbol) || Map.get(it, :ticker) || Map.get(it, :underlying)
+      end)
       |> Enum.reject(&is_nil/1)
       |> Enum.uniq()
 
     case dates do
-      [] -> MapSet.new()
+      [] ->
+        MapSet.new()
+
       _ ->
         min_d = dates |> Enum.map(&parse_date!/1) |> Enum.min(Date)
         max_d = dates |> Enum.map(&parse_date!/1) |> Enum.max(Date)
@@ -841,6 +904,7 @@ defmodule JournalexWeb.ActivityStatementLive do
   defp round2(nil), do: 0.0
   defp round2(n) when is_number(n), do: Float.round(n * 1.0, 2)
   defp round2(%Decimal{} = d), do: d |> Decimal.to_float() |> round2()
+
   defp round2(val) when is_binary(val) do
     case Float.parse(String.replace(val, ",", "") |> String.trim()) do
       {n, _} -> round2(n)

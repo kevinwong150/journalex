@@ -16,13 +16,13 @@ defmodule JournalexWeb.TradesLive do
       |> Enum.filter(fn r -> build_close(r) == "CLOSE" end)
       |> Enum.map(&put_aggregated_side/1)
 
-  # Annotate with :exists flags based on what's already persisted
-  annotated = annotate_trades_with_exists(close_trades)
+    # Annotate with :exists flags based on what's already persisted
+    annotated = annotate_trades_with_exists(close_trades)
 
-  {:ok,
-   socket
-   |> assign(:close_trades, annotated)
-   |> assign(:total, Enum.map(annotated, &to_number(Map.get(&1, :realized_pl))) |> Enum.sum())}
+    {:ok,
+     socket
+     |> assign(:close_trades, annotated)
+     |> assign(:total, Enum.map(annotated, &to_number(Map.get(&1, :realized_pl))) |> Enum.sum())}
   end
 
   @impl true
@@ -31,8 +31,10 @@ defmodule JournalexWeb.TradesLive do
     <div class="mx-auto max-w-6xl">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-gray-900">Aggregated Trades</h1>
+        
         <div class="mt-2 flex items-center justify-between">
           <p class="text-gray-600">All closed trades across uploaded statements</p>
+          
           <button
             type="button"
             phx-click="save_all_trades"
@@ -43,18 +45,18 @@ defmodule JournalexWeb.TradesLive do
           </button>
         </div>
       </div>
-
+      
       <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg p-4">
         <div class="mb-2 flex items-center justify-between">
           <div class="text-sm text-gray-600">
-            Total Realized P/L:
-            <span class={pl_class_amount(@total)}>{format_amount(@total)}</span>
+            Total Realized P/L: <span class={pl_class_amount(@total)}>{format_amount(@total)}</span>
           </div>
+          
           <div class="text-xs text-gray-500">
             {length(@close_trades)} trades
           </div>
         </div>
-
+        
         <AggregatedTradeList.aggregated_trade_list
           id="trades-table"
           items={@close_trades}
@@ -131,7 +133,9 @@ defmodule JournalexWeb.TradesLive do
     |> String.trim()
     |> String.replace(",", "")
     |> case do
-      "" -> 0.0
+      "" ->
+        0.0
+
       s ->
         case Float.parse(s) do
           {n, _} -> n
@@ -168,8 +172,10 @@ defmodule JournalexWeb.TradesLive do
   defp date_only(%DateTime{} = dt), do: Date.to_iso8601(DateTime.to_date(dt))
   defp date_only(%NaiveDateTime{} = ndt), do: Date.to_iso8601(NaiveDateTime.to_date(ndt))
 
-  defp date_only(<<y::binary-size(4), "-", m::binary-size(2), "-", d::binary-size(2), _::binary>>),
-    do: y <> "-" <> m <> "-" <> d
+  defp date_only(
+         <<y::binary-size(4), "-", m::binary-size(2), "-", d::binary-size(2), _::binary>>
+       ),
+       do: y <> "-" <> m <> "-" <> d
 
   defp date_only(bin) when is_binary(bin) do
     case String.split(bin) do
@@ -185,12 +191,17 @@ defmodule JournalexWeb.TradesLive do
 
   # Parse ISO or naive datetime coming from button values; fall back to date-only
   defp parse_param_datetime(nil), do: nil
+
   defp parse_param_datetime(s) when is_binary(s) do
     case DateTime.from_iso8601(s) do
-      {:ok, dt, _} -> DateTime.truncate(dt, :second)
+      {:ok, dt, _} ->
+        DateTime.truncate(dt, :second)
+
       _ ->
         case NaiveDateTime.from_iso8601(s) do
-          {:ok, ndt} -> NaiveDateTime.truncate(ndt, :second)
+          {:ok, ndt} ->
+            NaiveDateTime.truncate(ndt, :second)
+
           _ ->
             case date_only(s) do
               <<_::binary-size(10)>> = iso -> NaiveDateTime.new!(parse_date!(iso), ~T[00:00:00])
@@ -210,7 +221,8 @@ defmodule JournalexWeb.TradesLive do
       |> Enum.map(fn item ->
         %{
           datetime: coerce_item_datetime(item),
-          ticker: Map.get(item, :symbol) || Map.get(item, :ticker) || Map.get(item, :underlying) || "-",
+          ticker:
+            Map.get(item, :symbol) || Map.get(item, :ticker) || Map.get(item, :underlying) || "-",
           aggregated_side: Map.get(item, :aggregated_side) || "-",
           result: if(to_number(Map.get(item, :realized_pl)) > 0.0, do: "WIN", else: "LOSE"),
           realized_pl: to_number(Map.get(item, :realized_pl)) |> Decimal.from_float(),
@@ -231,7 +243,8 @@ defmodule JournalexWeb.TradesLive do
        |> put_flash(:info, "Saved #{count} aggregated trade records")}
     rescue
       e ->
-        {:noreply, socket |> put_flash(:error, "Failed to save aggregated trades: #{Exception.message(e)}")}
+        {:noreply,
+         socket |> put_flash(:error, "Failed to save aggregated trades: #{Exception.message(e)}")}
     end
   end
 
@@ -259,31 +272,40 @@ defmodule JournalexWeb.TradesLive do
            aggregated_side: side || "-",
            result: if(pl > 0.0, do: "WIN", else: "LOSE"),
            realized_pl: pl
-         },
-         {:values, %{date: date_only(dt_param), ticker: ticker, side: side, pl: pl}}}
+         }, {:values, %{date: date_only(dt_param), ticker: ticker, side: side, pl: pl}}}
       else
         # Backward compatibility: fall back to index when values are not present
         case Integer.parse(to_string(Map.get(params, "index", "-1"))) do
           {i, _} ->
             case Enum.at(socket.assigns.close_trades, i) do
-              nil -> {nil, :none}
+              nil ->
+                {nil, :none}
+
               item ->
                 {%{
                    datetime: coerce_item_datetime(item),
-                   ticker: Map.get(item, :symbol) || Map.get(item, :ticker) || Map.get(item, :underlying) || "-",
+                   ticker:
+                     Map.get(item, :symbol) || Map.get(item, :ticker) ||
+                       Map.get(item, :underlying) || "-",
                    aggregated_side: Map.get(item, :aggregated_side) || "-",
-                   result: if(to_number(Map.get(item, :realized_pl)) > 0.0, do: "WIN", else: "LOSE"),
+                   result:
+                     if(to_number(Map.get(item, :realized_pl)) > 0.0, do: "WIN", else: "LOSE"),
                    realized_pl: to_number(Map.get(item, :realized_pl))
                  }, {:index, i}}
             end
-          :error -> {nil, :none}
+
+          :error ->
+            {nil, :none}
         end
       end
 
     case attrs do
-      nil -> {:noreply, socket}
+      nil ->
+        {:noreply, socket}
+
       attrs ->
         now = DateTime.utc_now() |> DateTime.truncate(:second)
+
         row =
           Map.merge(attrs, %{
             realized_pl: Decimal.from_float(attrs.realized_pl),
@@ -302,7 +324,10 @@ defmodule JournalexWeb.TradesLive do
               {:values, %{date: d, ticker: t, side: s, pl: p}} ->
                 Enum.map(socket.assigns.close_trades, fn it ->
                   item_date = date_only(Map.get(it, :datetime))
-                  item_ticker = Map.get(it, :symbol) || Map.get(it, :ticker) || Map.get(it, :underlying)
+
+                  item_ticker =
+                    Map.get(it, :symbol) || Map.get(it, :ticker) || Map.get(it, :underlying)
+
                   item_side = Map.get(it, :aggregated_side)
                   item_pl = to_number(Map.get(it, :realized_pl))
 
@@ -313,7 +338,8 @@ defmodule JournalexWeb.TradesLive do
                   end
                 end)
 
-              _ -> socket.assigns.close_trades
+              _ ->
+                socket.assigns.close_trades
             end
 
           {:noreply,
@@ -321,7 +347,8 @@ defmodule JournalexWeb.TradesLive do
            |> assign(:close_trades, updated)
            |> put_flash(:info, if(count > 0, do: "Saved", else: "Already exists"))}
         rescue
-          e -> {:noreply, socket |> put_flash(:error, "Failed to save row: #{Exception.message(e)}")}
+          e ->
+            {:noreply, socket |> put_flash(:error, "Failed to save row: #{Exception.message(e)}")}
         end
     end
   end
@@ -329,32 +356,52 @@ defmodule JournalexWeb.TradesLive do
   # Build a NaiveDateTime/DateTime from item; if only a date is present default to midnight
   defp coerce_item_datetime(item) do
     case Map.get(item, :datetime) || Map.get(item, "datetime") do
-      %DateTime{} = dt -> dt |> DateTime.shift_zone!("Etc/UTC") |> DateTime.truncate(:second) |> DateTime.to_naive()
-      %NaiveDateTime{} = ndt -> NaiveDateTime.truncate(ndt, :second)
+      %DateTime{} = dt ->
+        dt |> DateTime.shift_zone!("Etc/UTC") |> DateTime.truncate(:second) |> DateTime.to_naive()
+
+      %NaiveDateTime{} = ndt ->
+        NaiveDateTime.truncate(ndt, :second)
+
       s when is_binary(s) ->
         case DateTime.from_iso8601(s) do
-          {:ok, dt, _} -> dt |> DateTime.shift_zone!("Etc/UTC") |> DateTime.truncate(:second) |> DateTime.to_naive()
+          {:ok, dt, _} ->
+            dt
+            |> DateTime.shift_zone!("Etc/UTC")
+            |> DateTime.truncate(:second)
+            |> DateTime.to_naive()
+
           _ ->
             case NaiveDateTime.from_iso8601(s) do
-              {:ok, ndt} -> NaiveDateTime.truncate(ndt, :second)
+              {:ok, ndt} ->
+                NaiveDateTime.truncate(ndt, :second)
+
               _ ->
                 case date_only(s) do
                   <<_::binary-size(10)>> = iso ->
                     d = parse_date!(iso)
                     NaiveDateTime.new!(d, ~T[00:00:00])
-                  _ -> DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_naive()
+
+                  _ ->
+                    DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_naive()
                 end
             end
         end
+
       nil ->
         case Map.get(item, :date) || Map.get(item, "date") do
-          %Date{} = d -> NaiveDateTime.new!(d, ~T[00:00:00])
+          %Date{} = d ->
+            NaiveDateTime.new!(d, ~T[00:00:00])
+
           <<_::binary-size(10)>> = iso ->
             d = parse_date!(iso)
             NaiveDateTime.new!(d, ~T[00:00:00])
-          _ -> DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_naive()
+
+          _ ->
+            DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_naive()
         end
-      _ -> DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_naive()
+
+      _ ->
+        DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_naive()
     end
   end
 
@@ -363,13 +410,20 @@ defmodule JournalexWeb.TradesLive do
     keyset = persisted_trades_keyset(items)
 
     Enum.map(items, fn item ->
-      date = date_only(Map.get(item, :datetime) || Map.get(item, "datetime") || Map.get(item, :date) || Map.get(item, "date"))
+      date =
+        date_only(
+          Map.get(item, :datetime) || Map.get(item, "datetime") || Map.get(item, :date) ||
+            Map.get(item, "date")
+        )
+
       ticker = Map.get(item, :symbol) || Map.get(item, :ticker) || Map.get(item, :underlying)
       side = Map.get(item, :aggregated_side) || Map.get(item, "aggregated_side")
       pl = Map.get(item, :realized_pl)
       key = {date, ticker, side, round2(to_number(pl))}
 
-      if MapSet.member?(keyset, key), do: Map.put(item, :exists, true), else: Map.put(item, :exists, false)
+      if MapSet.member?(keyset, key),
+        do: Map.put(item, :exists, true),
+        else: Map.put(item, :exists, false)
     end)
   end
 
@@ -378,17 +432,26 @@ defmodule JournalexWeb.TradesLive do
   defp persisted_trades_keyset(items) when is_list(items) do
     dates =
       items
-      |> Enum.map(fn it -> date_only(Map.get(it, :datetime) || Map.get(it, "datetime") || Map.get(it, :date) || Map.get(it, "date")) end)
+      |> Enum.map(fn it ->
+        date_only(
+          Map.get(it, :datetime) || Map.get(it, "datetime") || Map.get(it, :date) ||
+            Map.get(it, "date")
+        )
+      end)
       |> Enum.reject(&is_nil/1)
 
     tickers =
       items
-      |> Enum.map(fn it -> Map.get(it, :symbol) || Map.get(it, :ticker) || Map.get(it, :underlying) end)
+      |> Enum.map(fn it ->
+        Map.get(it, :symbol) || Map.get(it, :ticker) || Map.get(it, :underlying)
+      end)
       |> Enum.reject(&is_nil/1)
       |> Enum.uniq()
 
     case dates do
-      [] -> MapSet.new()
+      [] ->
+        MapSet.new()
+
       _ ->
         min_d = dates |> Enum.map(&parse_date!/1) |> Enum.min(Date)
         max_d = dates |> Enum.map(&parse_date!/1) |> Enum.max(Date)
@@ -403,7 +466,9 @@ defmodule JournalexWeb.TradesLive do
             select: {fragment("date(?)", t.datetime), t.ticker, t.aggregated_side, t.realized_pl}
 
         Journalex.Repo.all(q)
-        |> Enum.map(fn {date, ticker, side, pl} -> {Date.to_iso8601(date), ticker, side, round2(to_number(pl))} end)
+        |> Enum.map(fn {date, ticker, side, pl} ->
+          {Date.to_iso8601(date), ticker, side, round2(to_number(pl))}
+        end)
         |> MapSet.new()
     end
   end
@@ -411,6 +476,7 @@ defmodule JournalexWeb.TradesLive do
   defp round2(nil), do: 0.0
   defp round2(n) when is_number(n), do: Float.round(n * 1.0, 2)
   defp round2(%Decimal{} = d), do: d |> Decimal.to_float() |> round2()
+
   defp round2(val) when is_binary(val) do
     case Float.parse(String.replace(val, ",", "") |> String.trim()) do
       {n, _} -> round2(n)
