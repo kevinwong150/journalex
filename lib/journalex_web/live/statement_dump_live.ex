@@ -6,6 +6,8 @@ defmodule JournalexWeb.StatementDumpLive do
   alias Journalex.Notion
   alias Journalex.Notion.Client, as: NotionClient
 
+  @dump_max_retries 3
+
   @impl true
   def mount(_params, _session, socket) do
     statements = Activity.list_all_activity_statements()
@@ -21,6 +23,17 @@ defmodule JournalexWeb.StatementDumpLive do
       |> assign(:notion_conn_status, :unknown)
       |> assign(:notion_conn_message, nil)
       |> assign(:hide_exists?, false)
+      # Dump queue/progress state
+      |> assign(:dump_queue, [])
+      |> assign(:dump_total, 0)
+      |> assign(:dump_processed, 0)
+      |> assign(:dump_in_progress?, false)
+      |> assign(:dump_current, nil)
+      |> assign(:dump_results, %{})
+  |> assign(:dump_started_at_mono, nil)
+  |> assign(:dump_finished_at_mono, nil)
+  |> assign(:dump_elapsed_ms, 0)
+  |> assign(:dump_retry_counts, %{})
 
     # Kick off an automatic Notion check after the socket connects
     if connected?(socket), do: send(self(), :auto_check_notion)
@@ -106,32 +119,39 @@ defmodule JournalexWeb.StatementDumpLive do
   end
 
   def handle_event("insert_missing_notion", _params, socket) do
-    selected_ids = socket.assigns.selected_ids
-    statements = socket.assigns.statements
-    statuses = socket.assigns.row_statuses || %{}
+    # If a dump is already in progress, ignore repeated clicks
+    if socket.assigns.dump_in_progress? do
+      {:noreply, socket}
+    else
+      selected_ids = socket.assigns.selected_ids
+      statements = socket.assigns.statements
+      statuses = socket.assigns.row_statuses || %{}
 
-    selected_rows = Enum.filter(statements, fn s -> MapSet.member?(selected_ids, s.id) end)
+      # Build the queue: prefer rows currently marked as :missing; otherwise include all selected
+      # We will still double-check existence per item before creation to be safe.
+      selected_rows = Enum.filter(statements, fn s -> MapSet.member?(selected_ids, s.id) end)
 
-    {row_statuses, exists_count, missing_count} =
-      Enum.reduce(selected_rows, {statuses, 0, 0}, fn row, {acc, ec, mc} ->
-        with {:ok, exists?} <- Notion.exists_by_timestamp_and_ticker?(row.datetime, row.symbol),
-             false <- exists?,
-             {:ok, _page} <- Notion.create_from_statement(row) do
-          {Map.put(acc, row.id, :exists), ec + 1, mc}
-        else
-          # exists? was true -> already exists
-          true -> {Map.put(acc, row.id, :exists), ec + 1, mc}
-          # any API error (exists? check or create)
-          {:error, _} -> {Map.put(acc, row.id, :error), ec, mc}
-        end
-      end)
+      missing_rows = Enum.filter(selected_rows, fn r -> Map.get(statuses, r.id) == :missing end)
+      queue = if missing_rows == [], do: selected_rows, else: missing_rows
 
-    {:noreply,
-     assign(socket,
-       row_statuses: row_statuses,
-       notion_exists_count: exists_count,
-       notion_missing_count: missing_count
-     )}
+      socket =
+        socket
+        |> assign(:dump_queue, queue)
+        |> assign(:dump_total, length(queue))
+        |> assign(:dump_processed, 0)
+        |> assign(:dump_in_progress?, true)
+        |> assign(:dump_current, nil)
+        |> assign(:dump_results, %{})
+        |> assign(:dump_started_at_mono, System.monotonic_time(:millisecond))
+        |> assign(:dump_finished_at_mono, nil)
+        |> assign(:dump_elapsed_ms, 0)
+        |> assign(:dump_retry_counts, %{})
+
+      # Kick off the first tick immediately; subsequent ticks run every 1s
+      Process.send_after(self(), :process_next_dump, 0)
+
+      {:noreply, socket}
+    end
   end
 
   def handle_event("clear_row_statuses", _params, socket) do
@@ -209,6 +229,135 @@ defmodule JournalexWeb.StatementDumpLive do
            notion_conn_status: :error,
            notion_conn_message: "Failed to fetch Notion records: " <> inspect(reason)
          )}
+    end
+  end
+
+  # Process one queued dump item at a time, spaced by 1s
+  @impl true
+  def handle_info(:process_next_dump, socket) do
+    queue = socket.assigns.dump_queue
+
+    case queue do
+      [] ->
+        # No more work
+        now = System.monotonic_time(:millisecond)
+        socket =
+          socket
+          |> assign(:dump_in_progress?, false)
+          |> assign(:dump_current, nil)
+          |> assign(:dump_finished_at_mono, socket.assigns.dump_finished_at_mono || now)
+          |> assign(:dump_elapsed_ms,
+            if socket.assigns.dump_started_at_mono do
+              (socket.assigns.dump_finished_at_mono || now) - socket.assigns.dump_started_at_mono
+            else
+              0
+            end
+          )
+
+        {:noreply, socket}
+
+      [row | rest] ->
+        # Mark current for UI
+        socket = assign(socket, dump_current: row)
+
+        # Perform existence check and maybe create
+        {row_statuses, result_tag, next_queue, next_retry_counts, increment_processed?, next_delay_ms} =
+          case Notion.exists_by_timestamp_and_ticker?(row.datetime, row.symbol) do
+            {:ok, true} ->
+              {
+                Map.put(socket.assigns.row_statuses, row.id, :exists),
+                :skipped_exists,
+                rest,
+                socket.assigns.dump_retry_counts,
+                true,
+                if(rest == [], do: 0, else: 1_000)
+              }
+
+            {:ok, false} ->
+              case Notion.create_from_statement(row) do
+                {:ok, _page} ->
+                  {
+                    Map.put(socket.assigns.row_statuses, row.id, :exists),
+                    :created,
+                    rest,
+                    socket.assigns.dump_retry_counts,
+                    true,
+                    if(rest == [], do: 0, else: 1_000)
+                  }
+
+                {:error, _reason} ->
+                  # Retry with linear backoff if under max retries
+                  retries = Map.get(socket.assigns.dump_retry_counts, row.id, 0)
+
+                  if retries < @dump_max_retries do
+                    next_retries = Map.put(socket.assigns.dump_retry_counts, row.id, retries + 1)
+                    backoff_ms = 1_000 * (retries + 1)
+
+                    {
+                      Map.put(socket.assigns.row_statuses, row.id, :retrying),
+                      :retrying,
+                      [row | rest],
+                      next_retries,
+                      false,
+                      backoff_ms
+                    }
+                  else
+                    {
+                      Map.put(socket.assigns.row_statuses, row.id, :error),
+                      :error,
+                      rest,
+                      socket.assigns.dump_retry_counts,
+                      true,
+                      if(rest == [], do: 0, else: 1_000)
+                    }
+                  end
+              end
+
+            {:error, _reason} ->
+              {
+                Map.put(socket.assigns.row_statuses, row.id, :error),
+                :error,
+                rest,
+                socket.assigns.dump_retry_counts,
+                true,
+                if(rest == [], do: 0, else: 1_000)
+              }
+          end
+
+        # Update results and progress
+        dump_results = Map.put(socket.assigns.dump_results, row.id, result_tag)
+        dump_processed = socket.assigns.dump_processed + if(increment_processed?, do: 1, else: 0)
+
+        # Update elapsed time
+        now = System.monotonic_time(:millisecond)
+        elapsed_ms =
+          if socket.assigns.dump_started_at_mono do
+            now - socket.assigns.dump_started_at_mono
+          else
+            0
+          end
+
+        socket =
+          socket
+          |> assign(:row_statuses, row_statuses)
+          |> assign(:dump_results, dump_results)
+          |> assign(:dump_processed, dump_processed)
+          |> assign(:dump_queue, next_queue)
+          |> assign(:dump_retry_counts, next_retry_counts)
+          |> assign(:dump_elapsed_ms, elapsed_ms)
+
+        # Recompute exists/missing counts for currently selected rows
+        {exists_count, missing_count} = recalc_selected_counts(socket)
+
+        socket =
+          socket
+          |> assign(:notion_exists_count, exists_count)
+          |> assign(:notion_missing_count, missing_count)
+
+        # Schedule next item in 1 second
+        Process.send_after(self(), :process_next_dump, next_delay_ms)
+
+        {:noreply, socket}
     end
   end
 
@@ -304,6 +453,7 @@ defmodule JournalexWeb.StatementDumpLive do
               phx-click="check_notion_connection"
               class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white text-gray-800 hover:bg-gray-50"
               phx-disable-with="Checking..."
+              disabled={@dump_in_progress?}
             >
               Check Connection
             </button>
@@ -311,7 +461,7 @@ defmodule JournalexWeb.StatementDumpLive do
             <button
               phx-click="check_notion"
               class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-              disabled={MapSet.size(@selected_ids) == 0}
+              disabled={MapSet.size(@selected_ids) == 0 or @dump_in_progress?}
               phx-disable-with="Checking..."
             >
               Check Notion
@@ -320,11 +470,37 @@ defmodule JournalexWeb.StatementDumpLive do
             <button
               phx-click="insert_missing_notion"
               class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-              disabled={MapSet.size(@selected_ids) == 0}
-              phx-disable-with="Inserting..."
+              disabled={MapSet.size(@selected_ids) == 0 or @dump_in_progress?}
+              phx-disable-with="Starting..."
             >
               Insert Missing
             </button>
+          </div>
+        </div>
+
+        <!-- Row 3: Dump progress bar and details -->
+        <div :if={@dump_total > 0} class="w-full space-y-1">
+          <% percent = if @dump_total > 0, do: Float.round(@dump_processed * 100.0 / @dump_total, 1), else: 0.0 %>
+          <div class="flex items-center justify-between text-xs text-gray-600">
+            <span>
+              Dump progress: {@dump_processed}/{@dump_total} ({percent}%)
+              {if @dump_in_progress?, do: "- in progress", else: "- completed"}
+              · Time: {format_duration(@dump_elapsed_ms)}
+            </span>
+            <span :if={@dump_current} class="font-medium text-gray-700">
+              Currently: {
+                @dump_current.symbol <> " @ " <> DateTime.to_iso8601(@dump_current.datetime)
+              }
+            </span>
+          </div>
+          <div class="w-full bg-gray-200 rounded h-2 overflow-hidden">
+            <div
+              class="bg-green-500 h-2"
+              style={"width: #{percent}%"}
+            ></div>
+          </div>
+          <div :if={!@dump_in_progress?} class="text-xs text-gray-600">
+            Total time: {format_duration(@dump_elapsed_ms)}
           </div>
         </div>
       </div>
@@ -369,4 +545,42 @@ defmodule JournalexWeb.StatementDumpLive do
     |> Enum.reject(&is_nil/1)
     |> Enum.join("; ")
   end
+
+  # Recompute exists/missing counts for currently selected rows
+  defp recalc_selected_counts(socket) do
+    selected_ids = socket.assigns.selected_ids
+    statuses = socket.assigns.row_statuses || %{}
+
+    {exists, missing} =
+      Enum.reduce(selected_ids, {0, 0}, fn id, {e, m} ->
+        case Map.get(statuses, id) do
+          :exists -> {e + 1, m}
+          :missing -> {e, m + 1}
+          _ -> {e, m}
+        end
+      end)
+
+    {exists, missing}
+  end
+
+  # Format milliseconds into H:MM:SS.mmm or M:SS.mmm (minimal hours)
+  defp format_duration(ms) when is_integer(ms) and ms >= 0 do
+    total_ms = ms
+    hours = div(total_ms, 3_600_000)
+    rem_after_h = rem(total_ms, 3_600_000)
+    minutes = div(rem_after_h, 60_000)
+    rem_after_m = rem(rem_after_h, 60_000)
+    seconds = div(rem_after_m, 1_000)
+    millis = rem(rem_after_m, 1_000)
+
+    if hours > 0 do
+      :io_lib.format("~B:~2..0B:~2..0B.~3..0B", [hours, minutes, seconds, millis])
+      |> IO.iodata_to_binary()
+    else
+      :io_lib.format("~B:~2..0B.~3..0B", [minutes, seconds, millis])
+      |> IO.iodata_to_binary()
+    end
+  end
+
+  defp format_duration(_), do: "0:00.000"
 end
