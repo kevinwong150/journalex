@@ -325,6 +325,17 @@ defmodule Journalex.Activity do
     end
   end
 
+  # Also accept "YYYY-MM-DD HH:MM:SS" (no comma) produced by normalized parser
+  defp parse_datetime(
+         <<year::binary-size(4), "-", mon::binary-size(2), "-", day::binary-size(2), " ",
+           rest::binary>>
+       ) do
+    case NaiveDateTime.from_iso8601(year <> "-" <> mon <> "-" <> day <> " " <> rest) do
+      {:ok, ndt} -> ndt |> DateTime.from_naive!("Etc/UTC") |> ensure_usec()
+      _ -> nil
+    end
+  end
+
   defp parse_datetime(str) when is_binary(str) do
     with {:ok, dt, _} <- DateTime.from_iso8601(str) do
       dt |> ensure_usec()

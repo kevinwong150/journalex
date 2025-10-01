@@ -107,7 +107,8 @@ defmodule Journalex.ActivityStatementParser do
             asset_category: pick(cols, idx, "Asset Category"),
             currency: pick(cols, idx, "Currency"),
             symbol: pick(cols, idx, "Symbol"),
-            datetime: pick(cols, idx, "Date/Time"),
+            # Normalize "Date/Time" to an ISO-parseable value (e.g., "YYYY-MM-DD HH:MM:SS")
+            datetime: normalize_datetime(pick(cols, idx, "Date/Time")),
             quantity: pick(cols, idx, "Quantity"),
             trade_price: pick(cols, idx, "T. Price"),
             current_price: pick(cols, idx, "C. Price"),
@@ -126,6 +127,32 @@ defmodule Journalex.ActivityStatementParser do
     case Map.fetch(idx, key) do
       {:ok, i} -> Enum.at(cols, i)
       :error -> nil
+    end
+  end
+
+  # Convert IB "Date/Time" cell values to a clean ISO-like format that our code can parse.
+  # Examples in the wild:
+  #   "2025-09-24, 13:45:33"   -> "2025-09-24 13:45:33"
+  #   "2025-09-24,13:45:33"    -> "2025-09-24 13:45:33"
+  #   "2025-09-24 13:45:33"    -> unchanged
+  #   "2025-09-24T13:45:33Z"   -> unchanged
+  # If only a date is present, return it unchanged (downstream will handle defaults).
+  defp normalize_datetime(nil), do: nil
+  defp normalize_datetime(bin) when is_binary(bin) do
+    s = String.trim(bin)
+
+    # Handle already ISO-ish values quickly
+    cond do
+      String.contains?(s, "T") and String.contains?(s, ":") -> s
+      Regex.match?(~r/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/, s) -> s
+      Regex.match?(~r/^\d{4}-\d{2}-\d{2}$/ , s) -> s
+      true ->
+        # Common IB format: "YYYY-MM-DD, HH:MM:SS [Zone?]" or "YYYY-MM-DD,HH:MM:SS"
+        # Extract only the first time token and drop any trailing timezone labels.
+        case Regex.run(~r/^(\d{4}-\d{2}-\d{2})[\s,]+(\d{2}:\d{2}:\d{2}(?:\.\d+)?)/, s) do
+          [_, date, time] -> date <> " " <> time
+          _ -> s
+        end
     end
   end
 

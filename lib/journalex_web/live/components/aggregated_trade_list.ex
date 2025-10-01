@@ -36,6 +36,13 @@ defmodule JournalexWeb.AggregatedTradeList do
 
   attr :default_sort_dir, :atom, default: :desc, doc: "Default sort direction: :asc | :desc"
 
+  # Optional: show Save/Status columns like ActivityStatementList and handle per-row save
+  attr :show_save_controls?, :boolean, default: false,
+    doc: "Show Save and Status columns with row-level save button"
+
+  attr :on_save_row_event, :string, default: nil,
+    doc: "Event name to emit on row Save click (receives phx-value-index)"
+
   def aggregated_trade_list(assigns) do
     ~H"""
     <% sorted_items =
@@ -50,6 +57,12 @@ defmodule JournalexWeb.AggregatedTradeList do
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-100">
             <tr>
+              <th :if={@show_save_controls?} class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Save
+              </th>
+              <th :if={@show_save_controls?} class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Status
+              </th>
               <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider select-none">
                 <%= if @sortable do %>
                   <button
@@ -170,7 +183,7 @@ defmodule JournalexWeb.AggregatedTradeList do
           </thead>
 
           <tbody class="bg-white divide-y divide-gray-200">
-            <%= for item <- sorted_items do %>
+            <%= for {item, idx} <- Enum.with_index(sorted_items) do %>
               <% res = result_label(Map.get(item, :realized_pl)) %>
               <tr
                 class="hover:bg-blue-50 transition-colors"
@@ -189,6 +202,38 @@ defmodule JournalexWeb.AggregatedTradeList do
                   ])
                 }
               >
+                <td :if={@show_save_controls?} class="px-3 py-2 whitespace-nowrap text-sm">
+                  <button
+                    :if={not is_nil(@on_save_row_event)}
+                    phx-click={@on_save_row_event}
+                    phx-value-index={idx}
+                    phx-value-datetime={item_datetime_value(item)}
+                    phx-value-ticker={item_ticker(item)}
+                    phx-value-side={Map.get(item, :aggregated_side) || Map.get(item, "aggregated_side") || "-"}
+                    phx-value-pl={:erlang.float_to_binary(to_float(Map.get(item, :realized_pl)), [:compact, {:decimals, 8}])}
+                    class="inline-flex items-center px-2 py-1 bg-emerald-600 text-white text-xs font-medium rounded hover:bg-emerald-700 disabled:opacity-50"
+                    disabled={Map.get(item, :exists) == true}
+                  >
+                    Save
+                  </button>
+                </td>
+
+                <td :if={@show_save_controls?} class="px-3 py-2 whitespace-nowrap text-sm">
+                  <%= if Map.get(item, :exists) == true do %>
+                    <span class="inline-flex items-center text-green-600" title="Already saved">
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </span>
+                  <% else %>
+                    <span class="inline-flex items-center text-red-500" title="Not saved">
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </span>
+                  <% end %>
+                </td>
+
                 <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{item_label(item)}</td>
 
                 <td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">
@@ -413,10 +458,26 @@ defmodule JournalexWeb.AggregatedTradeList do
     cond do
       is_binary(Map.get(item, :label)) -> Map.get(item, :label)
       is_binary(Map.get(item, :group)) -> Map.get(item, :group)
-      is_binary(Map.get(item, :date)) -> Map.get(item, :date)
+      # Prefer accurate datetime from the data source, but display as date only
       not is_nil(Map.get(item, :datetime)) -> date_only(Map.get(item, :datetime)) || "-"
+      is_binary(Map.get(item, :date)) -> Map.get(item, :date)
       is_binary(Map.get(item, :id)) -> Map.get(item, :id)
       true -> "-"
+    end
+  end
+
+  # Prefer full datetime string if present; else fall back to date only
+  defp item_datetime_value(item) when is_map(item) do
+    case Map.get(item, :datetime) || Map.get(item, "datetime") do
+      %DateTime{} = dt -> DateTime.to_iso8601(dt)
+      %NaiveDateTime{} = ndt -> NaiveDateTime.to_iso8601(ndt)
+      s when is_binary(s) -> String.trim(s)
+      _ ->
+        case Map.get(item, :date) || Map.get(item, "date") do
+          %Date{} = d -> Date.to_iso8601(d)
+          s when is_binary(s) -> String.trim(s)
+          _ -> ""
+        end
     end
   end
 end

@@ -22,6 +22,8 @@ defmodule JournalexWeb.Router do
     live "/activity_statement", ActivityStatementLive
     live "/activity_statement/dates", ActivityStatementDatesLive
     live "/activity_statement/upload", ActivityStatementUploadLive
+    # Aggregated trades page
+    live "/trades", TradesLive
 
     # Statement dump page
     live "/statement/dump", StatementDumpLive

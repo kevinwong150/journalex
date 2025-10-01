@@ -40,11 +40,29 @@ defmodule JournalexWeb.ActivityStatementSummary do
     default: nil,
     doc: "Optional total number of selected business days (Mon-Fri)"
 
+  # Optional event name to show a "Save All to DB" button for aggregated items
+  attr :on_save_all_aggregated?, :string,
+    default: nil,
+    doc: "If set, renders a Save All to DB button that triggers this event"
+
+  # Optional per-row save event for aggregated items
+  attr :on_save_row_event, :string,
+    default: nil,
+    doc: "Event name to use when saving a single aggregated item in the nested list"
+
   def summary_table(assigns) do
     ~H"""
     <div class="overflow-x-auto" id={@id}>
+      <div :if={@on_save_all_aggregated?} class="flex items-center justify-end px-2 pt-2">
+        <button
+          phx-click={@on_save_all_aggregated?}
+          class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-50"
+        >
+          Save All to DB
+        </button>
+      </div>
       <!-- View toggle: grouped by ticker vs flat list -->
-      <div :if={@show_grouping_toggle} class="flex items-center justify-end mb-3">
+      <div :if={@show_grouping_toggle} class="flex items-center justify-end px-2 py-2">
         <span class="text-xs text-gray-500 mr-2">View:</span>
         <% base_btn =
           "relative inline-flex items-center px-3 py-1 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 transition-colors" %>
@@ -97,7 +115,7 @@ defmodule JournalexWeb.ActivityStatementSummary do
           </button>
         </div>
       </div>
-      
+
     <!-- Grouped-by-ticker summary table (default) -->
       <div id={@id <> "-grouped"} class={if(@group_by_ticker, do: nil, else: "hidden")}>
         <table class="min-w-full divide-y divide-gray-200">
@@ -189,14 +207,17 @@ defmodule JournalexWeb.ActivityStatementSummary do
               >
                 <td class="px-6 py-3 text-sm text-gray-900" colspan="6">
                   <% items = row_aggregated_trades(row) %>
-                  <AggregatedTradeList.aggregated_trade_list items={items} />
+                  <AggregatedTradeList.aggregated_trade_list
+                    items={items}
+                    show_save_controls?={false}
+                  />
                 </td>
               </tr>
             </tbody>
           <% end %>
         </table>
       </div>
-      
+
     <!-- Flat aggregated trades list -->
       <div id={@id <> "-flat"} class={if(@group_by_ticker, do: "hidden", else: nil)}>
         <!-- Preserve the Total row in flat list mode -->
@@ -249,6 +270,8 @@ defmodule JournalexWeb.ActivityStatementSummary do
           sortable={true}
           default_sort_by={:date}
           default_sort_dir={:desc}
+          show_save_controls?={not is_nil(@on_save_row_event)}
+          on_save_row_event={@on_save_row_event}
           id={@id <> "-flat-list"}
         />
       </div>
@@ -518,18 +541,6 @@ defmodule JournalexWeb.ActivityStatementSummary do
       is_list(Map.get(row, :aggregated_trades)) -> Map.get(row, :aggregated_trades)
       is_list(Map.get(row, :close_trades)) -> Map.get(row, :close_trades)
       true -> []
-    end
-  end
-
-  # Try to produce a human-friendly label for an aggregated item
-  defp item_label(item) when is_map(item) do
-    cond do
-      is_binary(Map.get(item, :label)) -> Map.get(item, :label)
-      is_binary(Map.get(item, :group)) -> Map.get(item, :group)
-      is_binary(Map.get(item, :date)) -> Map.get(item, :date)
-      not is_nil(Map.get(item, :datetime)) -> date_only(Map.get(item, :datetime)) || "-"
-      is_binary(Map.get(item, :id)) -> Map.get(item, :id)
-      true -> "-"
     end
   end
 end
