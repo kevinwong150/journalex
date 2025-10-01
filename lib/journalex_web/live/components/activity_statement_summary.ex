@@ -26,6 +26,16 @@ defmodule JournalexWeb.ActivityStatementSummary do
   attr :id, :string, default: "summary-table", doc: "DOM id for aria-controls"
   attr :total_winrate, :any, default: nil, doc: "Optional total winrate (0..1 or 0..100)"
 
+  # New: control whether we initially group by ticker (true) or show a flat list (false)
+  attr :group_by_ticker, :boolean,
+    default: true,
+    doc: "If true, render grouped-by-ticker table; if false, show a flat aggregated trades list"
+
+  # New: show/hide the local view toggle UI
+  attr :show_grouping_toggle, :boolean,
+    default: true,
+    doc: "Show a local UI toggle for grouping mode"
+
   attr :selected_days, :any,
     default: nil,
     doc: "Optional total number of selected business days (Mon-Fri)"
@@ -33,115 +43,160 @@ defmodule JournalexWeb.ActivityStatementSummary do
   def summary_table(assigns) do
     ~H"""
     <div class="overflow-x-auto" id={@id}>
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Symbol
-            </th>
-            
-            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Winrate
-            </th>
-            
-            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Wins
-            </th>
-            
-            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Close Trades
-            </th>
-            
-            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Days
-            </th>
-            
-            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Aggregated Realized P/L
-            </th>
-          </tr>
-        </thead>
-        
-        <%= for row <- @rows do %>
-          <% row_id = row_dom_id(row) %> <% details_id = row_id <> "-details" %>
-          <tbody id={"group-" <> row_id} class="group bg-white divide-y divide-gray-200">
-            <tr
-              id={row_id}
-              class="hover:bg-blue-50 group-hover:bg-blue-50 cursor-pointer transition-colors"
-              phx-click={JS.toggle(to: "#" <> details_id)}
-              phx-keydown={JS.toggle(to: "#" <> details_id)}
-              tabindex="0"
-              role="button"
-              aria-controls={details_id}
-              aria-expanded={@expanded}
-            >
-              <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900 border-l-2 border-transparent group-hover:border-blue-400">
-                <% items = row_aggregated_trades(row) %>
-                <span :if={is_list(items) and length(items) > 0} class="mr-2 text-gray-500">▸</span> {row.symbol}
+      <!-- View toggle: grouped by ticker vs flat list -->
+      <div :if={@show_grouping_toggle} class="flex items-center justify-end gap-2 mb-3">
+        <span class="text-xs text-gray-500">View:</span>
+        <% active_btn = "bg-blue-600 text-white" %>
+        <% inactive_btn = "bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+        <button
+          id={@id <> "-btn-grouped"}
+          type="button"
+          class={[
+            "px-3 py-1 rounded text-xs font-medium transition-colors",
+            if(@group_by_ticker, do: active_btn, else: inactive_btn)
+          ]}
+          phx-click={
+            JS.show(to: "#" <> @id <> "-grouped")
+            |> JS.hide(to: "#" <> @id <> "-flat")
+            |> JS.add_class(active_btn, to: "#" <> @id <> "-btn-grouped")
+            |> JS.remove_class(active_btn, to: "#" <> @id <> "-btn-flat")
+            |> JS.add_class(inactive_btn, to: "#" <> @id <> "-btn-flat")
+            |> JS.remove_class(inactive_btn, to: "#" <> @id <> "-btn-grouped")
+          }
+        >
+          By Ticker
+        </button>
+
+        <button
+          id={@id <> "-btn-flat"}
+          type="button"
+          class={[
+            "px-3 py-1 rounded text-xs font-medium transition-colors",
+            if(@group_by_ticker, do: inactive_btn, else: active_btn)
+          ]}
+          phx-click={
+            JS.show(to: "#" <> @id <> "-flat")
+            |> JS.hide(to: "#" <> @id <> "-grouped")
+            |> JS.add_class(active_btn, to: "#" <> @id <> "-btn-flat")
+            |> JS.remove_class(active_btn, to: "#" <> @id <> "-btn-grouped")
+            |> JS.add_class(inactive_btn, to: "#" <> @id <> "-btn-grouped")
+            |> JS.remove_class(inactive_btn, to: "#" <> @id <> "-btn-flat")
+          }
+        >
+          Flat list
+        </button>
+      </div>
+      
+    <!-- Grouped-by-ticker summary table (default) -->
+      <div id={@id <> "-grouped"} class={if(@group_by_ticker, do: nil, else: "hidden")}>
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <!-- Total row placed above the column labels inside the thead -->
+            <tr class="font-semibold">
+              <td class="px-6 py-3 text-sm text-gray-900">Total</td>
+              <td class="px-6 py-3 text-sm text-right text-gray-900">
+                {format_winrate(compute_overall_winrate(@rows))}
               </td>
-              
-              <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
-                {format_winrate(per_row_winrate(row))}
+              <% {owins, ototal} = overall_trade_counts(@rows) %>
+              <td class="px-6 py-3 text-sm text-right text-gray-900">{format_count(owins)}</td>
+              <td class="px-6 py-3 text-sm text-right text-gray-900">{format_count(ototal)}</td>
+              <td class="px-6 py-3 text-sm text-right text-gray-900">
+                {format_count(@selected_days || overall_days_traded(@rows))}
               </td>
-               <% {wins, total} = row_trade_counts(row) %>
-              <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
-                {format_count(elem({wins, total}, 0))}
-              </td>
-              
-              <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
-                {format_count(elem({wins, total}, 1))}
-              </td>
-              
-              <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
-                {format_count(row_days_traded(row))}
-              </td>
-              
-              <td class={"px-6 py-3 whitespace-nowrap text-sm text-right #{pl_class_amount(to_float(Map.get(row, :realized_pl)))}"}>
-                {format_amount(row.realized_pl)}
+              <td class={"px-6 py-3 text-sm text-right #{pl_class_amount(@total)}"}>
+                {format_amount(@total)}
               </td>
             </tr>
-            
-            <tr
-              id={details_id}
-              class={[
-                "bg-gray-50 group-hover:bg-blue-50 transition-colors",
-                if(@expanded, do: nil, else: "hidden")
-              ]}
-            >
-              <td class="px-6 py-3 text-sm text-gray-900" colspan="6">
-                <% items = row_aggregated_trades(row) %>
-                <AggregatedTradeList.aggregated_trade_list items={items} />
-              </td>
+            <!-- Column labels -->
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Symbol
+              </th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Winrate
+              </th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Wins
+              </th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Close Trades
+              </th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Days
+              </th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Aggregated Realized P/L
+              </th>
             </tr>
-          </tbody>
-        <% end %>
-        
-        <tbody>
-          <tr class="bg-gray-50 font-semibold">
-            <td class="px-6 py-3 text-sm text-gray-900">Total</td>
-            
-            <td class="px-6 py-3 text-sm text-right text-gray-900">
-              {format_winrate(compute_overall_winrate(@rows))}
-            </td>
-             <% {owins, ototal} = overall_trade_counts(@rows) %>
-            <td class="px-6 py-3 text-sm text-right text-gray-900">
-              {format_count(owins)}
-            </td>
-            
-            <td class="px-6 py-3 text-sm text-right text-gray-900">
-              {format_count(ototal)}
-            </td>
-            
-            <td class="px-6 py-3 text-sm text-right text-gray-900">
-              {format_count(@selected_days || overall_days_traded(@rows))}
-            </td>
-            
-            <td class={"px-6 py-3 text-sm text-right #{pl_class_amount(@total)}"}>
-              {format_amount(@total)}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+          </thead>
+
+          <%= for row <- @rows do %>
+            <% row_id = row_dom_id(row) %> <% details_id = row_id <> "-details" %>
+            <tbody id={"group-" <> row_id} class="group bg-white divide-y divide-gray-200">
+              <tr
+                id={row_id}
+                class="hover:bg-blue-50 group-hover:bg-blue-50 cursor-pointer transition-colors"
+                phx-click={JS.toggle(to: "#" <> details_id)}
+                phx-keydown={JS.toggle(to: "#" <> details_id)}
+                tabindex="0"
+                role="button"
+                aria-controls={details_id}
+                aria-expanded={@expanded}
+              >
+                <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900 border-l-2 border-transparent group-hover:border-blue-400">
+                  <% items = row_aggregated_trades(row) %>
+                  <span :if={is_list(items) and length(items) > 0} class="mr-2 text-gray-500">▸</span> {row.symbol}
+                </td>
+
+                <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                  {format_winrate(per_row_winrate(row))}
+                </td>
+                <% {wins, total} = row_trade_counts(row) %>
+                <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                  {format_count(elem({wins, total}, 0))}
+                </td>
+
+                <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                  {format_count(elem({wins, total}, 1))}
+                </td>
+
+                <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                  {format_count(row_days_traded(row))}
+                </td>
+
+                <td class={"px-6 py-3 whitespace-nowrap text-sm text-right #{pl_class_amount(to_float(Map.get(row, :realized_pl)))}"}>
+                  {format_amount(row.realized_pl)}
+                </td>
+              </tr>
+
+              <tr
+                id={details_id}
+                class={[
+                  "bg-gray-50 group-hover:bg-blue-50 transition-colors",
+                  if(@expanded, do: nil, else: "hidden")
+                ]}
+              >
+                <td class="px-6 py-3 text-sm text-gray-900" colspan="6">
+                  <% items = row_aggregated_trades(row) %>
+                  <AggregatedTradeList.aggregated_trade_list items={items} />
+                </td>
+              </tr>
+            </tbody>
+          <% end %>
+        </table>
+      </div>
+      
+    <!-- Flat aggregated trades list -->
+      <div id={@id <> "-flat"} class={if(@group_by_ticker, do: "hidden", else: nil)}>
+        <% all_items = all_aggregated_items(@rows) %>
+        <AggregatedTradeList.aggregated_trade_list
+          items={all_items}
+          sortable={true}
+          default_sort_by={:date}
+          default_sort_dir={:desc}
+          id={@id <> "-flat-list"}
+        />
+      </div>
     </div>
     """
   end
@@ -369,6 +424,17 @@ defmodule JournalexWeb.ActivityStatementSummary do
       {n, _} -> n * 1.0
       :error -> 0.0
     end
+  end
+
+  # Build a flat list of all aggregated trade items across all rows
+  defp all_aggregated_items(rows) when is_list(rows) do
+    rows
+    |> Enum.flat_map(fn r ->
+      case row_aggregated_trades(r) do
+        list when is_list(list) -> list
+        _ -> []
+      end
+    end)
   end
 
   # Row helpers for expand/collapse and aggregated items

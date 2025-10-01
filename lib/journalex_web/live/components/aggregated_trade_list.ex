@@ -26,52 +26,182 @@ defmodule JournalexWeb.AggregatedTradeList do
   attr :id, :string, default: nil, doc: "Optional DOM id for the table container"
   attr :class, :string, default: nil, doc: "Optional extra CSS classes for the container"
 
+  attr :sortable, :boolean,
+    default: false,
+    doc: "Enable client-side sorting by clicking column headers"
+
+  attr :default_sort_by, :atom,
+    default: :date,
+    doc: "Default sort column: :date | :ticker | :side | :result | :pl"
+
+  attr :default_sort_dir, :atom, default: :desc, doc: "Default sort direction: :asc | :desc"
+
   def aggregated_trade_list(assigns) do
     ~H"""
-    <div class={Enum.join(Enum.reject(["overflow-x-auto", @class], &is_nil/1), " ")} id={@id}>
-      <%= if is_list(@items) and length(@items) > 0 do %>
+    <% sorted_items =
+      if @sortable, do: sort_items(@items, @default_sort_by, @default_sort_dir), else: @items %>
+    <div
+      class={Enum.join(Enum.reject(["overflow-x-auto", @class], &is_nil/1), " ")}
+      id={@id}
+      data-current-sort-key={if(@sortable, do: Atom.to_string(@default_sort_by), else: nil)}
+      data-current-sort-dir={if(@sortable, do: Atom.to_string(@default_sort_dir), else: nil)}
+    >
+      <%= if is_list(sorted_items) and length(sorted_items) > 0 do %>
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-100">
             <tr>
-              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Date
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider select-none">
+                <%= if @sortable do %>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 hover:text-gray-700"
+                    data-sort-key="date"
+                  >
+                    <span>Date</span>
+                    <span
+                      class={if(@default_sort_by == :date, do: nil, else: "hidden")}
+                      data-sort-arrow
+                    >
+                      <%= if @default_sort_by == :date and @default_sort_dir == :desc do %>
+                        ▼
+                      <% else %>
+                        ▲
+                      <% end %>
+                    </span>
+                  </button>
+                <% else %>
+                  Date
+                <% end %>
               </th>
-              
-              <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Ticker
+
+              <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider select-none">
+                <%= if @sortable do %>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 hover:text-gray-700"
+                    data-sort-key="ticker"
+                  >
+                    <span>Ticker</span>
+                    <span
+                      class={if(@default_sort_by == :ticker, do: nil, else: "hidden")}
+                      data-sort-arrow
+                    >
+                      <%= if @default_sort_by == :ticker and @default_sort_dir == :desc do %>
+                        ▼
+                      <% else %>
+                        ▲
+                      <% end %>
+                    </span>
+                  </button>
+                <% else %>
+                  Ticker
+                <% end %>
               </th>
-              
-              <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Side
+
+              <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider select-none">
+                <%= if @sortable do %>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 hover:text-gray-700"
+                    data-sort-key="side"
+                  >
+                    <span>Side</span>
+                    <span
+                      class={if(@default_sort_by == :side, do: nil, else: "hidden")}
+                      data-sort-arrow
+                    >
+                      <%= if @default_sort_by == :side and @default_sort_dir == :desc do %>
+                        ▼
+                      <% else %>
+                        ▲
+                      <% end %>
+                    </span>
+                  </button>
+                <% else %>
+                  Side
+                <% end %>
               </th>
-              
-              <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Result
+
+              <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider select-none">
+                <%= if @sortable do %>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 hover:text-gray-700"
+                    data-sort-key="result"
+                  >
+                    <span>Result</span>
+                    <span
+                      class={if(@default_sort_by == :result, do: nil, else: "hidden")}
+                      data-sort-arrow
+                    >
+                      <%= if @default_sort_by == :result and @default_sort_dir == :desc do %>
+                        ▼
+                      <% else %>
+                        ▲
+                      <% end %>
+                    </span>
+                  </button>
+                <% else %>
+                  Result
+                <% end %>
               </th>
-              
-              <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Realized P/L
+
+              <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider select-none">
+                <%= if @sortable do %>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 hover:text-gray-700"
+                    data-sort-key="pl"
+                  >
+                    <span>Realized P/L</span>
+                    <span class={if(@default_sort_by == :pl, do: nil, else: "hidden")} data-sort-arrow>
+                      <%= if @default_sort_by == :pl and @default_sort_dir == :desc do %>
+                        ▼
+                      <% else %>
+                        ▲
+                      <% end %>
+                    </span>
+                  </button>
+                <% else %>
+                  Realized P/L
+                <% end %>
               </th>
             </tr>
           </thead>
-          
+
           <tbody class="bg-white divide-y divide-gray-200">
-            <%= for item <- @items do %>
-              <tr class="hover:bg-blue-50 transition-colors">
+            <%= for item <- sorted_items do %>
+              <% res = result_label(Map.get(item, :realized_pl)) %>
+              <tr
+                class="hover:bg-blue-50 transition-colors"
+                data-date={Integer.to_string(item_sort_date(item))}
+                data-ticker={String.upcase(item_ticker(item) || "-")}
+                data-side={
+                  (Map.get(item, :aggregated_side) || Map.get(item, "aggregated_side") || "-")
+                  |> to_string()
+                  |> String.upcase()
+                }
+                data-result={res}
+                data-pl={
+                  :erlang.float_to_binary(to_float(Map.get(item, :realized_pl)), [
+                    :compact,
+                    {:decimals, 8}
+                  ])
+                }
+              >
                 <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{item_label(item)}</td>
-                
+
                 <td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">
                   {item_ticker(item)}
                 </td>
-                
+
                 <td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">
                   {Map.get(item, :aggregated_side) || Map.get(item, "aggregated_side") || "-"}
                 </td>
-                 <% res = result_label(Map.get(item, :realized_pl)) %>
                 <td class={"px-4 py-2 whitespace-nowrap text-sm text-right #{result_class(res)}"}>
                   {res}
                 </td>
-                
+
                 <td class={"px-4 py-2 whitespace-nowrap text-sm text-right #{pl_class_amount(to_float(Map.get(item, :realized_pl)))}"}>
                   {format_amount(Map.get(item, :realized_pl))}
                 </td>
@@ -79,6 +209,62 @@ defmodule JournalexWeb.AggregatedTradeList do
             <% end %>
           </tbody>
         </table>
+        <%= if @sortable and not is_nil(@id) do %>
+          <script>
+            (function() {
+              try {
+                var root = document.getElementById("<%= Phoenix.HTML.Engine.html_escape(@id) %>");
+                if (!root || root.dataset.initialized === 'true') return;
+                root.dataset.initialized = 'true';
+                var table = root.querySelector('table');
+                var tbody = table.querySelector('tbody');
+                var headerBtns = table.querySelectorAll('thead [data-sort-key]');
+                function getRows() { return Array.prototype.slice.call(tbody.querySelectorAll('tr')); }
+                function cmp(a, b, dir, key) {
+                  var av = a.dataset[key] || '';
+                  var bv = b.dataset[key] || '';
+                  var numKeys = { date: true, pl: true };
+                  if (numKeys[key]) {
+                    var an = parseFloat(av) || 0; var bn = parseFloat(bv) || 0;
+                    return dir === 'asc' ? an - bn : bn - an;
+                  } else {
+                    av = av.toString(); bv = bv.toString();
+                    var r = av.localeCompare(bv);
+                    return dir === 'asc' ? r : -r;
+                  }
+                }
+                function setArrows(activeKey, dir) {
+                  headerBtns.forEach(function(btn){
+                    var arrow = btn.querySelector('[data-sort-arrow]');
+                    if (!arrow) return;
+                    if (btn.dataset.sortKey === activeKey) {
+                      arrow.classList.remove('hidden');
+                      arrow.textContent = dir === 'desc' ? '▼' : '▲';
+                    } else {
+                      arrow.classList.add('hidden');
+                    }
+                  });
+                }
+                headerBtns.forEach(function(btn){
+                  btn.addEventListener('click', function(){
+                    var key = btn.dataset.sortKey;
+                    var currentKey = root.dataset.currentSortKey || 'date';
+                    var currentDir = root.dataset.currentSortDir || 'desc';
+                    var dir = (key === currentKey) ? (currentDir === 'desc' ? 'asc' : 'desc') : 'asc';
+                    var rows = getRows();
+                    rows.sort(function(r1, r2){ return cmp(r1, r2, dir, key); });
+                    rows.forEach(function(r){ tbody.appendChild(r); });
+                    root.dataset.currentSortKey = key;
+                    root.dataset.currentSortDir = dir;
+                    setArrows(key, dir);
+                  });
+                });
+                // Ensure initial arrows reflect default sort
+                setArrows(root.dataset.currentSortKey || 'date', root.dataset.currentSortDir || 'desc');
+              } catch (e) { /* no-op */ }
+            })();
+          </script>
+        <% end %>
       <% else %>
         <div class="text-sm text-gray-500">No aggregated trades available.</div>
       <% end %>
@@ -163,6 +349,63 @@ defmodule JournalexWeb.AggregatedTradeList do
     case Float.parse(String.replace(bin, ",", "") |> String.trim()) do
       {n, _} -> n * 1.0
       :error -> 0.0
+    end
+  end
+
+  # Sorting helpers
+  defp sort_items(items, sort_by, sort_dir) when is_list(items) do
+    dir = normalize_dir(sort_dir)
+    key = normalize_key(sort_by)
+    sorter = sorter_for(key)
+
+    items
+    |> Enum.sort_by(sorter, dir)
+  end
+
+  defp normalize_key(k) when k in [:date, :ticker, :side, :result, :pl], do: k
+
+  defp normalize_key(k) when is_binary(k) do
+    key =
+      try do
+        String.to_existing_atom(k)
+      rescue
+        ArgumentError -> :date
+      end
+
+    if key in [:date, :ticker, :side, :result, :pl], do: key, else: :date
+  end
+
+  defp normalize_key(_), do: :date
+
+  defp normalize_dir(:asc), do: :asc
+  defp normalize_dir(:desc), do: :desc
+  defp normalize_dir("asc"), do: :asc
+  defp normalize_dir("desc"), do: :desc
+  defp normalize_dir(_), do: :desc
+
+  defp sorter_for(:date), do: &item_sort_date/1
+  defp sorter_for(:ticker), do: &(item_ticker(&1) |> to_string() |> String.upcase())
+
+  defp sorter_for(:side),
+    do:
+      &((Map.get(&1, :aggregated_side) || Map.get(&1, "aggregated_side") || "-")
+        |> to_string()
+        |> String.upcase())
+
+  defp sorter_for(:result), do: &result_label(Map.get(&1, :realized_pl))
+  defp sorter_for(:pl), do: &to_float(Map.get(&1, :realized_pl))
+
+  # Return a numeric sortable date value (Gregorian days)
+  defp item_sort_date(item) do
+    with date when is_binary(date) <-
+           date_only(
+             Map.get(item, :datetime) || Map.get(item, :date) || Map.get(item, "datetime") ||
+               Map.get(item, "date")
+           ),
+         {:ok, d} <- Date.from_iso8601(date) do
+      :calendar.date_to_gregorian_days(Date.to_erl(d))
+    else
+      _ -> 0
     end
   end
 
