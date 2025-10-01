@@ -14,6 +14,7 @@ defmodule JournalexWeb.ActivityStatementSummary do
 
   use JournalexWeb, :html
   alias Phoenix.LiveView.JS
+  alias JournalexWeb.AggregatedTradeList
 
   attr :rows, :list,
     required: true,
@@ -104,37 +105,7 @@ defmodule JournalexWeb.ActivityStatementSummary do
             <tr id={details_id} class={["bg-gray-50 group-hover:bg-blue-50 transition-colors", (if @expanded, do: nil, else: "hidden")] }>
               <td class="px-6 py-3 text-sm text-gray-900" colspan="6">
                 <% items = row_aggregated_trades(row) %>
-                <%= if is_list(items) and length(items) > 0 do %>
-                  <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                      <thead class="bg-gray-100">
-                        <tr>
-                          <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Group</th>
-                          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Winrate</th>
-                          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Wins</th>
-                          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Close Trades</th>
-                          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Days</th>
-                          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Realized P/L</th>
-                        </tr>
-                      </thead>
-                      <tbody class="bg-white divide-y divide-gray-200">
-                        <%= for item <- items do %>
-                          <% {iwins, itotal} = row_trade_counts(item) %>
-                          <tr class="hover:bg-blue-50 transition-colors">
-                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{item_label(item)}</td>
-                            <td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{format_winrate(per_row_winrate(item))}</td>
-                            <td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{format_count(iwins)}</td>
-                            <td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{format_count(itotal)}</td>
-                            <td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{format_count(row_days_traded(item))}</td>
-                            <td class={"px-4 py-2 whitespace-nowrap text-sm text-right #{pl_class_amount(to_float(Map.get(item, :realized_pl)))}"}>{format_amount(Map.get(item, :realized_pl))}</td>
-                          </tr>
-                        <% end %>
-                      </tbody>
-                    </table>
-                  </div>
-                <% else %>
-                  <div class="text-sm text-gray-500">No aggregated trades available.</div>
-                <% end %>
+                <AggregatedTradeList.aggregated_trade_list items={items} />
               </td>
             </tr>
           </tbody>
