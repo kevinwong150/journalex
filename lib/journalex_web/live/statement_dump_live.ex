@@ -30,10 +30,10 @@ defmodule JournalexWeb.StatementDumpLive do
       |> assign(:dump_in_progress?, false)
       |> assign(:dump_current, nil)
       |> assign(:dump_results, %{})
-  |> assign(:dump_started_at_mono, nil)
-  |> assign(:dump_finished_at_mono, nil)
-  |> assign(:dump_elapsed_ms, 0)
-  |> assign(:dump_retry_counts, %{})
+      |> assign(:dump_started_at_mono, nil)
+      |> assign(:dump_finished_at_mono, nil)
+      |> assign(:dump_elapsed_ms, 0)
+      |> assign(:dump_retry_counts, %{})
 
     # Kick off an automatic Notion check after the socket connects
     if connected?(socket), do: send(self(), :auto_check_notion)
@@ -102,6 +102,7 @@ defmodule JournalexWeb.StatementDumpLive do
 
       {:error, reason} ->
         msg = inspect(reason)
+
         {row_statuses, exists_count, missing_count} =
           Enum.reduce(selected_rows, {%{}, 0, 0}, fn row, {acc, ec, mc} ->
             {Map.put(acc, row.id, :error), ec, mc}
@@ -241,12 +242,14 @@ defmodule JournalexWeb.StatementDumpLive do
       [] ->
         # No more work
         now = System.monotonic_time(:millisecond)
+
         socket =
           socket
           |> assign(:dump_in_progress?, false)
           |> assign(:dump_current, nil)
           |> assign(:dump_finished_at_mono, socket.assigns.dump_finished_at_mono || now)
-          |> assign(:dump_elapsed_ms,
+          |> assign(
+            :dump_elapsed_ms,
             if socket.assigns.dump_started_at_mono do
               (socket.assigns.dump_finished_at_mono || now) - socket.assigns.dump_started_at_mono
             else
@@ -261,7 +264,8 @@ defmodule JournalexWeb.StatementDumpLive do
         socket = assign(socket, dump_current: row)
 
         # Perform existence check and maybe create
-        {row_statuses, result_tag, next_queue, next_retry_counts, increment_processed?, next_delay_ms} =
+        {row_statuses, result_tag, next_queue, next_retry_counts, increment_processed?,
+         next_delay_ms} =
           case Notion.exists_by_timestamp_and_ticker?(row.datetime, row.symbol) do
             {:ok, true} ->
               {
@@ -330,6 +334,7 @@ defmodule JournalexWeb.StatementDumpLive do
 
         # Update elapsed time
         now = System.monotonic_time(:millisecond)
+
         elapsed_ms =
           if socket.assigns.dump_started_at_mono do
             now - socket.assigns.dump_started_at_mono
@@ -366,11 +371,12 @@ defmodule JournalexWeb.StatementDumpLive do
     ~H"""
     <div class="space-y-4">
       <% total_count = length(@statements) %>
-      <% filtered_rows = if @hide_exists? do
-        Enum.reject(@statements, fn s -> Map.get(@row_statuses, s.id) == :exists end)
-      else
-        @statements
-      end %>
+      <% filtered_rows =
+        if @hide_exists? do
+          Enum.reject(@statements, fn s -> Map.get(@row_statuses, s.id) == :exists end)
+        else
+          @statements
+        end %>
       <% visible_count = length(filtered_rows) %>
       <% hidden_count = total_count - visible_count %>
 
@@ -402,8 +408,8 @@ defmodule JournalexWeb.StatementDumpLive do
             </button>
           </div>
         </div>
-
-        <!-- Row 2: Status badges on left, action buttons on right -->
+        
+    <!-- Row 2: Status badges on left, action buttons on right -->
         <div class="flex items-center justify-between gap-3 flex-wrap">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
@@ -414,7 +420,10 @@ defmodule JournalexWeb.StatementDumpLive do
               Visible: {visible_count}
             </span>
 
-            <span :if={@hide_exists?} class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+            <span
+              :if={@hide_exists?}
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700"
+            >
               Hidden: {hidden_count}
             </span>
 
@@ -477,27 +486,23 @@ defmodule JournalexWeb.StatementDumpLive do
             </button>
           </div>
         </div>
-
-        <!-- Row 3: Dump progress bar and details -->
+        
+    <!-- Row 3: Dump progress bar and details -->
         <div :if={@dump_total > 0} class="w-full space-y-1">
-          <% percent = if @dump_total > 0, do: Float.round(@dump_processed * 100.0 / @dump_total, 1), else: 0.0 %>
+          <% percent =
+            if @dump_total > 0, do: Float.round(@dump_processed * 100.0 / @dump_total, 1), else: 0.0 %>
           <div class="flex items-center justify-between text-xs text-gray-600">
             <span>
-              Dump progress: {@dump_processed}/{@dump_total} ({percent}%)
-              {if @dump_in_progress?, do: "- in progress", else: "- completed"}
-              · Time: {format_duration(@dump_elapsed_ms)}
+              Dump progress: {@dump_processed}/{@dump_total} ({percent}%) {if @dump_in_progress?,
+                do: "- in progress",
+                else: "- completed"} · Time: {format_duration(@dump_elapsed_ms)}
             </span>
             <span :if={@dump_current} class="font-medium text-gray-700">
-              Currently: {
-                @dump_current.symbol <> " @ " <> DateTime.to_iso8601(@dump_current.datetime)
-              }
+              Currently: {@dump_current.symbol <> " @ " <> DateTime.to_iso8601(@dump_current.datetime)}
             </span>
           </div>
           <div class="w-full bg-gray-200 rounded h-2 overflow-hidden">
-            <div
-              class="bg-green-500 h-2"
-              style={"width: #{percent}%"}
-            ></div>
+            <div class="bg-green-500 h-2" style={"width: #{percent}%"}></div>
           </div>
           <div :if={!@dump_in_progress?} class="text-xs text-gray-600">
             Total time: {format_duration(@dump_elapsed_ms)}

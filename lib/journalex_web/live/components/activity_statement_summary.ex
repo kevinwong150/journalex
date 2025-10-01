@@ -39,70 +39,75 @@ defmodule JournalexWeb.ActivityStatementSummary do
             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Symbol
             </th>
-
+            
             <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
               Winrate
             </th>
-
+            
             <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
               Wins
             </th>
-
+            
             <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
               Close Trades
             </th>
-
+            
             <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
               Days
             </th>
-
+            
             <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
               Aggregated Realized P/L
             </th>
           </tr>
         </thead>
-
+        
         <%= for row <- @rows do %>
-          <% row_id = row_dom_id(row) %>
-          <% details_id = row_id <> "-details" %>
+          <% row_id = row_dom_id(row) %> <% details_id = row_id <> "-details" %>
           <tbody id={"group-" <> row_id} class="group bg-white divide-y divide-gray-200">
-            <tr id={row_id}
-                class="hover:bg-blue-50 group-hover:bg-blue-50 cursor-pointer transition-colors"
-                phx-click={JS.toggle(to: "#" <> details_id)}
-                phx-keydown={JS.toggle(to: "#" <> details_id)}
-                tabindex="0"
-                role="button"
-                aria-controls={details_id}
-                aria-expanded={@expanded}>
+            <tr
+              id={row_id}
+              class="hover:bg-blue-50 group-hover:bg-blue-50 cursor-pointer transition-colors"
+              phx-click={JS.toggle(to: "#" <> details_id)}
+              phx-keydown={JS.toggle(to: "#" <> details_id)}
+              tabindex="0"
+              role="button"
+              aria-controls={details_id}
+              aria-expanded={@expanded}
+            >
               <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900 border-l-2 border-transparent group-hover:border-blue-400">
                 <% items = row_aggregated_trades(row) %>
-                <span :if={is_list(items) and length(items) > 0} class="mr-2 text-gray-500">▸</span>
-                {row.symbol}
+                <span :if={is_list(items) and length(items) > 0} class="mr-2 text-gray-500">▸</span> {row.symbol}
               </td>
-
+              
               <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
                 {format_winrate(per_row_winrate(row))}
               </td>
-
-              <% {wins, total} = row_trade_counts(row) %>
+               <% {wins, total} = row_trade_counts(row) %>
               <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
                 {format_count(elem({wins, total}, 0))}
               </td>
-
+              
               <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
                 {format_count(elem({wins, total}, 1))}
               </td>
-
+              
               <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
                 {format_count(row_days_traded(row))}
               </td>
-
+              
               <td class={"px-6 py-3 whitespace-nowrap text-sm text-right #{pl_class_amount(to_float(Map.get(row, :realized_pl)))}"}>
                 {format_amount(row.realized_pl)}
               </td>
             </tr>
-
-            <tr id={details_id} class={["bg-gray-50 group-hover:bg-blue-50 transition-colors", (if @expanded, do: nil, else: "hidden")] }>
+            
+            <tr
+              id={details_id}
+              class={[
+                "bg-gray-50 group-hover:bg-blue-50 transition-colors",
+                if(@expanded, do: nil, else: "hidden")
+              ]}
+            >
               <td class="px-6 py-3 text-sm text-gray-900" colspan="6">
                 <% items = row_aggregated_trades(row) %>
                 <AggregatedTradeList.aggregated_trade_list items={items} />
@@ -110,28 +115,27 @@ defmodule JournalexWeb.ActivityStatementSummary do
             </tr>
           </tbody>
         <% end %>
-
+        
         <tbody>
           <tr class="bg-gray-50 font-semibold">
             <td class="px-6 py-3 text-sm text-gray-900">Total</td>
-
+            
             <td class="px-6 py-3 text-sm text-right text-gray-900">
               {format_winrate(compute_overall_winrate(@rows))}
             </td>
-
-            <% {owins, ototal} = overall_trade_counts(@rows) %>
+             <% {owins, ototal} = overall_trade_counts(@rows) %>
             <td class="px-6 py-3 text-sm text-right text-gray-900">
               {format_count(owins)}
             </td>
-
+            
             <td class="px-6 py-3 text-sm text-right text-gray-900">
               {format_count(ototal)}
             </td>
-
+            
             <td class="px-6 py-3 text-sm text-right text-gray-900">
               {format_count(@selected_days || overall_days_traded(@rows))}
             </td>
-
+            
             <td class={"px-6 py-3 text-sm text-right #{pl_class_amount(@total)}"}>
               {format_amount(@total)}
             </td>
@@ -168,16 +172,25 @@ defmodule JournalexWeb.ActivityStatementSummary do
   # Decimal, and strings (may contain '%' or commas). Nil/unparseable => "-".
   defp format_winrate(val) do
     cond do
-      is_nil(val) -> "-"
-      match?(%Decimal{}, val) -> val |> Decimal.to_float() |> format_winrate_number()
+      is_nil(val) ->
+        "-"
+
+      match?(%Decimal{}, val) ->
+        val |> Decimal.to_float() |> format_winrate_number()
+
       is_binary(val) ->
         cleaned = val |> String.replace([",", "%"], "") |> String.trim()
+
         case Float.parse(cleaned) do
           {n, _} -> format_winrate_number(n)
           :error -> "-"
         end
-      is_number(val) -> format_winrate_number(val)
-      true -> "-"
+
+      is_number(val) ->
+        format_winrate_number(val)
+
+      true ->
+        "-"
     end
   end
 

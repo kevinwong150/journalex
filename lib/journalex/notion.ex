@@ -300,7 +300,9 @@ defmodule Journalex.Notion do
   end
 
   defp maybe_put_start_cursor(map, nil), do: map
-  defp maybe_put_start_cursor(map, cursor) when is_binary(cursor), do: Map.put(map, :start_cursor, cursor)
+
+  defp maybe_put_start_cursor(map, cursor) when is_binary(cursor),
+    do: Map.put(map, :start_cursor, cursor)
 
   defp extract_title(page, title_prop) do
     case get_in(page, ["properties", title_prop, "title"]) do

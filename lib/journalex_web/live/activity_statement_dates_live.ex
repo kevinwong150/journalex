@@ -332,7 +332,9 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
   defp put_aggregated_side(row) when is_map(row) do
     side =
       case Map.get(row, :side) || Map.get(row, "side") do
-        s when is_binary(s) -> String.downcase(s)
+        s when is_binary(s) ->
+          String.downcase(s)
+
         _ ->
           q = to_number(Map.get(row, :quantity) || Map.get(row, "quantity") || 0)
           if q < 0, do: "short", else: "long"

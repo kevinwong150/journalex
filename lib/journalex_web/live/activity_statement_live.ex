@@ -21,11 +21,11 @@ defmodule JournalexWeb.ActivityStatementLive do
     day_selection = days |> Map.new(fn d -> {d, true} end)
 
     # Filtered trades based on selection
-  filtered_trades = filter_trades_by_days(annotated_trades, day_selection)
+    filtered_trades = filter_trades_by_days(annotated_trades, day_selection)
 
     {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
     period = compute_period_from_trades(annotated_trades)
-  unsaved_count = count_unsaved(filtered_trades)
+    unsaved_count = count_unsaved(filtered_trades)
 
     # Selected business days (Mon-Fri) count from selected toggles
     selected_days_count =
@@ -37,7 +37,7 @@ defmodule JournalexWeb.ActivityStatementLive do
      socket
      |> assign(:all_trades, annotated_trades)
      |> assign(:activity_data, filtered_trades)
-  |> assign(:unsaved_count, unsaved_count)
+     |> assign(:unsaved_count, unsaved_count)
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
      |> assign(:days, days)
@@ -78,22 +78,35 @@ defmodule JournalexWeb.ActivityStatementLive do
                   phx-value-day={day}
                   class={[
                     "inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded-md border",
-                    if(on?, do: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100", else: "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100")
+                    if(on?,
+                      do: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100",
+                      else: "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
+                    )
                   ]}
                   aria-pressed={on?}
                 >
-                  <%= friendly_day_label(day) %>
+                  {friendly_day_label(day)}
                 </button>
               <% end %>
             </div>
             <div class="flex items-center gap-2">
-              <button phx-click="select_all_days" class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">All</button>
-              <button phx-click="deselect_all_days" class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">None</button>
+              <button
+                phx-click="select_all_days"
+                class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                All
+              </button>
+              <button
+                phx-click="deselect_all_days"
+                class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                None
+              </button>
             </div>
           </div>
         </div>
-
-        <!-- Summary: Realized P/L by Symbol -->
+        
+    <!-- Summary: Realized P/L by Symbol -->
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
@@ -133,14 +146,17 @@ defmodule JournalexWeb.ActivityStatementLive do
           selected_days={@selected_days}
           id="summary-table"
         />
-
-        <!-- Unsaved records indicator -->
+        
+    <!-- Unsaved records indicator -->
         <div class="px-6 py-3 border-b border-gray-200 flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span class="text-sm text-gray-600">Unsaved records:</span>
             <span class={[
               "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
-              if(@unsaved_count > 0, do: "bg-yellow-100 text-yellow-800", else: "bg-green-100 text-green-800")
+              if(@unsaved_count > 0,
+                do: "bg-yellow-100 text-yellow-800",
+                else: "bg-green-100 text-green-800"
+              )
             ]}>
               {@unsaved_count}
             </span>
@@ -206,6 +222,7 @@ defmodule JournalexWeb.ActivityStatementLive do
           files
           |> Enum.filter(&String.ends_with?(&1, ".csv"))
           |> Enum.map(&Path.join(uploads_dir, &1))
+
         _ ->
           []
       end
@@ -238,14 +255,20 @@ defmodule JournalexWeb.ActivityStatementLive do
       |> Enum.map(&parse_date!/1)
 
     case dates do
-      [] -> nil
+      [] ->
+        nil
+
       list ->
         min_d = Enum.min(list, Date)
         max_d = Enum.max(list, Date)
 
         cond do
-          Date.compare(min_d, max_d) == :eq -> Calendar.strftime(min_d, "%B %-d, %Y")
-          true -> Calendar.strftime(min_d, "%B %-d, %Y") <> " – " <> Calendar.strftime(max_d, "%B %-d, %Y")
+          Date.compare(min_d, max_d) == :eq ->
+            Calendar.strftime(min_d, "%B %-d, %Y")
+
+          true ->
+            Calendar.strftime(min_d, "%B %-d, %Y") <>
+              " – " <> Calendar.strftime(max_d, "%B %-d, %Y")
         end
     end
   end
@@ -262,6 +285,7 @@ defmodule JournalexWeb.ActivityStatementLive do
         closes =
           Enum.filter(ts, fn r -> build_close(r) == "CLOSE" end)
           |> Enum.map(&put_aggregated_side/1)
+
         close_count = length(closes)
         close_positive_count = closes |> Enum.count(fn r -> to_number(r.realized_pl) > 0.0 end)
 
@@ -291,7 +315,9 @@ defmodule JournalexWeb.ActivityStatementLive do
   defp put_aggregated_side(row) when is_map(row) do
     side =
       case Map.get(row, :side) || Map.get(row, "side") do
-        s when is_binary(s) -> String.downcase(s)
+        s when is_binary(s) ->
+          String.downcase(s)
+
         _ ->
           q = to_number(Map.get(row, :quantity) || Map.get(row, "quantity") || 0)
           if q < 0, do: "short", else: "long"
@@ -418,7 +444,8 @@ defmodule JournalexWeb.ActivityStatementLive do
   @impl true
   def handle_event("save_row", %{"index" => index_str}, socket) do
     with {idx, _} <- Integer.parse(to_string(index_str)),
-         rows when is_list(rows) <- Activity.dedupe_by_datetime_symbol(socket.assigns.activity_data),
+         rows when is_list(rows) <-
+           Activity.dedupe_by_datetime_symbol(socket.assigns.activity_data),
          row when is_map(row) <- Enum.at(rows, idx) do
       case Activity.save_activity_row(row) do
         {:ok, _} ->

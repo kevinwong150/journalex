@@ -61,18 +61,21 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
         Process.send_after(self(), :redirect_to_activity, 3_000)
         Process.send_after(self(), :countdown_tick, 1_000)
 
-  {:noreply,
-   socket
-   |> assign(:uploaded_files, uploaded_files)
-   |> assign(:upload_status, :success)
-   |> assign(:redirect_countdown, 3)
-   |> put_flash(:info, "CSV file(s) uploaded and processed successfully! Redirecting in 3s…")}
+        {:noreply,
+         socket
+         |> assign(:uploaded_files, uploaded_files)
+         |> assign(:upload_status, :success)
+         |> assign(:redirect_countdown, 3)
+         |> put_flash(
+           :info,
+           "CSV file(s) uploaded and processed successfully! Redirecting in 3s…"
+         )}
 
       [] ->
-  {:noreply,
-   socket
-   |> assign(:upload_status, :error)
-   |> put_flash(:error, "Failed to process the uploaded file(s).")}
+        {:noreply,
+         socket
+         |> assign(:upload_status, :error)
+         |> put_flash(:error, "Failed to process the uploaded file(s).")}
     end
   end
 
@@ -185,7 +188,9 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
 
         <h1 class="text-3xl font-bold text-gray-900">Upload Activity Statement</h1>
 
-    <p class="mt-2 text-gray-600">Upload one or more CSV files containing your activity statement data</p>
+        <p class="mt-2 text-gray-600">
+          Upload one or more CSV files containing your activity statement data
+        </p>
 
         <%= if assigns[:date_grid] && not Enum.empty?(@date_grid) do %>
           <div class="mt-6">
@@ -243,7 +248,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                     <p class="text-xs text-gray-500">CSV files up to 10MB each (max 10 files)</p>
                   </div>
                 </div>
-
+                
     <!-- Upload Progress -->
                 <%= for entry <- @uploads.csv_file.entries do %>
                   <div class="bg-gray-50 rounded-lg p-4">
@@ -281,7 +286,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         </svg>
                       </button>
                     </div>
-
+                    
     <!-- Progress Bar -->
                     <div class="w-full bg-gray-200 rounded-full h-2">
                       <div
@@ -297,7 +302,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         {Float.round(entry.client_size / 1024, 1)}KB
                       </span>
                     </div>
-
+                    
     <!-- Upload Errors -->
                     <%= for err <- upload_errors(@uploads.csv_file, entry) do %>
                       <div class="mt-2 text-sm text-red-600">
@@ -306,7 +311,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                     <% end %>
                   </div>
                 <% end %>
-
+                
     <!-- General Upload Errors -->
                 <%= for err <- upload_errors(@uploads.csv_file) do %>
                   <div class="text-sm text-red-600">
@@ -314,7 +319,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                   </div>
                 <% end %>
               </div>
-
+              
     <!-- File Requirements -->
               <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div class="flex">
@@ -351,7 +356,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                   </div>
                 </div>
               </div>
-
+              
     <!-- Submit Button -->
               <div class="flex justify-end">
                 <button
@@ -374,7 +379,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
               </div>
             </div>
           </form>
-
+          
     <!-- Upload Results -->
           <%= if @upload_status == :success and not Enum.empty?(@uploaded_files) do %>
             <div class="mt-8 bg-green-50 border border-green-200 rounded-lg p-4">
