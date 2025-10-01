@@ -7,7 +7,7 @@ defmodule JournalexWeb.ActivityStatementLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    trades = load_all_trades()
+    trades = load_all_trades() |> Activity.dedupe_by_datetime_symbol()
     # annotate each row with existence flag
     exists_flags = Activity.rows_exist_flags(trades)
 
@@ -21,7 +21,7 @@ defmodule JournalexWeb.ActivityStatementLive do
     day_selection = days |> Map.new(fn d -> {d, true} end)
 
     # Filtered trades based on selection
-    filtered_trades = filter_trades_by_days(annotated_trades, day_selection)
+  filtered_trades = filter_trades_by_days(annotated_trades, day_selection)
 
     {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
     period = compute_period_from_trades(annotated_trades)
@@ -286,12 +286,14 @@ defmodule JournalexWeb.ActivityStatementLive do
 
   # Filter helpers
   defp filter_trades_by_days(trades, day_selection) when is_map(day_selection) do
-    Enum.filter(trades, fn row ->
+    trades
+    |> Enum.filter(fn row ->
       case date_only(Map.get(row, :datetime)) do
         nil -> false
         d -> Map.get(day_selection, d, true)
       end
     end)
+    |> Activity.dedupe_by_datetime_symbol()
   end
 
   defp date_only(nil), do: nil
@@ -363,7 +365,7 @@ defmodule JournalexWeb.ActivityStatementLive do
 
   @impl true
   def handle_event("save_all", _params, socket) do
-    trades = socket.assigns.activity_data || []
+    trades = socket.assigns.activity_data |> Activity.dedupe_by_datetime_symbol() || []
 
     try do
       {:ok, inserted} = Activity.save_activity_rows(trades)
@@ -399,7 +401,7 @@ defmodule JournalexWeb.ActivityStatementLive do
   @impl true
   def handle_event("save_row", %{"index" => index_str}, socket) do
     with {idx, _} <- Integer.parse(to_string(index_str)),
-         rows when is_list(rows) <- socket.assigns.activity_data,
+         rows when is_list(rows) <- Activity.dedupe_by_datetime_symbol(socket.assigns.activity_data),
          row when is_map(row) <- Enum.at(rows, idx) do
       case Activity.save_activity_row(row) do
         {:ok, _} ->

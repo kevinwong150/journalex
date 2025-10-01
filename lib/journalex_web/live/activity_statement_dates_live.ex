@@ -16,7 +16,7 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
     results =
       case Activity.list_activity_statements_between(sd, ed) do
         {:error, _} -> []
-        list when is_list(list) -> list
+        list when is_list(list) -> Activity.dedupe_by_datetime_symbol(list)
       end
 
     default_grid = build_date_grid(sd, ed, results)
@@ -187,6 +187,7 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
              )}
 
           results when is_list(results) ->
+            results = Activity.dedupe_by_datetime_symbol(results)
             {summary_by_symbol, summary_total} = summarize_realized_pl(results)
             selected_days = business_days_between(start_date, end_date)
             date_grid = build_date_grid(start_date, end_date, results)
@@ -276,7 +277,7 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
     results =
       case Activity.list_activity_statements_between(sd, ed) do
         {:error, _} -> []
-        list when is_list(list) -> list
+        list when is_list(list) -> Activity.dedupe_by_datetime_symbol(list)
       end
 
     grid = build_date_grid(sd, ed, results)

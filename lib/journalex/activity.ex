@@ -13,6 +13,7 @@ defmodule Journalex.Activity do
   def save_activity_rows(rows) when is_list(rows) do
     attrs =
       rows
+      |> dedupe_by_datetime_symbol()
       |> Enum.map(&to_attrs/1)
       |> Enum.reject(&is_nil(&1.datetime))
 
@@ -52,6 +53,31 @@ defmodule Journalex.Activity do
       end
     end
   end
+
+  @doc """
+  Deduplicate rows by the combination of timestamp (datetime) and ticker (symbol).
+
+  Preserves the first occurrence order.
+  Works with parsed maps or ActivityStatement structs, as long as :datetime and :symbol are present.
+  """
+  def dedupe_by_datetime_symbol(rows) when is_list(rows) do
+    {acc, _seen} =
+      Enum.reduce(Enum.with_index(rows), {[], MapSet.new()}, fn {row, idx}, {acc, seen} ->
+        dt = Map.get(row, :datetime) || Map.get(row, "datetime")
+        sym = Map.get(row, :symbol) || Map.get(row, "symbol")
+        key = if not is_nil(dt) and not is_nil(sym), do: {dt, sym}, else: {:unique, idx}
+
+        if MapSet.member?(seen, key) do
+          {acc, seen}
+        else
+          {[row | acc], MapSet.put(seen, key)}
+        end
+      end)
+
+    Enum.reverse(acc)
+  end
+
+  def dedupe_by_datetime_symbol(_), do: []
 
   @doc """
   List saved activity statements.
