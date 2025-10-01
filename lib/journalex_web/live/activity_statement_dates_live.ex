@@ -301,6 +301,7 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
           Enum.filter(ts, fn r ->
             display_position_action(r.position_action) == "CLOSE" or infer_close?(r)
           end)
+          |> Enum.map(&put_aggregated_side/1)
 
         close_count = length(closes)
         close_positive_count = closes |> Enum.count(fn r -> to_number(r.realized_pl) > 0.0 end)
@@ -325,6 +326,20 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
 
     total = rows |> Enum.map(& &1.realized_pl) |> Enum.sum()
     {rows, total}
+  end
+
+  # Compute the aggregated trade side as the opposite of the close trade side
+  defp put_aggregated_side(row) when is_map(row) do
+    side =
+      case Map.get(row, :side) || Map.get(row, "side") do
+        s when is_binary(s) -> String.downcase(s)
+        _ ->
+          q = to_number(Map.get(row, :quantity) || Map.get(row, "quantity") || 0)
+          if q < 0, do: "short", else: "long"
+      end
+
+    agg = if side == "long", do: "SHORT", else: if(side == "short", do: "LONG", else: "-")
+    Map.put(row, :aggregated_side, agg)
   end
 
   defp date_only(nil), do: nil

@@ -1,21 +1,20 @@
 defmodule JournalexWeb.AggregatedTradeList do
-	@moduledoc """
-	Function components for rendering a generic Aggregated Trade list table.
+		@moduledoc """
+		Function components for rendering a generic Aggregated Trade list table.
 
-	This component is data-source agnostic: pass any list of aggregated trade
-	items (not tied to a specific ticker). Each item can be a map with fields
-	like:
-		- :label | :group | :date | :datetime | :id (for display label)
-		- :winrate (fraction 0..1 or percent 0..100)
-		- :close_positive_count and :close_count OR :wins_count and :trades_count
-		- :close_trades (list of trade maps, each with :realized_pl and optional :datetime)
-		- :realized_pl (number | Decimal | string)
-		- :days_traded | :dates (list)
+		Columns: Date, Ticker, Side, Result (WIN/LOSE), Realized P/L.
 
-	Usage:
+		This component is data-source agnostic: pass any list of aggregated trade
+		items (not tied to a specific ticker). Each item can be a map with fields
+		like:
+			- :date | :datetime (preferred for the Date column)
+			- :label | :group | :id (fallbacks for display if date is missing)
+			- :realized_pl (number | Decimal | string) used to determine Result and P/L
 
-		<JournalexWeb.AggregatedTradeList.aggregated_trade_list items={@items} />
-	"""
+		Usage:
+
+			<JournalexWeb.AggregatedTradeList.aggregated_trade_list items={@items} />
+		"""
 
 	use JournalexWeb, :html
 
@@ -31,26 +30,24 @@ defmodule JournalexWeb.AggregatedTradeList do
 		~H"""
 		<div class={Enum.join(Enum.reject(["overflow-x-auto", @class], &is_nil/1), " ")} id={@id}>
 			<%= if is_list(@items) and length(@items) > 0 do %>
-				<table class="min-w-full divide-y divide-gray-200">
+						<table class="min-w-full divide-y divide-gray-200">
 					<thead class="bg-gray-100">
 						<tr>
-							<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Group</th>
-							<th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Winrate</th>
-							<th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Wins</th>
-							<th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Close Trades</th>
-							<th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Days</th>
+							<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+							<th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ticker</th>
+							  <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Side</th>
+							<th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Result</th>
 							<th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Realized P/L</th>
 						</tr>
 					</thead>
 					<tbody class="bg-white divide-y divide-gray-200">
 						<%= for item <- @items do %>
-							<% {iwins, itotal} = row_trade_counts(item) %>
 							<tr class="hover:bg-blue-50 transition-colors">
 								<td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{item_label(item)}</td>
-								<td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{format_winrate(per_row_winrate(item))}</td>
-								<td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{format_count(iwins)}</td>
-								<td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{format_count(itotal)}</td>
-								<td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{format_count(row_days_traded(item))}</td>
+								<td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{item_ticker(item)}</td>
+								<td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{Map.get(item, :aggregated_side) || Map.get(item, "aggregated_side") || "-"}</td>
+										<% res = result_label(Map.get(item, :realized_pl)) %>
+										<td class={"px-4 py-2 whitespace-nowrap text-sm text-right #{result_class(res)}"}>{res}</td>
 								<td class={"px-4 py-2 whitespace-nowrap text-sm text-right #{pl_class_amount(to_float(Map.get(item, :realized_pl)))}"}>{format_amount(Map.get(item, :realized_pl))}</td>
 							</tr>
 						<% end %>
@@ -189,6 +186,35 @@ defmodule JournalexWeb.AggregatedTradeList do
 				end
 		end
 	end
+
+	# Result helpers
+	defp result_label(pl) do
+    if to_float(pl) > 0.0, do: "WIN", else: "LOSE"
+  end
+
+  defp result_class("WIN"), do: "text-green-600"
+  defp result_class("LOSE"), do: "text-red-600"
+  defp result_class(_), do: "text-gray-900"
+
+	# Ticker helper: try multiple common keys and fall back gracefully
+	defp item_ticker(item) when is_map(item) do
+		val =
+			Map.get(item, :symbol) ||
+			Map.get(item, :ticker) ||
+			Map.get(item, :underlying) ||
+			Map.get(item, "symbol") ||
+			Map.get(item, "ticker") ||
+			Map.get(item, "underlying")
+
+		cond do
+			is_binary(val) -> val
+			is_atom(val) -> Atom.to_string(val)
+			is_number(val) -> to_string(val)
+			true -> "-"
+		end
+	end
+
+		# All complex side inference removed; data now includes :aggregated_side
 
 	defp date_only(nil), do: nil
 	defp date_only(%DateTime{} = dt), do: Date.to_iso8601(DateTime.to_date(dt))
