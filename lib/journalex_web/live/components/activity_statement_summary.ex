@@ -13,6 +13,7 @@ defmodule JournalexWeb.ActivityStatementSummary do
   """
 
   use JournalexWeb, :html
+  alias Phoenix.LiveView.JS
 
   attr :rows, :list,
     required: true,
@@ -60,36 +61,86 @@ defmodule JournalexWeb.ActivityStatementSummary do
           </tr>
         </thead>
 
-        <tbody class="bg-white divide-y divide-gray-200">
-          <%= if @expanded do %>
-            <%= for row <- @rows do %>
-              <tr class="hover:bg-gray-50">
-                <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900">{row.symbol}</td>
+        <%= for row <- @rows do %>
+          <% row_id = row_dom_id(row) %>
+          <% details_id = row_id <> "-details" %>
+          <tbody id={"group-" <> row_id} class="group bg-white divide-y divide-gray-200">
+            <tr id={row_id}
+                class="hover:bg-blue-50 group-hover:bg-blue-50 cursor-pointer transition-colors"
+                phx-click={JS.toggle(to: "#" <> details_id)}
+                phx-keydown={JS.toggle(to: "#" <> details_id)}
+                tabindex="0"
+                role="button"
+                aria-controls={details_id}
+                aria-expanded={@expanded}>
+              <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900 border-l-2 border-transparent group-hover:border-blue-400">
+                <% items = row_aggregated_trades(row) %>
+                <span :if={is_list(items) and length(items) > 0} class="mr-2 text-gray-500">▸</span>
+                {row.symbol}
+              </td>
 
-                <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
-                  {format_winrate(per_row_winrate(row))}
-                </td>
+              <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                {format_winrate(per_row_winrate(row))}
+              </td>
 
-                <% {wins, total} = row_trade_counts(row) %>
-                <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
-                  {format_count(elem({wins, total}, 0))}
-                </td>
+              <% {wins, total} = row_trade_counts(row) %>
+              <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                {format_count(elem({wins, total}, 0))}
+              </td>
 
-                <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
-                  {format_count(elem({wins, total}, 1))}
-                </td>
+              <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                {format_count(elem({wins, total}, 1))}
+              </td>
 
-                <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
-                  {format_count(row_days_traded(row))}
-                </td>
+              <td class="px-6 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                {format_count(row_days_traded(row))}
+              </td>
 
-                <td class={"px-6 py-3 whitespace-nowrap text-sm text-right #{pl_class_amount(row.realized_pl)}"}>
-                  {format_amount(row.realized_pl)}
-                </td>
-              </tr>
-            <% end %>
-          <% end %>
+              <td class={"px-6 py-3 whitespace-nowrap text-sm text-right #{pl_class_amount(to_float(Map.get(row, :realized_pl)))}"}>
+                {format_amount(row.realized_pl)}
+              </td>
+            </tr>
 
+            <tr id={details_id} class={["bg-gray-50 group-hover:bg-blue-50 transition-colors", (if @expanded, do: nil, else: "hidden")] }>
+              <td class="px-6 py-3 text-sm text-gray-900" colspan="6">
+                <% items = row_aggregated_trades(row) %>
+                <%= if is_list(items) and length(items) > 0 do %>
+                  <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                      <thead class="bg-gray-100">
+                        <tr>
+                          <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Group</th>
+                          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Winrate</th>
+                          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Wins</th>
+                          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Close Trades</th>
+                          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Days</th>
+                          <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Realized P/L</th>
+                        </tr>
+                      </thead>
+                      <tbody class="bg-white divide-y divide-gray-200">
+                        <%= for item <- items do %>
+                          <% {iwins, itotal} = row_trade_counts(item) %>
+                          <tr class="hover:bg-blue-50 transition-colors">
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{item_label(item)}</td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{format_winrate(per_row_winrate(item))}</td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{format_count(iwins)}</td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{format_count(itotal)}</td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">{format_count(row_days_traded(item))}</td>
+                            <td class={"px-4 py-2 whitespace-nowrap text-sm text-right #{pl_class_amount(to_float(Map.get(item, :realized_pl)))}"}>{format_amount(Map.get(item, :realized_pl))}</td>
+                          </tr>
+                        <% end %>
+                      </tbody>
+                    </table>
+                  </div>
+                <% else %>
+                  <div class="text-sm text-gray-500">No aggregated trades available.</div>
+                <% end %>
+              </td>
+            </tr>
+          </tbody>
+        <% end %>
+
+        <tbody>
           <tr class="bg-gray-50 font-semibold">
             <td class="px-6 py-3 text-sm text-gray-900">Total</td>
 
@@ -142,24 +193,24 @@ defmodule JournalexWeb.ActivityStatementSummary do
     end
   end
 
-  # Winrate formatting helper. Accepts:
-  # - numbers: if <= 1.0 it's treated as a fraction; otherwise as a percentage value already
-  # - Decimal: converted to float
-  # - strings: may include commas or a trailing '%'; same <=1 rule applies after parsing
-  # nil or unparseable values render as "-"
-  defp format_winrate(nil), do: "-"
-  defp format_winrate(%Decimal{} = d), do: d |> Decimal.to_float() |> format_winrate()
-
-  defp format_winrate(bin) when is_binary(bin) do
-    cleaned = bin |> String.replace([",", "%"], "") |> String.trim()
-
-    case Float.parse(cleaned) do
-      {n, _} -> format_winrate(n)
-      :error -> "-"
+  # Winrate formatting helper. Accepts numbers (<=1 => fraction, else percent),
+  # Decimal, and strings (may contain '%' or commas). Nil/unparseable => "-".
+  defp format_winrate(val) do
+    cond do
+      is_nil(val) -> "-"
+      match?(%Decimal{}, val) -> val |> Decimal.to_float() |> format_winrate_number()
+      is_binary(val) ->
+        cleaned = val |> String.replace([",", "%"], "") |> String.trim()
+        case Float.parse(cleaned) do
+          {n, _} -> format_winrate_number(n)
+          :error -> "-"
+        end
+      is_number(val) -> format_winrate_number(val)
+      true -> "-"
     end
   end
 
-  defp format_winrate(n) when is_number(n) do
+  defp format_winrate_number(n) when is_number(n) do
     pct = if n <= 1.0, do: n * 100.0, else: n * 1.0
     :erlang.float_to_binary(pct, decimals: 2) <> "%"
   end
@@ -234,6 +285,9 @@ defmodule JournalexWeb.ActivityStatementSummary do
             |> Enum.uniq()
             |> length()
 
+          not is_nil(Map.get(row, :datetime)) or not is_nil(Map.get(row, :date)) ->
+            1
+
           true ->
             Map.get(row, :days) || 0
         end
@@ -277,6 +331,10 @@ defmodule JournalexWeb.ActivityStatementSummary do
         total = length(trades)
         wins = trades |> Enum.count(fn t -> to_float(Map.get(t, :realized_pl)) > 0.0 end)
         {wins, total}
+
+      not is_nil(Map.get(row, :realized_pl)) ->
+        # Single trade-like map
+        {if(to_float(Map.get(row, :realized_pl)) > 0.0, do: 1, else: 0), 1}
 
       true ->
         # If we only have a precomputed winrate and a total count, estimate wins for aggregation
@@ -326,6 +384,47 @@ defmodule JournalexWeb.ActivityStatementSummary do
     case Float.parse(String.replace(bin, ",", "") |> String.trim()) do
       {n, _} -> n * 1.0
       :error -> 0.0
+    end
+  end
+
+  # Row helpers for expand/collapse and aggregated items
+  defp row_dom_id(row) when is_map(row) do
+    sym = Map.get(row, :symbol) || Map.get(row, "symbol") || :erlang.phash2(row)
+
+    base =
+      case sym do
+        s when is_binary(s) -> sanitize_id("row-" <> s)
+        n when is_integer(n) -> "row-" <> Integer.to_string(n)
+        other -> "row-" <> sanitize_id(to_string(other))
+      end
+
+    base
+  end
+
+  defp sanitize_id(bin) when is_binary(bin) do
+    bin
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9\-_.]/i, "-")
+  end
+
+  # Prefer an explicit :aggregated_trades list; fallback to :close_trades
+  defp row_aggregated_trades(row) when is_map(row) do
+    cond do
+      is_list(Map.get(row, :aggregated_trades)) -> Map.get(row, :aggregated_trades)
+      is_list(Map.get(row, :close_trades)) -> Map.get(row, :close_trades)
+      true -> []
+    end
+  end
+
+  # Try to produce a human-friendly label for an aggregated item
+  defp item_label(item) when is_map(item) do
+    cond do
+      is_binary(Map.get(item, :label)) -> Map.get(item, :label)
+      is_binary(Map.get(item, :group)) -> Map.get(item, :group)
+      is_binary(Map.get(item, :date)) -> Map.get(item, :date)
+      not is_nil(Map.get(item, :datetime)) -> date_only(Map.get(item, :datetime)) || "-"
+      is_binary(Map.get(item, :id)) -> Map.get(item, :id)
+      true -> "-"
     end
   end
 end

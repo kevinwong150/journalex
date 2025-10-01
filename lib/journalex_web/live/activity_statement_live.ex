@@ -275,7 +275,8 @@ defmodule JournalexWeb.ActivityStatementLive do
           realized_pl: sum,
           close_count: close_count,
           close_positive_count: close_positive_count,
-          days_traded: days_traded
+          days_traded: days_traded,
+          close_trades: closes
         }
       end)
       |> Enum.sort_by(& &1.symbol)

@@ -18,6 +18,6 @@ apps/journalex/db
 
 /db
 
-/sample
+/sample/
 
-/uploads
+/**/uploads/
