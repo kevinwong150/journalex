@@ -44,47 +44,58 @@ defmodule JournalexWeb.ActivityStatementSummary do
     ~H"""
     <div class="overflow-x-auto" id={@id}>
       <!-- View toggle: grouped by ticker vs flat list -->
-      <div :if={@show_grouping_toggle} class="flex items-center justify-end gap-2 mb-3">
-        <span class="text-xs text-gray-500">View:</span>
-        <% active_btn = "bg-blue-600 text-white" %>
-        <% inactive_btn = "bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
-        <button
-          id={@id <> "-btn-grouped"}
-          type="button"
-          class={[
-            "px-3 py-1 rounded text-xs font-medium transition-colors",
-            if(@group_by_ticker, do: active_btn, else: inactive_btn)
-          ]}
-          phx-click={
-            JS.show(to: "#" <> @id <> "-grouped")
-            |> JS.hide(to: "#" <> @id <> "-flat")
-            |> JS.add_class(active_btn, to: "#" <> @id <> "-btn-grouped")
-            |> JS.remove_class(active_btn, to: "#" <> @id <> "-btn-flat")
-            |> JS.add_class(inactive_btn, to: "#" <> @id <> "-btn-flat")
-            |> JS.remove_class(inactive_btn, to: "#" <> @id <> "-btn-grouped")
-          }
-        >
-          By Ticker
-        </button>
+      <div :if={@show_grouping_toggle} class="flex items-center justify-end mb-3">
+        <span class="text-xs text-gray-500 mr-2">View:</span>
+        <% base_btn =
+          "relative inline-flex items-center px-3 py-1 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 transition-colors" %>
+        <% active_btn = "bg-blue-600 text-white hover:bg-blue-700" %>
+        <% inactive_btn = "bg-white text-gray-700 hover:bg-gray-50" %>
 
-        <button
-          id={@id <> "-btn-flat"}
-          type="button"
-          class={[
-            "px-3 py-1 rounded text-xs font-medium transition-colors",
-            if(@group_by_ticker, do: inactive_btn, else: active_btn)
-          ]}
-          phx-click={
-            JS.show(to: "#" <> @id <> "-flat")
-            |> JS.hide(to: "#" <> @id <> "-grouped")
-            |> JS.add_class(active_btn, to: "#" <> @id <> "-btn-flat")
-            |> JS.remove_class(active_btn, to: "#" <> @id <> "-btn-grouped")
-            |> JS.add_class(inactive_btn, to: "#" <> @id <> "-btn-grouped")
-            |> JS.remove_class(inactive_btn, to: "#" <> @id <> "-btn-flat")
-          }
-        >
-          Flat list
-        </button>
+        <div class="inline-flex items-stretch rounded-md shadow-sm ring-1 ring-inset ring-gray-300 overflow-hidden bg-white">
+          <button
+            id={@id <> "-btn-grouped"}
+            type="button"
+            class={[
+              base_btn,
+              "rounded-l-md",
+              if(@group_by_ticker, do: active_btn, else: inactive_btn)
+            ]}
+            phx-click={
+              JS.show(to: "#" <> @id <> "-grouped")
+              |> JS.hide(to: "#" <> @id <> "-flat")
+              |> JS.add_class(active_btn, to: "#" <> @id <> "-btn-grouped")
+              |> JS.remove_class(active_btn, to: "#" <> @id <> "-btn-flat")
+              |> JS.add_class(inactive_btn, to: "#" <> @id <> "-btn-flat")
+              |> JS.remove_class(inactive_btn, to: "#" <> @id <> "-btn-grouped")
+            }
+            aria-pressed={@group_by_ticker}
+            title="Group by ticker"
+          >
+            By Ticker
+          </button>
+
+          <button
+            id={@id <> "-btn-flat"}
+            type="button"
+            class={[
+              base_btn,
+              "rounded-r-md -ml-px",
+              if(@group_by_ticker, do: inactive_btn, else: active_btn)
+            ]}
+            phx-click={
+              JS.show(to: "#" <> @id <> "-flat")
+              |> JS.hide(to: "#" <> @id <> "-grouped")
+              |> JS.add_class(active_btn, to: "#" <> @id <> "-btn-flat")
+              |> JS.remove_class(active_btn, to: "#" <> @id <> "-btn-grouped")
+              |> JS.add_class(inactive_btn, to: "#" <> @id <> "-btn-grouped")
+              |> JS.remove_class(inactive_btn, to: "#" <> @id <> "-btn-flat")
+            }
+            aria-pressed={!@group_by_ticker}
+            title="Flat aggregated list"
+          >
+            Flat list
+          </button>
+        </div>
       </div>
       
     <!-- Grouped-by-ticker summary table (default) -->
@@ -188,6 +199,50 @@ defmodule JournalexWeb.ActivityStatementSummary do
       
     <!-- Flat aggregated trades list -->
       <div id={@id <> "-flat"} class={if(@group_by_ticker, do: "hidden", else: nil)}>
+        <!-- Preserve the Total row in flat list mode -->
+        <div class="mb-2 overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr class="font-semibold">
+                <td class="px-6 py-3 text-sm text-gray-900">Total</td>
+                <td class="px-6 py-3 text-sm text-right text-gray-900">
+                  {format_winrate(compute_overall_winrate(@rows))}
+                </td>
+                <% {owins, ototal} = overall_trade_counts(@rows) %>
+                <td class="px-6 py-3 text-sm text-right text-gray-900">{format_count(owins)}</td>
+                <td class="px-6 py-3 text-sm text-right text-gray-900">{format_count(ototal)}</td>
+                <td class="px-6 py-3 text-sm text-right text-gray-900">
+                  {format_count(@selected_days || overall_days_traded(@rows))}
+                </td>
+                <td class={"px-6 py-3 text-sm text-right #{pl_class_amount(@total)}"}>
+                  {format_amount(@total)}
+                </td>
+              </tr>
+              <!-- Column labels for the totals, separate from the list body below -->
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Symbol
+                </th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Winrate
+                </th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Wins
+                </th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Close Trades
+                </th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Days
+                </th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Aggregated Realized P/L
+                </th>
+              </tr>
+            </thead>
+          </table>
+        </div>
+
         <% all_items = all_aggregated_items(@rows) %>
         <AggregatedTradeList.aggregated_trade_list
           items={all_items}
