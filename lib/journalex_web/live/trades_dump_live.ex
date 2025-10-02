@@ -36,6 +36,9 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:dump_finished_at_mono, nil)
       |> assign(:dump_elapsed_ms, 0)
       |> assign(:dump_retry_counts, %{})
+      |> assign(:dump_cancel_requested?, false)
+      |> assign(:dump_timer_ref, nil)
+      |> assign(:dump_report_text, nil)
 
     if connected?(socket), do: send(self(), :auto_check_notion)
 
@@ -150,23 +153,20 @@ defmodule JournalexWeb.TradesDumpLive do
     selected_idx = socket.assigns.selected_idx
     rows = socket.assigns.trades
 
-    selected_rows =
+    selected_pairs =
       rows
       |> Enum.with_index()
       |> Enum.filter(fn {_r, i} -> MapSet.member?(selected_idx, i) end)
-      |> Enum.map(fn {r, _i} -> r end)
 
     case list_all_trade_trademarks() do
       {:ok, trademark_set} ->
         {row_statuses, exists_count, missing_count} =
-          Enum.reduce(Enum.with_index(selected_rows), {%{}, 0, 0}, fn {row, i}, {acc, ec, mc} ->
+          Enum.reduce(selected_pairs, {%{}, 0, 0}, fn {row, idx}, {acc, ec, mc} ->
             title = (row.ticker || row.symbol) <> "@" <> DateTime.to_iso8601(row.datetime)
 
-            if MapSet.member?(trademark_set, title) do
-              {Map.put(acc, i, :exists), ec + 1, mc}
-            else
-              {Map.put(acc, i, :missing), ec, mc + 1}
-            end
+            if MapSet.member?(trademark_set, title),
+              do: {Map.put(acc, idx, :exists), ec + 1, mc},
+              else: {Map.put(acc, idx, :missing), ec, mc + 1}
           end)
 
         {:noreply,
@@ -178,8 +178,8 @@ defmodule JournalexWeb.TradesDumpLive do
 
       {:error, reason} ->
         {row_statuses, exists_count, missing_count} =
-          Enum.reduce(Enum.with_index(selected_rows), {%{}, 0, 0}, fn {_row, i}, {acc, ec, mc} ->
-            {Map.put(acc, i, :error), ec, mc}
+          Enum.reduce(selected_pairs, {%{}, 0, 0}, fn {_row, idx}, {acc, ec, mc} ->
+            {Map.put(acc, idx, :error), ec, mc}
           end)
 
         {:noreply,
@@ -202,19 +202,16 @@ defmodule JournalexWeb.TradesDumpLive do
       rows = socket.assigns.trades
       statuses = socket.assigns.row_statuses || %{}
 
-      selected_rows =
+      selected_pairs =
         rows
         |> Enum.with_index()
         |> Enum.filter(fn {_r, i} -> MapSet.member?(selected_idx, i) end)
-        |> Enum.map(fn {r, _} -> r end)
 
-      missing_rows =
-        selected_rows
-        |> Enum.with_index()
-        |> Enum.filter(fn {_r, i} -> Map.get(statuses, i) == :missing end)
-        |> Enum.map(fn {r, _i} -> r end)
+      missing_pairs =
+        selected_pairs
+        |> Enum.filter(fn {_r, idx} -> Map.get(statuses, idx) == :missing end)
 
-      queue = if missing_rows == [], do: selected_rows, else: missing_rows
+      queue = if missing_pairs == [], do: selected_pairs, else: missing_pairs
 
       socket =
         socket
@@ -228,8 +225,49 @@ defmodule JournalexWeb.TradesDumpLive do
         |> assign(:dump_finished_at_mono, nil)
         |> assign(:dump_elapsed_ms, 0)
         |> assign(:dump_retry_counts, %{})
+        |> assign(:dump_cancel_requested?, false)
+        |> assign(:dump_report_text, nil)
 
-      Process.send_after(self(), :process_next_dump, 0)
+      timer_ref = Process.send_after(self(), :process_next_dump, 0)
+      {:noreply, assign(socket, :dump_timer_ref, timer_ref)}
+    end
+  end
+
+  @impl true
+  def handle_event("cancel_dump", _params, socket) do
+    if socket.assigns.dump_in_progress? do
+      if socket.assigns.dump_timer_ref, do: Process.cancel_timer(socket.assigns.dump_timer_ref)
+
+      now = System.monotonic_time(:millisecond)
+
+      socket =
+        socket
+        |> assign(:dump_cancel_requested?, true)
+        |> assign(:dump_in_progress?, false)
+        |> assign(:dump_queue, [])
+        |> assign(:dump_current, nil)
+        |> assign(:dump_timer_ref, nil)
+        |> assign(:dump_finished_at_mono, now)
+        |> assign(
+          :dump_elapsed_ms,
+          if socket.assigns.dump_started_at_mono do
+            now - socket.assigns.dump_started_at_mono
+          else
+            0
+          end
+        )
+        |> assign(
+          :dump_report_text,
+          build_dump_report(
+            socket.assigns.dump_results,
+            socket.assigns.dump_total,
+            socket.assigns.dump_processed,
+            0
+          )
+        )
+
+      {:noreply, socket}
+    else
       {:noreply, socket}
     end
   end
@@ -285,88 +323,132 @@ defmodule JournalexWeb.TradesDumpLive do
 
   @impl true
   def handle_info(:process_next_dump, socket) do
-    queue = socket.assigns.dump_queue
+    if socket.assigns.dump_cancel_requested? do
+      now = System.monotonic_time(:millisecond)
 
-    case queue do
-      [] ->
-        now = System.monotonic_time(:millisecond)
-
-        socket =
-          socket
-          |> assign(:dump_in_progress?, false)
-          |> assign(:dump_current, nil)
-          |> assign(:dump_finished_at_mono, socket.assigns.dump_finished_at_mono || now)
-          |> assign(
-            :dump_elapsed_ms,
-            if(socket.assigns.dump_started_at_mono,
-              do:
-                (socket.assigns.dump_finished_at_mono || now) -
-                  socket.assigns.dump_started_at_mono,
-              else: 0
-            )
-          )
-
-        {:noreply, socket}
-
-      [row | rest] ->
-        socket = assign(socket, dump_current: row)
-
-        {row_statuses, result_tag, next_queue, next_retry_counts, increment_processed?,
-         next_delay_ms} =
-          case Notion.exists_by_timestamp_and_ticker?(row.datetime, row.ticker || row.symbol,
-                 data_source_id: trades_data_source_id()
-               ) do
-            {:ok, true} ->
-              {socket.assigns.row_statuses, :skipped_exists, rest,
-               socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000)}
-
-            {:ok, false} ->
-              case Notion.create_from_trade(row, data_source_id: trades_data_source_id()) do
-                {:ok, _page} ->
-                  {socket.assigns.row_statuses, :created, rest, socket.assigns.dump_retry_counts,
-                   true, if(rest == [], do: 0, else: 1000)}
-
-                {:error, _reason} ->
-                  retries = Map.get(socket.assigns.dump_retry_counts, row, 0)
-
-                  if retries < @dump_max_retries do
-                    next_retries = Map.put(socket.assigns.dump_retry_counts, row, retries + 1)
-                    backoff_ms = 1000 * (retries + 1)
-
-                    {Map.put(socket.assigns.row_statuses, row, :retrying), :retrying,
-                     [row | rest], next_retries, false, backoff_ms}
-                  else
-                    {Map.put(socket.assigns.row_statuses, row, :error), :error, rest,
-                     socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000)}
-                  end
-              end
-
-            {:error, _reason} ->
-              {Map.put(socket.assigns.row_statuses, row, :error), :error, rest,
-               socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000)}
-          end
-
-        dump_results = Map.put(socket.assigns.dump_results, row, result_tag)
-        dump_processed = socket.assigns.dump_processed + if(increment_processed?, do: 1, else: 0)
-
-        now = System.monotonic_time(:millisecond)
-
-        elapsed_ms =
-          if socket.assigns.dump_started_at_mono,
-            do: now - socket.assigns.dump_started_at_mono,
+      socket =
+        socket
+        |> assign(:dump_in_progress?, false)
+        |> assign(:dump_current, nil)
+        |> assign(:dump_queue, [])
+        |> assign(:dump_finished_at_mono, socket.assigns.dump_finished_at_mono || now)
+        |> assign(
+          :dump_elapsed_ms,
+          if(socket.assigns.dump_started_at_mono,
+            do:
+              (socket.assigns.dump_finished_at_mono || now) -
+                socket.assigns.dump_started_at_mono,
             else: 0
+          )
+        )
+        |> assign(:dump_timer_ref, nil)
+        |> assign(
+          :dump_report_text,
+          build_dump_report(
+            socket.assigns.dump_results,
+            socket.assigns.dump_total,
+            socket.assigns.dump_processed,
+            0
+          )
+        )
 
-        socket =
-          socket
-          |> assign(:row_statuses, row_statuses)
-          |> assign(:dump_results, dump_results)
-          |> assign(:dump_processed, dump_processed)
-          |> assign(:dump_queue, next_queue)
-          |> assign(:dump_retry_counts, next_retry_counts)
-          |> assign(:dump_elapsed_ms, elapsed_ms)
+      {:noreply, socket}
+    else
+      queue = socket.assigns.dump_queue
 
-        Process.send_after(self(), :process_next_dump, next_delay_ms)
-        {:noreply, socket}
+      case queue do
+        [] ->
+          now = System.monotonic_time(:millisecond)
+
+          socket =
+            socket
+            |> assign(:dump_in_progress?, false)
+            |> assign(:dump_current, nil)
+            |> assign(:dump_finished_at_mono, socket.assigns.dump_finished_at_mono || now)
+            |> assign(
+              :dump_elapsed_ms,
+              if(socket.assigns.dump_started_at_mono,
+                do:
+                  (socket.assigns.dump_finished_at_mono || now) -
+                    socket.assigns.dump_started_at_mono,
+                else: 0
+              )
+            )
+            |> assign(:dump_timer_ref, nil)
+            |> assign(
+              :dump_report_text,
+              build_dump_report(
+                socket.assigns.dump_results,
+                socket.assigns.dump_total,
+                socket.assigns.dump_processed,
+                0
+              )
+            )
+
+          {:noreply, socket}
+
+        [{row, idx} | rest] ->
+          socket = assign(socket, dump_current: row)
+
+          {row_statuses, result_tag, next_queue, next_retry_counts, increment_processed?,
+           next_delay_ms} =
+            case Notion.exists_by_timestamp_and_ticker?(row.datetime, row.ticker || row.symbol,
+                   data_source_id: trades_data_source_id()
+                 ) do
+              {:ok, true} ->
+                {Map.put(socket.assigns.row_statuses, idx, :exists), :skipped_exists, rest,
+                 socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000)}
+
+              {:ok, false} ->
+                case Notion.create_from_trade(row, data_source_id: trades_data_source_id()) do
+                  {:ok, _page} ->
+                    {Map.put(socket.assigns.row_statuses, idx, :exists), :created, rest,
+                     socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000)}
+
+                  {:error, _reason} ->
+                    retries = Map.get(socket.assigns.dump_retry_counts, idx, 0)
+
+                    if retries < @dump_max_retries do
+                      next_retries = Map.put(socket.assigns.dump_retry_counts, idx, retries + 1)
+                      backoff_ms = 1000 * (retries + 1)
+
+                      {Map.put(socket.assigns.row_statuses, idx, :retrying), :retrying,
+                       [{row, idx} | rest], next_retries, false, backoff_ms}
+                    else
+                      {Map.put(socket.assigns.row_statuses, idx, :error), :error, rest,
+                       socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000)}
+                    end
+                end
+
+              {:error, _reason} ->
+                {Map.put(socket.assigns.row_statuses, idx, :error), :error, rest,
+                 socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000)}
+            end
+
+          dump_results = Map.put(socket.assigns.dump_results, idx, result_tag)
+
+          dump_processed =
+            socket.assigns.dump_processed + if(increment_processed?, do: 1, else: 0)
+
+          now = System.monotonic_time(:millisecond)
+
+          elapsed_ms =
+            if socket.assigns.dump_started_at_mono,
+              do: now - socket.assigns.dump_started_at_mono,
+              else: 0
+
+          socket =
+            socket
+            |> assign(:row_statuses, row_statuses)
+            |> assign(:dump_results, dump_results)
+            |> assign(:dump_processed, dump_processed)
+            |> assign(:dump_queue, next_queue)
+            |> assign(:dump_retry_counts, next_retry_counts)
+            |> assign(:dump_elapsed_ms, elapsed_ms)
+
+          timer_ref = Process.send_after(self(), :process_next_dump, next_delay_ms)
+          {:noreply, assign(socket, :dump_timer_ref, timer_ref)}
+      end
     end
   end
 
@@ -377,7 +459,7 @@ defmodule JournalexWeb.TradesDumpLive do
       <div class="space-y-2">
         <div class="flex items-center justify-between gap-3 flex-wrap">
           <h1 class="text-xl font-semibold">Trades Dump</h1>
-          
+
           <div class="flex items-center gap-2 flex-wrap">
             <button
               phx-click="toggle_select_all"
@@ -385,7 +467,7 @@ defmodule JournalexWeb.TradesDumpLive do
             >
               {if @all_selected?, do: "Clear All", else: "Select All"}
             </button>
-            
+
             <button
               phx-click="clear_row_statuses"
               class="inline-flex items-center px-3 py-2 rounded-md border border-red-300 text-sm bg-white text-red-600 hover:bg-red-50"
@@ -394,7 +476,7 @@ defmodule JournalexWeb.TradesDumpLive do
             </button>
           </div>
         </div>
-        
+
         <div class="flex items-center justify-between gap-3 flex-wrap">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
@@ -426,7 +508,7 @@ defmodule JournalexWeb.TradesDumpLive do
               Notion: Failed
             </span>
           </div>
-          
+
           <div class="flex items-center gap-2 flex-wrap">
             <button
               phx-click="check_notion_connection"
@@ -452,9 +534,17 @@ defmodule JournalexWeb.TradesDumpLive do
             >
               Insert Missing
             </button>
+            <button
+              :if={@dump_in_progress?}
+              phx-click="cancel_dump"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-red-300 text-sm bg-white text-red-600 hover:bg-red-50"
+              phx-disable-with="Stopping..."
+            >
+              Stop
+            </button>
           </div>
         </div>
-        
+
         <div :if={@dump_total > 0} class="w-full space-y-1">
           <% percent =
             if @dump_total > 0, do: Float.round(@dump_processed * 100.0 / @dump_total, 1), else: 0.0 %>
@@ -469,17 +559,43 @@ defmodule JournalexWeb.TradesDumpLive do
                 " @ " <> DateTime.to_iso8601(@dump_current.datetime)}
             </span>
           </div>
-          
+
           <div class="w-full bg-gray-200 rounded h-2 overflow-hidden">
             <div class="bg-green-500 h-2" style={"width: #{percent}%"}></div>
           </div>
-          
+
           <div :if={!@dump_in_progress?} class="text-xs text-gray-600">
             Total time: {format_duration(@dump_elapsed_ms)}
           </div>
+          <div class="text-xs text-gray-700">
+            <% values = Map.values(@dump_results) %>
+            <% created = Enum.count(values, &(&1 == :created)) %>
+            <% skipped = Enum.count(values, &(&1 == :skipped_exists)) %>
+            <% errors = Enum.count(values, &(&1 == :error)) %>
+            <% retrying = Enum.count(values, &(&1 == :retrying)) %>
+            <% remaining = length(@dump_queue) %>
+
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                Created: {created}
+              </span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                Skipped: {skipped}
+              </span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                Retrying: {retrying}
+              </span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                Errors: {errors}
+              </span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                Remaining: {remaining}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
-      
+
       <AggregatedTradeList.aggregated_trade_list
         id="trades-dump"
         items={@trades}
@@ -532,6 +648,24 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   defp format_duration(_), do: "0:00.000"
+
+  defp build_dump_report(results_map, _total, _processed, remaining) do
+    values = Map.values(results_map)
+    created = Enum.count(values, &(&1 == :created))
+    skipped = Enum.count(values, &(&1 == :skipped_exists))
+    errors = Enum.count(values, &(&1 == :error))
+    retrying = Enum.count(values, &(&1 == :retrying))
+
+    "Created " <>
+      Integer.to_string(created) <>
+      ", Skipped " <>
+      Integer.to_string(skipped) <>
+      ", Errors " <>
+      Integer.to_string(errors) <>
+      ", Retrying " <>
+      Integer.to_string(retrying) <>
+      ", Remaining " <> Integer.to_string(remaining)
+  end
 
   # Fetch all titles for the trades database using trades_data_source_id
   defp list_all_trade_trademarks do

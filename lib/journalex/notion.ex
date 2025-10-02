@@ -219,8 +219,7 @@ defmodule Journalex.Notion do
           "properties" => Map.merge(base_props, extra_props)
         }
 
-        case Client.create_page(payload |> IO.inspect(label: :payload))
-             |> IO.inspect(label: :create_page) do
+        case Client.create_page(payload) do
           {:ok, map} -> {:ok, map}
           {:error, reason} -> {:error, reason}
         end
