@@ -108,7 +108,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
             </div>
           </div>
         </div>
-        
+
     <!-- Summary: Realized P/L by Symbol -->
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
@@ -151,7 +151,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
           on_save_all_aggregated?="save_all_aggregated"
           on_save_row_event="save_aggregated_row"
         />
-        
+
     <!-- Unsaved records indicator -->
         <div class="px-6 py-3 border-b border-gray-200 flex items-center justify-between">
           <div class="flex items-center gap-2">
