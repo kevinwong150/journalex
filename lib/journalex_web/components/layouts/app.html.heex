@@ -1,33 +1,53 @@
-<header class="sticky top-0 z-50 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 px-4 sm:px-6 lg:px-8 border-b border-zinc-100" style="position: sticky; top: 0;">
+<header
+  class="sticky top-0 z-50 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 px-4 sm:px-6 lg:px-8 border-b border-zinc-100"
+  style="position: sticky; top: 0;"
+>
   <div class="mx-auto max-w-7xl">
     <div class="flex items-center justify-between py-3 text-sm">
       <!-- Left: Brand -->
       <div class="flex items-center gap-3">
         <a href="/" class="flex items-center gap-2 hover:opacity-80">
           <img src={~p"/images/logo.svg"} alt="Journalex" width="32" height="32" />
-          <span class="hidden sm:inline text-zinc-900 font-semibold tracking-tight">Journalex</span>
+          <span class="hidden sm:inline text-zinc-900 font-semibold tracking-tight">
+            Journalex
+          </span>
         </a>
-        <span class="hidden sm:inline bg-brand/10 text-brand rounded-full px-2 py-0.5 font-medium leading-6">v{Application.spec(:phoenix, :vsn)}</span>
+        <span class="hidden sm:inline bg-brand/10 text-brand rounded-full px-2 py-0.5 font-medium leading-6">
+          v{Application.spec(:phoenix, :vsn)}
+        </span>
       </div>
-
-      <!-- Center: Primary nav (desktop) -->
+      
+<!-- Center: Primary nav (desktop) -->
       <nav class="hidden sm:flex items-center gap-2 font-medium leading-6 text-zinc-900">
-        <a href={~p"/trade/all"} class="px-3 py-1.5 rounded-md hover:bg-zinc-50 hover:text-zinc-800">Trades</a>
-        <a href={~p"/activity_statement/all"} class="px-3 py-1.5 rounded-md hover:bg-zinc-50 hover:text-zinc-800">Statements</a>
+        <a
+          href={~p"/trade/all"}
+          class="px-3 py-1.5 rounded-md hover:bg-zinc-50 hover:text-zinc-800"
+        >
+          Trades
+        </a>
+        <a
+          href={~p"/activity_statement/all"}
+          class="px-3 py-1.5 rounded-md hover:bg-zinc-50 hover:text-zinc-800"
+        >
+          Statements
+        </a>
         <!-- Simple dropdown for secondary links -->
         <details class="relative group">
           <summary class="list-none cursor-pointer px-3 py-1.5 rounded-md hover:bg-zinc-50 hover:text-zinc-800 flex items-center gap-1">
             More
-            <span class="hero-chevron-down-mini text-zinc-500 group-open:rotate-180 transition-transform"></span>
+            <span class="hero-chevron-down-mini text-zinc-500 group-open:rotate-180 transition-transform">
+            </span>
           </summary>
           <div class="absolute right-0 mt-2 w-48 rounded-md border border-zinc-200 bg-white shadow-md py-1">
-            <a href={~p"/statement/dump"} class="block px-3 py-1.5 hover:bg-zinc-50">Statement Dump</a>
+            <a href={~p"/statement/dump"} class="block px-3 py-1.5 hover:bg-zinc-50">
+              Statement Dump
+            </a>
             <a href={~p"/trade/dump"} class="block px-3 py-1.5 hover:bg-zinc-50">Trades Dump</a>
           </div>
         </details>
       </nav>
-
-      <!-- Right: Primary action (desktop) -->
+      
+<!-- Right: Primary action (desktop) -->
       <div class="hidden sm:flex items-center gap-2">
         <% uploads_present? = JournalexWeb.NavHelpers.uploads_present?() %>
         <%= if uploads_present? do %>
@@ -49,33 +69,56 @@
             <span class="font-medium">Upload Result</span>
           </span>
         <% end %>
-      
-        <a href={~p"/activity_statement/upload"} class="inline-flex items-center gap-2 rounded-md bg-zinc-900 text-white px-3 py-1.5 hover:bg-zinc-700">
+
+        <a
+          href={~p"/activity_statement/upload"}
+          class="inline-flex items-center gap-2 rounded-md bg-zinc-900 text-white px-3 py-1.5 hover:bg-zinc-700"
+        >
           <span class="hero-arrow-up-tray-mini"></span>
           <span class="font-semibold">Upload</span>
         </a>
       </div>
-
-      <!-- Mobile: Hamburger -->
+      
+<!-- Mobile: Hamburger -->
       <div class="sm:hidden">
         <details class="relative">
           <summary class="list-none inline-flex items-center gap-2 rounded-md border border-zinc-200 px-3 py-1.5 text-zinc-900 hover:bg-zinc-50 cursor-pointer">
-            <span class="hero-bars-3-mini"></span>
-            Menu
+            <span class="hero-bars-3-mini"></span> Menu
           </summary>
           <div class="absolute right-0 mt-2 w-56 rounded-md border border-zinc-200 bg-white shadow-lg p-2">
             <a href={~p"/trade/all"} class="block rounded px-3 py-2 hover:bg-zinc-50">Trades</a>
-            <a href={~p"/activity_statement/all"} class="block rounded px-3 py-2 hover:bg-zinc-50">Statements</a>
-            <a href={~p"/activity_statement/upload"} class="block rounded px-3 py-2 hover:bg-zinc-50">Upload</a>
+            <a href={~p"/activity_statement/all"} class="block rounded px-3 py-2 hover:bg-zinc-50">
+              Statements
+            </a>
+            <a
+              href={~p"/activity_statement/upload"}
+              class="block rounded px-3 py-2 hover:bg-zinc-50"
+            >
+              Upload
+            </a>
             <div class="my-1 h-px bg-zinc-100"></div>
             <% uploads_present? = JournalexWeb.NavHelpers.uploads_present?() %>
             <%= if uploads_present? do %>
-              <a href={~p"/activity_statement/upload/result"} class="block rounded px-3 py-2 hover:bg-zinc-50">Upload Result</a>
+              <a
+                href={~p"/activity_statement/upload/result"}
+                class="block rounded px-3 py-2 hover:bg-zinc-50"
+              >
+                Upload Result
+              </a>
             <% else %>
-              <span class="block rounded px-3 py-2 text-zinc-400 cursor-not-allowed select-none" aria-disabled="true">Upload Result</span>
+              <span
+                class="block rounded px-3 py-2 text-zinc-400 cursor-not-allowed select-none"
+                aria-disabled="true"
+              >
+                Upload Result
+              </span>
             <% end %>
-            <a href={~p"/statement/dump"} class="block rounded px-3 py-2 hover:bg-zinc-50">Statement Dump</a>
-            <a href={~p"/trade/dump"} class="block rounded px-3 py-2 hover:bg-zinc-50">Trades Dump</a>
+            <a href={~p"/statement/dump"} class="block rounded px-3 py-2 hover:bg-zinc-50">
+              Statement Dump
+            </a>
+            <a href={~p"/trade/dump"} class="block rounded px-3 py-2 hover:bg-zinc-50">
+              Trades Dump
+            </a>
           </div>
         </details>
       </div>

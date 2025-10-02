@@ -251,7 +251,10 @@ defmodule JournalexWeb.AggregatedTradeList do
                   ])
                 }
               >
-                <td :if={@selectable?} class="px-3 py-2 whitespace-nowrap text-sm text-center align-middle">
+                <td
+                  :if={@selectable?}
+                  class="px-3 py-2 whitespace-nowrap text-sm text-center align-middle"
+                >
                   <input
                     type="checkbox"
                     class="h-4 w-4 align-middle m-0 mx-auto"

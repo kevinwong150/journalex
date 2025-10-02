@@ -58,28 +58,39 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
       <div class="mb-8">
         <div class="flex items-center justify-between">
           <h1 class="text-3xl font-bold text-gray-900">Activity Statement Upload Result</h1>
-
+          
           <button
             phx-click="delete_all_uploads"
             phx-confirm="Delete all uploaded CSV files? This cannot be undone."
             class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-md bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 shadow-sm"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a2 2 0 012-2h4a2 2 0 012 2m-8 0H5m11 0h3"/>
+            <svg
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a2 2 0 012-2h4a2 2 0 012 2m-8 0H5m11 0h3"
+              />
             </svg>
             Delete All Uploads
           </button>
         </div>
-
+        
         <p class="mt-2 text-gray-600">View your account activity and transaction history</p>
-
+        
         <%= if @statement_period do %>
           <p class="mt-1 text-sm text-gray-500">
             Statement Date: <span class="font-medium text-gray-700">{@statement_period}</span>
           </p>
         <% end %>
       </div>
-
+      
       <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg">
         <!-- Day toggles -->
         <div class="px-6 pt-4 pb-2 border-b border-gray-200">
@@ -105,6 +116,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
                 </button>
               <% end %>
             </div>
+            
             <div class="flex items-center gap-2">
               <button
                 phx-click="select_all_days"
@@ -112,6 +124,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
               >
                 All
               </button>
+              
               <button
                 phx-click="deselect_all_days"
                 class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -121,17 +134,17 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
             </div>
           </div>
         </div>
-
+        
     <!-- Summary: Realized P/L by Symbol -->
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
               <h2 class="text-lg font-semibold text-gray-900">Summary (Realized P/L by Symbol)</h2>
-
+              
               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                 {length(@summary_by_symbol)}
               </span>
-
+              
               <button
                 phx-click="toggle_summary"
                 class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -145,7 +158,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
                 <% end %>
               </button>
             </div>
-
+            
             <.link
               navigate={~p"/activity_statement/upload"}
               class="inline-flex items-center px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-md hover:bg-blue-100"
@@ -154,7 +167,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
             </.link>
           </div>
         </div>
-
+        
         <ActivityStatementSummary.summary_table
           rows={@summary_by_symbol}
           total={@summary_total}
@@ -164,7 +177,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
           on_save_all_aggregated?="save_all_aggregated"
           on_save_row_event="save_aggregated_row"
         />
-
+        
     <!-- Unsaved records indicator -->
         <div class="px-6 py-3 border-b border-gray-200 flex items-center justify-between">
           <div class="flex items-center gap-2">
@@ -179,11 +192,12 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
               {@unsaved_count}
             </span>
           </div>
+          
           <%= if @unsaved_count > 0 do %>
             <span class="text-xs text-gray-500">Click "Save all" or save individual rows.</span>
           <% end %>
         </div>
-
+        
         <ActivityStatementList.list
           id="activity-table"
           title="Recent Activity"
@@ -197,7 +211,6 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
           on_save_row_event="save_row"
           show_values?={true}
         />
-
         <%= if Enum.empty?(@activity_data) do %>
           <div class="px-6 py-12 text-center">
             <div class="mx-auto w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -210,13 +223,13 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
                 />
               </svg>
             </div>
-
+            
             <h3 class="text-sm font-medium text-gray-900 mb-2">No activity data available</h3>
-
+            
             <p class="text-sm text-gray-500 mb-4">
               Upload CSV file(s) to view your activity statement
             </p>
-
+            
             <.link
               navigate={~p"/activity_statement/upload"}
               class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
@@ -306,13 +319,15 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
         |> Enum.filter(&String.ends_with?(&1, ".csv"))
         |> Enum.reduce(0, fn filename, acc ->
           path = Path.join(dir, filename)
+
           case File.rm(path) do
             :ok -> acc + 1
             {:error, _} -> acc
           end
         end)
 
-      _ -> 0
+      _ ->
+        0
     end
   end
 
