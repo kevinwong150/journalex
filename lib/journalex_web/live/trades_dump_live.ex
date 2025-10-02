@@ -39,6 +39,7 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:dump_cancel_requested?, false)
       |> assign(:dump_timer_ref, nil)
       |> assign(:dump_report_text, nil)
+      |> assign(:hide_exists?, false)
 
     if connected?(socket), do: send(self(), :auto_check_notion)
 
@@ -283,6 +284,11 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   @impl true
+  def handle_event("toggle_hide_exists", _params, socket) do
+    {:noreply, assign(socket, hide_exists?: !socket.assigns.hide_exists?)}
+  end
+
+  @impl true
   def handle_info(:auto_check_notion, socket) do
     rows = socket.assigns.trades || []
 
@@ -474,6 +480,13 @@ defmodule JournalexWeb.TradesDumpLive do
             >
               Clear Highlights
             </button>
+
+            <button
+              phx-click="toggle_hide_exists"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white text-gray-800 hover:bg-gray-50"
+            >
+              {if @hide_exists?, do: "Show All", else: "Hide Existing"}
+            </button>
           </div>
         </div>
 
@@ -596,6 +609,16 @@ defmodule JournalexWeb.TradesDumpLive do
         </div>
       </div>
 
+      <% hidden_idx =
+        if @hide_exists? do
+          @row_statuses
+          |> Enum.filter(fn {_i, st} -> st == :exists end)
+          |> Enum.map(fn {i, _} -> i end)
+          |> MapSet.new()
+        else
+          MapSet.new()
+        end %>
+
       <AggregatedTradeList.aggregated_trade_list
         id="trades-dump"
         items={@trades}
@@ -609,6 +632,7 @@ defmodule JournalexWeb.TradesDumpLive do
         on_toggle_row_event="toggle_row"
         on_toggle_all_event="toggle_select_all"
         row_statuses={@row_statuses}
+        hidden_idx={hidden_idx}
       />
     </div>
     """

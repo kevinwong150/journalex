@@ -70,6 +70,10 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: %{},
     doc: "Map index => :exists | :missing | :error for row highlight"
 
+  attr :hidden_idx, :any,
+    default: MapSet.new(),
+    doc: "Set of row indexes to hide (display: none) without changing indices"
+
   def aggregated_trade_list(assigns) do
     ~H"""
     <% sorted_items =
@@ -223,6 +227,7 @@ defmodule JournalexWeb.AggregatedTradeList do
               <% res = result_label(Map.get(item, :realized_pl)) %>
               <tr
                 class={[
+                  (MapSet.member?(@hidden_idx || MapSet.new(), idx) && "hidden") || nil,
                   "hover:bg-blue-50 transition-colors",
                   status_class(@row_statuses, idx)
                 ]}
