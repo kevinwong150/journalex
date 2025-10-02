@@ -56,7 +56,20 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
     ~H"""
     <div class="mx-auto max-w-6xl">
       <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-900">Activity Statement Upload Result</h1>
+        <div class="flex items-center justify-between">
+          <h1 class="text-3xl font-bold text-gray-900">Activity Statement Upload Result</h1>
+
+          <button
+            phx-click="delete_all_uploads"
+            phx-confirm="Delete all uploaded CSV files? This cannot be undone."
+            class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-md bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 shadow-sm"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a2 2 0 012-2h4a2 2 0 012 2m-8 0H5m11 0h3"/>
+            </svg>
+            Delete All Uploads
+          </button>
+        </div>
 
         <p class="mt-2 text-gray-600">View your account activity and transaction history</p>
 
@@ -217,16 +230,21 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
     """
   end
 
+  # Centralized uploads directory path
+  defp uploads_dir do
+    Path.join([:code.priv_dir(:journalex), "uploads"]) |> to_string()
+  end
+
   # Load and combine trades from all CSV files saved in priv/uploads
   defp load_all_trades do
-    uploads_dir = Path.join([:code.priv_dir(:journalex), "uploads"]) |> to_string()
+    dir = uploads_dir()
 
     csv_files =
-      case File.ls(uploads_dir) do
+      case File.ls(dir) do
         {:ok, files} ->
           files
           |> Enum.filter(&String.ends_with?(&1, ".csv"))
-          |> Enum.map(&Path.join(uploads_dir, &1))
+          |> Enum.map(&Path.join(dir, &1))
 
         _ ->
           []
@@ -275,6 +293,26 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
             Calendar.strftime(min_d, "%B %-d, %Y") <>
               " – " <> Calendar.strftime(max_d, "%B %-d, %Y")
         end
+    end
+  end
+
+  # Remove all uploaded CSV files; returns count removed
+  defp delete_all_uploaded_files do
+    dir = uploads_dir()
+
+    case File.ls(dir) do
+      {:ok, files} ->
+        files
+        |> Enum.filter(&String.ends_with?(&1, ".csv"))
+        |> Enum.reduce(0, fn filename, acc ->
+          path = Path.join(dir, filename)
+          case File.rm(path) do
+            :ok -> acc + 1
+            {:error, _} -> acc
+          end
+        end)
+
+      _ -> 0
     end
   end
 
@@ -563,6 +601,34 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
         {:noreply,
          socket |> put_flash(:error, "Failed to save aggregated trades: #{Exception.message(e)}")}
     end
+  end
+
+  @impl true
+  def handle_event("delete_all_uploads", _params, socket) do
+    removed = delete_all_uploaded_files()
+
+    trades = []
+    annotated_trades = trades
+    days = []
+    day_selection = %{}
+    filtered_trades = []
+    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    period = nil
+    unsaved_count = 0
+    selected_days_count = 0
+
+    {:noreply,
+     socket
+     |> assign(:all_trades, annotated_trades)
+     |> assign(:activity_data, filtered_trades)
+     |> assign(:unsaved_count, unsaved_count)
+     |> assign(:summary_by_symbol, summary_by_symbol)
+     |> assign(:summary_total, summary_total)
+     |> assign(:days, days)
+     |> assign(:day_selection, day_selection)
+     |> assign(:selected_days, selected_days_count)
+     |> assign(:statement_period, period)
+     |> put_flash(:info, "Deleted #{removed} uploaded file(s)")}
   end
 
   @impl true
