@@ -105,7 +105,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
 
   @impl true
   def handle_info(:redirect_to_activity, socket) do
-    {:noreply, push_navigate(socket, to: ~p"/activity_statement")}
+    {:noreply, push_navigate(socket, to: ~p"/activity_statement/upload/result")}
   end
 
   @impl true
@@ -171,7 +171,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
       <div class="mb-8">
         <div class="flex items-center gap-4 mb-4">
           <.link
-            navigate={~p"/activity_statement"}
+            navigate={~p"/activity_statement/upload/result"}
             class="inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
           >
             <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -421,7 +421,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
 
                       <div class="mt-3">
                         <.link
-                          navigate={~p"/activity_statement"}
+                          navigate={~p"/activity_statement/upload/result"}
                           class="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700"
                         >
                           View Activity Statement
