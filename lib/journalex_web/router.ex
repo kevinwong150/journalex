@@ -19,7 +19,7 @@ defmodule JournalexWeb.Router do
 
     get "/", PageController, :home
     # Live pages
-    live "/activity_statement", ActivityStatementLive
+  live "/activity_statement/upload/result", ActivityStatementUploadResultLive
     live "/activity_statement/dates", ActivityStatementDatesLive
     live "/activity_statement/upload", ActivityStatementUploadLive
 

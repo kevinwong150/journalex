@@ -1,4 +1,4 @@
-defmodule JournalexWeb.ActivityStatementLive do
+defmodule JournalexWeb.ActivityStatementUploadResultLive do
   use JournalexWeb, :live_view
   import Ecto.Query, only: [from: 2]
   alias Journalex.ActivityStatementParser
@@ -56,7 +56,7 @@ defmodule JournalexWeb.ActivityStatementLive do
     ~H"""
     <div class="mx-auto max-w-6xl">
       <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-900">Activity Statement</h1>
+        <h1 class="text-3xl font-bold text-gray-900">Activity Statement Upload Result</h1>
 
         <p class="mt-2 text-gray-600">View your account activity and transaction history</p>
 

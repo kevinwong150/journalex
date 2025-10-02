@@ -31,10 +31,10 @@ defmodule JournalexWeb.TradesLive do
     <div class="mx-auto max-w-6xl">
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-gray-900">Aggregated Trades</h1>
-        
+
         <div class="mt-2 flex items-center justify-between">
           <p class="text-gray-600">All closed trades across uploaded statements</p>
-          
+
           <button
             type="button"
             phx-click="save_all_trades"
@@ -45,18 +45,18 @@ defmodule JournalexWeb.TradesLive do
           </button>
         </div>
       </div>
-      
+
       <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg p-4">
         <div class="mb-2 flex items-center justify-between">
           <div class="text-sm text-gray-600">
             Total Realized P/L: <span class={pl_class_amount(@total)}>{format_amount(@total)}</span>
           </div>
-          
+
           <div class="text-xs text-gray-500">
             {length(@close_trades)} trades
           </div>
         </div>
-        
+
         <AggregatedTradeList.aggregated_trade_list
           id="trades-table"
           items={@close_trades}
@@ -71,7 +71,7 @@ defmodule JournalexWeb.TradesLive do
     """
   end
 
-  # Helpers largely mirrored from ActivityStatementLive for consistency
+  # Helpers largely mirrored from ActivityStatementUploadResultLive for consistency
   defp load_all_trades do
     uploads_dir = Path.join([:code.priv_dir(:journalex), "uploads"]) |> to_string()
 
@@ -113,7 +113,7 @@ defmodule JournalexWeb.TradesLive do
   end
 
   defp build_close(row) do
-    # Prefer existing persisted flag if available; else infer from realized_pl as in ActivityStatementLive
+    # Prefer existing persisted flag if available; else infer from realized_pl as in ActivityStatementUploadResultLive
     cond do
       is_map(row) and Map.get(row, :position_action) in ["build", "close"] ->
         row.position_action |> String.upcase()
@@ -167,7 +167,7 @@ defmodule JournalexWeb.TradesLive do
     end
   end
 
-  # date helpers copied from ActivityStatementLive
+  # date helpers copied from ActivityStatementUploadResultLive
   defp date_only(nil), do: nil
   defp date_only(%DateTime{} = dt), do: Date.to_iso8601(DateTime.to_date(dt))
   defp date_only(%NaiveDateTime{} = ndt), do: Date.to_iso8601(NaiveDateTime.to_date(ndt))
