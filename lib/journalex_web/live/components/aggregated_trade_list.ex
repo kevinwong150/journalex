@@ -88,8 +88,13 @@ defmodule JournalexWeb.AggregatedTradeList do
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-100">
             <tr>
-              <th :if={@selectable?} class="px-3 py-2">
-                <input type="checkbox" phx-click={@on_toggle_all_event} checked={@all_selected?} />
+              <th :if={@selectable?} class="px-3 py-2 w-8 text-center align-middle">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 align-middle m-0 mx-auto"
+                  phx-click={@on_toggle_all_event}
+                  checked={@all_selected?}
+                />
               </th>
               <th
                 :if={@show_save_controls?}
@@ -246,9 +251,10 @@ defmodule JournalexWeb.AggregatedTradeList do
                   ])
                 }
               >
-                <td :if={@selectable?} class="px-3 py-2 whitespace-nowrap text-sm">
+                <td :if={@selectable?} class="px-3 py-2 whitespace-nowrap text-sm text-center align-middle">
                   <input
                     type="checkbox"
+                    class="h-4 w-4 align-middle m-0 mx-auto"
                     phx-click={@on_toggle_row_event}
                     phx-value-index={idx}
                     checked={MapSet.member?(@selected_idx || MapSet.new(), idx)}
