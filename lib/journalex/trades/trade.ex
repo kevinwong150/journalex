@@ -13,15 +13,17 @@ defmodule Journalex.Trades.Trade do
     field :aggregated_side, :string
     field :result, :string
     field :realized_pl, :decimal
+    field :action_chain, :map
 
     timestamps(type: :utc_datetime_usec)
   end
 
   @required ~w(datetime ticker aggregated_side result realized_pl)a
+  @optional ~w(action_chain)a
 
   def changeset(trade, attrs) do
     trade
-    |> cast(attrs, @required)
+    |> cast(attrs, @required ++ @optional)
     |> validate_required(@required)
     |> validate_inclusion(:result, ["WIN", "LOSE"])
     |> validate_inclusion(:aggregated_side, ["LONG", "SHORT", "-"])
