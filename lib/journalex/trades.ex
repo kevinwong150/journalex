@@ -3,7 +3,7 @@ defmodule Journalex.Trades do
   Context for working with trades data.
   """
   import Ecto.Query, warn: false
-  alias Journalex.{Repo, Trades.Trade}
+  alias Journalex.{Repo, Trades.Trade, Trades.ActionChainBuilder}
 
   @doc """
   List all trades ordered by datetime descending.
@@ -38,6 +38,24 @@ defmodule Journalex.Trades do
     else
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  @doc """
+  Build an action chain for a single aggregated trade item.
+
+  Delegates to Journalex.Trades.ActionChainBuilder.
+  """
+  def build_action_chain(close_trade_item, opts \\ []) do
+    ActionChainBuilder.build_action_chain(close_trade_item, opts)
+  end
+
+  @doc """
+  Build action chains for multiple aggregated trade items in batch.
+
+  Delegates to Journalex.Trades.ActionChainBuilder.
+  """
+  def build_action_chains_batch(trade_items) do
+    ActionChainBuilder.build_action_chains_batch(trade_items)
   end
 
   # Normalize inputs like %Date{} or "yyyymmdd" to DateTime bounds
