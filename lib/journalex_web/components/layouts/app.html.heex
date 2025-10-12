@@ -7,7 +7,7 @@
       <!-- Left: Brand -->
       <div class="flex items-center gap-3">
         <a href="/" class="flex items-center gap-2 hover:opacity-80">
-          <img src={(~p"/images/logo.png")} alt="Journalex" width="32" height="32" />
+          <img src={~p"/images/logo.png"} alt="Journalex" width="32" height="32" />
           <span class="hidden sm:inline text-zinc-900 font-semibold tracking-tight">
             Journalex
           </span>
@@ -36,6 +36,13 @@
             </span>
           </summary>
           <div class="absolute right-0 mt-2 w-48 rounded-md border border-zinc-200 bg-white shadow-md py-1">
+            <a href={~p"/trade/dates"} class="block px-3 py-1.5 hover:bg-zinc-50">
+              Trades by Date
+            </a>
+            <a href={~p"/activity_statement/dates"} class="block px-3 py-1.5 hover:bg-zinc-50">
+              Statements by Date
+            </a>
+            <div class="my-1 h-px bg-zinc-100"></div>
             <a href={~p"/statement/dump"} class="block px-3 py-1.5 hover:bg-zinc-50">
               Statement Dump
             </a>
@@ -84,8 +91,17 @@
           </summary>
           <div class="absolute right-0 mt-2 w-56 rounded-md border border-zinc-200 bg-white shadow-lg p-2">
             <a href={~p"/trade/all"} class="block rounded px-3 py-2 hover:bg-zinc-50">Trades</a>
+            <a href={~p"/trade/dates"} class="block rounded px-3 py-2 hover:bg-zinc-50">
+              Trades by Date
+            </a>
             <a href={~p"/activity_statement/all"} class="block rounded px-3 py-2 hover:bg-zinc-50">
               Statements
+            </a>
+            <a
+              href={~p"/activity_statement/dates"}
+              class="block rounded px-3 py-2 hover:bg-zinc-50"
+            >
+              Statements by Date
             </a>
             <a
               href={~p"/activity_statement/upload"}

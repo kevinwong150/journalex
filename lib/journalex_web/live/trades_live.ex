@@ -27,7 +27,13 @@ defmodule JournalexWeb.TradesLive do
     ~H"""
     <div class="mx-auto max-w-6xl">
       <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-900">All Trades</h1>
+        <div class="flex items-center justify-between">
+          <h1 class="text-3xl font-bold text-gray-900">All Trades</h1>
+
+          <.link navigate={~p"/trade/dates"} class="text-blue-600 hover:underline">
+            Filter by Date Range
+          </.link>
+        </div>
 
         <div class="mt-2">
           <p class="text-gray-600">All saved trades from the database</p>

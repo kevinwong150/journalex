@@ -28,6 +28,8 @@ defmodule JournalexWeb.Router do
 
     # Aggregated trades page
     live "/trade/all", TradesLive
+    # Trades by date range
+    live "/trade/dates", TradesDatesLive
     # Trades dump page
     live "/trade/dump", TradesDumpLive
 
