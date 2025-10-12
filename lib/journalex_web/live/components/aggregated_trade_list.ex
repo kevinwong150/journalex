@@ -209,6 +209,30 @@ defmodule JournalexWeb.AggregatedTradeList do
                   <button
                     type="button"
                     class="inline-flex items-center gap-1 hover:text-gray-700"
+                    data-sort-key="duration"
+                  >
+                    <span>Duration</span>
+                    <span
+                      class={if(@default_sort_by == :duration, do: nil, else: "hidden")}
+                      data-sort-arrow
+                    >
+                      <%= if @default_sort_by == :duration and @default_sort_dir == :desc do %>
+                        ▼
+                      <% else %>
+                        ▲
+                      <% end %>
+                    </span>
+                  </button>
+                <% else %>
+                  Duration
+                <% end %>
+              </th>
+
+              <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider select-none">
+                <%= if @sortable do %>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 hover:text-gray-700"
                     data-sort-key="pl"
                   >
                     <span>Realized P/L</span>
@@ -244,6 +268,7 @@ defmodule JournalexWeb.AggregatedTradeList do
                   |> String.upcase()
                 }
                 data-result={res}
+                data-duration={Integer.to_string(Map.get(item, :duration) || 0)}
                 data-pl={
                   :erlang.float_to_binary(to_float(Map.get(item, :realized_pl)), [
                     :compact,
@@ -325,6 +350,10 @@ defmodule JournalexWeb.AggregatedTradeList do
                   {res}
                 </td>
 
+                <td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">
+                  {format_duration(Map.get(item, :duration))}
+                </td>
+
                 <td class={"px-4 py-2 whitespace-nowrap text-sm text-right #{pl_class_amount(to_float(Map.get(item, :realized_pl)))}"}>
                   {format_amount(Map.get(item, :realized_pl))}
                 </td>
@@ -346,7 +375,7 @@ defmodule JournalexWeb.AggregatedTradeList do
                 function cmp(a, b, dir, key) {
                   var av = a.dataset[key] || '';
                   var bv = b.dataset[key] || '';
-                  var numKeys = { date: true, pl: true };
+                  var numKeys = { date: true, duration: true, pl: true };
                   if (numKeys[key]) {
                     var an = parseFloat(av) || 0; var bn = parseFloat(bv) || 0;
                     return dir === 'asc' ? an - bn : bn - an;
@@ -484,6 +513,28 @@ defmodule JournalexWeb.AggregatedTradeList do
     end
   end
 
+  # Format duration in seconds to a human-readable string
+  defp format_duration(nil), do: "-"
+  defp format_duration(seconds) when is_integer(seconds) and seconds < 0, do: "-"
+  defp format_duration(seconds) when is_integer(seconds) do
+    cond do
+      seconds < 60 -> "#{seconds}s"
+      seconds < 3600 ->
+        mins = div(seconds, 60)
+        secs = rem(seconds, 60)
+        if secs == 0, do: "#{mins}m", else: "#{mins}m #{secs}s"
+      seconds < 86400 ->
+        hours = div(seconds, 3600)
+        mins = div(rem(seconds, 3600), 60)
+        if mins == 0, do: "#{hours}h", else: "#{hours}h #{mins}m"
+      true ->
+        days = div(seconds, 86400)
+        hours = div(rem(seconds, 86400), 3600)
+        if hours == 0, do: "#{days}d", else: "#{days}d #{hours}h"
+    end
+  end
+  defp format_duration(_), do: "-"
+
   # Sorting helpers
   defp sort_items(items, sort_by, sort_dir) when is_list(items) do
     dir = normalize_dir(sort_dir)
@@ -494,7 +545,7 @@ defmodule JournalexWeb.AggregatedTradeList do
     |> Enum.sort_by(sorter, dir)
   end
 
-  defp normalize_key(k) when k in [:date, :ticker, :side, :result, :pl], do: k
+  defp normalize_key(k) when k in [:date, :ticker, :side, :result, :duration, :pl], do: k
 
   defp normalize_key(k) when is_binary(k) do
     key =
@@ -504,7 +555,7 @@ defmodule JournalexWeb.AggregatedTradeList do
         ArgumentError -> :date
       end
 
-    if key in [:date, :ticker, :side, :result, :pl], do: key, else: :date
+    if key in [:date, :ticker, :side, :result, :duration, :pl], do: key, else: :date
   end
 
   defp normalize_key(_), do: :date
@@ -525,6 +576,7 @@ defmodule JournalexWeb.AggregatedTradeList do
         |> String.upcase())
 
   defp sorter_for(:result), do: &result_label(Map.get(&1, :realized_pl))
+  defp sorter_for(:duration), do: &(Map.get(&1, :duration) || 0)
   defp sorter_for(:pl), do: &to_float(Map.get(&1, :realized_pl))
 
   # Return a numeric sortable date value (Gregorian days)

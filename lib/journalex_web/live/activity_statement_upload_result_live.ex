@@ -140,7 +140,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
             </div>
           </div>
         </div>
-        
+
     <!-- Summary: Realized P/L by Symbol -->
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
@@ -183,7 +183,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
           on_save_all_aggregated?="save_all_aggregated"
           on_save_row_event="save_aggregated_row"
         />
-        
+
     <!-- Unsaved records indicator -->
         <div class="px-6 py-3 border-b border-gray-200 flex items-center justify-between">
           <div class="flex items-center gap-2">
@@ -803,6 +803,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
       if action_chain do
         pl_decimal = decimal_from_value(pl)
         result = if Decimal.cmp(pl_decimal, Decimal.new(0)) == :gt, do: "WIN", else: "LOSE"
+        duration = calculate_duration_from_action_chain(action_chain)
 
         row = %{
           datetime: temp_item.datetime,
@@ -811,6 +812,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
           result: result,
           realized_pl: pl_decimal,
           action_chain: action_chain,
+          duration: duration,
           inserted_at: now,
           updated_at: now
         }
@@ -1175,6 +1177,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
         if action_chain do
           pl_decimal = decimal_from_value(Map.get(item, :realized_pl))
           result = if Decimal.cmp(pl_decimal, Decimal.new(0)) == :gt, do: "WIN", else: "LOSE"
+          duration = calculate_duration_from_action_chain(action_chain)
 
           row = %{
             datetime: normalized_item.datetime,
@@ -1183,6 +1186,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
             result: result,
             realized_pl: pl_decimal,
             action_chain: action_chain,
+            duration: duration,
             inserted_at: now,
             updated_at: now
           }
@@ -1218,6 +1222,36 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
 
       true ->
         0.0
+    end
+  end
+
+  # Calculate duration from action_chain map.
+  # Returns duration in seconds, or nil if unable to calculate.
+  defp calculate_duration_from_action_chain(action_chain) when is_map(action_chain) do
+    with open_action when not is_nil(open_action) <- Map.get(action_chain, "1"),
+         open_dt_str when is_binary(open_dt_str) <- Map.get(open_action, "datetime"),
+         {:ok, open_dt, _} <- DateTime.from_iso8601(open_dt_str),
+         close_key <- find_close_position_key(action_chain),
+         close_action when not is_nil(close_action) <- Map.get(action_chain, close_key),
+         close_dt_str when is_binary(close_dt_str) <- Map.get(close_action, "datetime"),
+         {:ok, close_dt, _} <- DateTime.from_iso8601(close_dt_str) do
+      DateTime.diff(close_dt, open_dt, :second)
+    else
+      _ -> nil
+    end
+  end
+
+  defp calculate_duration_from_action_chain(_), do: nil
+
+  # Find the key for the "close_position" action in the action_chain map
+  defp find_close_position_key(action_chain) when is_map(action_chain) do
+    action_chain
+    |> Enum.find(fn {_key, action} ->
+      is_map(action) and Map.get(action, "action") == "close_position"
+    end)
+    |> case do
+      {key, _action} -> key
+      nil -> nil
     end
   end
 
