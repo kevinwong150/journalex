@@ -2,7 +2,16 @@ defmodule JournalexWeb.AggregatedTradeList do
   @moduledoc """
   Function components for rendering a generic Aggregated Trade list table.
 
-  Columns: Date, Ticker, Side, Result (WIN/LOSE), Realized P/L.
+  Columns: Date, Ticker, Side, Result (WIN/LOSE), Duration, Realized P/L.
+
+  Each trade row can be expanded to reveal a timeline-style action chain so the
+  sequence of fills or adjustments stays easy to scan.
+
+  Action chain data: each aggregated trade item can include a list of action
+  maps (defaults to the `:actions` key, overridable with `:action_chain_key`).
+  Every action may specify a timestamp, type/side label, quantity/contracts,
+  price/P&L, and free-form notes. Available fields are rendered when present so
+  the timeline stays flexible across data sources.
 
   This component is data-source agnostic: pass any list of aggregated trade
   items (not tied to a specific ticker). Each item can be a map with fields
@@ -74,13 +83,26 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: MapSet.new(),
     doc: "Set of row indexes to hide (display: none) without changing indices"
 
+  attr :show_action_chain?, :boolean,
+    default: true,
+    doc: "Enable expandable action chain timeline under each trade row"
+
+  attr :action_chain_key, :any,
+    default: :actions,
+    doc: "Key to read for the action chain list (atom or string). Falls back to :action_chain"
+
   def aggregated_trade_list(assigns) do
     ~H"""
+    <% chain_key = @action_chain_key %>
+    <% show_action_toggle? = @show_action_chain? %>
+    <% hidden_idx = @hidden_idx || MapSet.new() %>
     <% sorted_items =
       if @sortable, do: sort_items(@items, @default_sort_by, @default_sort_dir), else: @items %>
     <div
       class={Enum.join(Enum.reject(["overflow-x-auto", @class], &is_nil/1), " ")}
+      data-component="aggregated-trade-list"
       id={@id}
+      phx-hook="AggregatedTradeList"
       data-current-sort-key={if(@sortable, do: Atom.to_string(@default_sort_by), else: nil)}
       data-current-sort-dir={if(@sortable, do: Atom.to_string(@default_sort_dir), else: nil)}
     >
@@ -88,6 +110,9 @@ defmodule JournalexWeb.AggregatedTradeList do
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-100">
             <tr>
+              <th :if={show_action_toggle?} class="px-3 py-2 w-16 text-center align-middle">
+                <span class="sr-only">Toggle action chain</span>
+              </th>
               <th :if={@selectable?} class="px-3 py-2 w-8 text-center align-middle">
                 <input
                   type="checkbox"
@@ -253,13 +278,20 @@ defmodule JournalexWeb.AggregatedTradeList do
 
           <tbody class="bg-white divide-y divide-gray-200">
             <%= for {item, idx} <- Enum.with_index(sorted_items) do %>
+              <% row_id = "row-" <> Integer.to_string(idx) %>
+              <% chain = action_chain(item, chain_key) %>
+              <% chain_length = length(chain) %>
+              <% has_chain = show_action_toggle? and chain_length > 0 %>
               <% res = result_label(Map.get(item, :realized_pl)) %>
+              <% is_hidden = MapSet.member?(hidden_idx, idx) %>
               <tr
                 class={[
-                  (MapSet.member?(@hidden_idx || MapSet.new(), idx) && "hidden") || nil,
-                  "hover:bg-blue-50 transition-colors",
+                  (is_hidden && "hidden") || nil,
+                  "hover:bg-blue-50 transition-colors cursor-pointer",
                   status_class(@row_statuses, idx)
                 ]}
+                data-row-type="main"
+                data-row-id={row_id}
                 data-date={Integer.to_string(item_sort_date(item))}
                 data-ticker={String.upcase(item_ticker(item) || "-")}
                 data-side={
@@ -276,6 +308,29 @@ defmodule JournalexWeb.AggregatedTradeList do
                   ])
                 }
               >
+                <td :if={show_action_toggle?} class="px-3 py-2 whitespace-nowrap text-sm text-center align-middle">
+                  <button
+                    type="button"
+                    class="inline-flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold transition border-slate-300 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-100 shadow-sm"
+                    data-row-toggle={row_id}
+                    aria-expanded="false"
+                    aria-controls={"detail-" <> row_id}
+                  >
+                    <span data-toggle-icon class="leading-none">
+                      ▸
+                    </span>
+                    <span class="sr-only">Toggle action chain ({chain_length} steps)</span>
+                  </button>
+                  <span
+                    class={[
+                      "ml-2 inline-flex items-center justify-center rounded-full px-1.5 text-[10px] font-semibold align-middle h-5 min-w-[1.25rem] shadow-sm",
+                      (chain_length > 0 && "bg-blue-100 text-blue-700") || "bg-slate-100 text-slate-500"
+                    ]}
+                    title={"#{chain_length} step" <> if(chain_length == 1, do: "", else: "s")}
+                  >
+                    {chain_length}
+                  </span>
+                </td>
                 <td
                   :if={@selectable?}
                   class="px-3 py-2 whitespace-nowrap text-sm text-center align-middle"
@@ -358,65 +413,79 @@ defmodule JournalexWeb.AggregatedTradeList do
                   {format_amount(Map.get(item, :realized_pl))}
                 </td>
               </tr>
+              <tr
+                :if={show_action_toggle?}
+                data-row-type="detail"
+                data-parent={row_id}
+                id={"detail-" <> row_id}
+                class={["hidden bg-slate-50"]}
+              >
+                <td colspan={detail_colspan(assigns, show_action_toggle?)} class="px-6 py-4">
+                  <%= if has_chain do %>
+                    <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <h4 class="text-sm font-semibold text-slate-700">Action chain</h4>
+                        <span class="text-xs text-slate-500">
+                          <%= chain_length %> <%= if chain_length == 1, do: "step", else: "steps" %>
+                        </span>
+                      </div>
+                      <ol class="mt-4 space-y-3">
+                        <%= for {action, action_idx} <- Enum.with_index(chain) do %>
+                          <% action_time = format_action_time(action) %>
+                          <% action_meta = action_meta(action) %>
+                          <% action_notes = action_notes(action) %>
+                          <li class="relative">
+                            <div class="grid grid-cols-[auto_1fr_auto] items-start gap-3">
+                              <div class="relative">
+                                <div class="z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white shadow">{action_idx + 1}</div>
+                                <div :if={action_idx < chain_length - 1} class="absolute left-1/2 top-6 -ml-px h-full w-px bg-slate-200"></div>
+                              </div>
+                              <div class="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                  <span class="text-sm font-medium text-slate-800">{action_label(action, action_idx)}</span>
+                                  <span :if={action_time != ""} class="text-xs text-slate-500">{action_time}</span>
+                                </div>
+                                <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+                                  <div :if={action_price(action)} class="inline-flex items-center gap-1 font-medium text-slate-700">
+                                    <span class="text-slate-500">Price:</span>
+                                    <span>{action_price(action)}</span>
+                                  </div>
+                                  <%= for meta <- action_meta do %>
+                                    <span class="inline-flex items-center gap-1">
+                                      <span class="h-1.5 w-1.5 rounded-full bg-slate-300"></span>
+                                      {meta}
+                                    </span>
+                                  <% end %>
+                                  <.link
+                                    :if={action_id = (Map.get(action, :activity_statement_id) || Map.get(action, "activity_statement_id"))}
+                                    navigate={~p"/activity_statement/#{action_id}"
+                                    }
+                                    class="inline-flex items-center rounded border border-blue-200 px-2 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-50"
+                                    title="View activity statement"
+                                  >
+                                    View statement →
+                                  </.link>
+                                </div>
+                                <p :if={action_notes != ""} class="mt-2 text-xs leading-relaxed text-slate-600">{action_notes}</p>
+                              </div>
+                              <div class="pt-1 text-right">
+
+                              </div>
+                            </div>
+                          </li>
+                        <% end %>
+                      </ol>
+                    </div>
+                  <% else %>
+                    <div class="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
+                      No recorded actions for this trade.
+                    </div>
+                  <% end %>
+                </td>
+              </tr>
             <% end %>
           </tbody>
         </table>
-        <%= if @sortable and not is_nil(@id) do %>
-          <script>
-            (function() {
-              try {
-                var root = document.getElementById("<%= Phoenix.HTML.Engine.html_escape(@id) %>");
-                if (!root || root.dataset.initialized === 'true') return;
-                root.dataset.initialized = 'true';
-                var table = root.querySelector('table');
-                var tbody = table.querySelector('tbody');
-                var headerBtns = table.querySelectorAll('thead [data-sort-key]');
-                function getRows() { return Array.prototype.slice.call(tbody.querySelectorAll('tr')); }
-                function cmp(a, b, dir, key) {
-                  var av = a.dataset[key] || '';
-                  var bv = b.dataset[key] || '';
-                  var numKeys = { date: true, duration: true, pl: true };
-                  if (numKeys[key]) {
-                    var an = parseFloat(av) || 0; var bn = parseFloat(bv) || 0;
-                    return dir === 'asc' ? an - bn : bn - an;
-                  } else {
-                    av = av.toString(); bv = bv.toString();
-                    var r = av.localeCompare(bv);
-                    return dir === 'asc' ? r : -r;
-                  }
-                }
-                function setArrows(activeKey, dir) {
-                  headerBtns.forEach(function(btn){
-                    var arrow = btn.querySelector('[data-sort-arrow]');
-                    if (!arrow) return;
-                    if (btn.dataset.sortKey === activeKey) {
-                      arrow.classList.remove('hidden');
-                      arrow.textContent = dir === 'desc' ? '▼' : '▲';
-                    } else {
-                      arrow.classList.add('hidden');
-                    }
-                  });
-                }
-                headerBtns.forEach(function(btn){
-                  btn.addEventListener('click', function(){
-                    var key = btn.dataset.sortKey;
-                    var currentKey = root.dataset.currentSortKey || 'date';
-                    var currentDir = root.dataset.currentSortDir || 'desc';
-                    var dir = (key === currentKey) ? (currentDir === 'desc' ? 'asc' : 'desc') : 'asc';
-                    var rows = getRows();
-                    rows.sort(function(r1, r2){ return cmp(r1, r2, dir, key); });
-                    rows.forEach(function(r){ tbody.appendChild(r); });
-                    root.dataset.currentSortKey = key;
-                    root.dataset.currentSortDir = dir;
-                    setArrows(key, dir);
-                  });
-                });
-                // Ensure initial arrows reflect default sort
-                setArrows(root.dataset.currentSortKey || 'date', root.dataset.currentSortDir || 'desc');
-              } catch (e) { /* no-op */ }
-            })();
-          </script>
-        <% end %>
       <% else %>
         <div class="text-sm text-gray-500">No aggregated trades available.</div>
       <% end %>
@@ -625,4 +694,248 @@ defmodule JournalexWeb.AggregatedTradeList do
         end
     end
   end
+
+  # Action chain helpers
+  defp detail_colspan(assigns, show_toggle?) do
+    base = 6
+
+    base = if show_toggle?, do: base + 1, else: base
+    base = if Map.get(assigns, :selectable?), do: base + 1, else: base
+    base = if Map.get(assigns, :show_save_controls?), do: base + 2, else: base
+
+    base
+  end
+
+  # NOTE: visibility of the toggle is handled by assigns; presence is computed inline where needed
+
+  defp action_chain(item, key) when is_map(item) do
+    candidates =
+      [key, :action_chain, :actions, :legs, "action_chain", "actions", "legs"]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.flat_map(fn
+        value when is_atom(value) -> [value, Atom.to_string(value)]
+        value when is_binary(value) -> [value]
+        _ -> []
+      end)
+
+    candidates
+    |> Enum.reduce_while([], fn candidate, acc ->
+      case fetch_chain(item, candidate) do
+        list when is_list(list) -> {:halt, Enum.reject(list, &is_nil/1)}
+        map when is_map(map) -> {:halt, map_chain_to_list(map)}
+        _ -> {:cont, acc}
+      end
+    end)
+    |> case do
+      [] -> []
+      list -> list
+    end
+  end
+
+  defp action_chain(_item, _key), do: []
+
+  defp fetch_chain(item, key) when is_atom(key), do: Map.get(item, key)
+  defp fetch_chain(item, key) when is_binary(key), do: Map.get(item, key)
+  defp fetch_chain(_item, _key), do: nil
+
+  defp action_label(action, idx) when is_map(action) do
+    label_raw =
+      action
+      |> fetch_first([:label, "label", :title, "title", :action, "action"])
+
+    label = format_action_text(label_raw)
+
+    if label != "" do
+      label
+    else
+      parts =
+  [:type, :side, :verb]
+  |> Enum.map(fn key -> action |> fetch_first([key, Atom.to_string(key)]) |> format_action_text() end)
+        |> Enum.reject(&(&1 == ""))
+
+      case parts do
+        [] -> "Step #{idx + 1}"
+        _ -> Enum.join(parts, " • ")
+      end
+    end
+  end
+
+  defp action_label(_action, idx), do: "Step #{idx + 1}"
+
+  defp format_action_time(action) when is_map(action) do
+    action
+    |> fetch_first([
+      :datetime,
+      :timestamp,
+      :executed_at,
+      :filled_at,
+      :time,
+      "datetime",
+      "timestamp",
+      "executed_at",
+      "filled_at",
+      "time"
+    ])
+    |> format_time_value()
+  end
+
+  defp format_action_time(_), do: ""
+
+  defp action_meta(action) when is_map(action) do
+    [
+      meta_segment(action, [:quantity, "quantity", :qty, "qty"], "Qty", decimals: 0),
+      meta_segment(action, [:contracts, "contracts"], "Contracts", decimals: 0),
+      meta_segment(action, [:avg_price, "avg_price", :average_price, "average_price"], "Avg Price"),
+      meta_segment(action, [:realized_pl, "realized_pl", :pl, "pl"], "P/L"),
+      meta_segment(action, [:commission, "commission", :fee, "fee", :fees, "fees"], "Fees")
+    ]
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp action_meta(_), do: []
+
+  defp action_notes(action) when is_map(action) do
+    action
+    |> fetch_first([:notes, "notes", :comment, "comment", :description, "description"])
+    |> present_string()
+  end
+
+  defp action_notes(_), do: ""
+
+  defp action_price(action) when is_map(action) do
+    price = fetch_first(action, [:price, "price", :trade_price, "trade_price"])
+
+    cond do
+      is_nil(price) -> nil
+      match?(%Decimal{}, price) -> format_meta_value(price, [])
+      is_number(price) -> format_meta_value(price, [])
+      is_binary(price) ->
+        price
+        |> String.trim()
+        |> case do
+          "" -> nil
+          s -> s
+        end
+      true -> nil
+    end
+  end
+  defp action_price(_), do: nil
+
+  defp meta_segment(action, keys, label, opts \\ []) do
+    action
+    |> fetch_first(keys)
+    |> format_meta_value(opts)
+    |> case do
+      nil -> nil
+      value -> "#{label}: #{value}"
+    end
+  end
+
+  defp format_meta_value(nil, _opts), do: nil
+  defp format_meta_value(%Decimal{} = dec, opts), do: format_meta_value(Decimal.to_float(dec), opts)
+
+  defp format_meta_value(value, opts) when is_number(value) do
+    if is_integer(value) do
+      Integer.to_string(value)
+    else
+      decimals = Keyword.get(opts, :decimals, 2)
+      :erlang.float_to_binary(value * 1.0, [:compact, {:decimals, decimals}])
+    end
+  end
+
+  defp format_meta_value(value, _opts) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp format_meta_value(value, _opts) when is_atom(value) do
+    value
+    |> Atom.to_string()
+    |> String.replace("_", " ")
+    |> String.upcase()
+  end
+
+  defp format_meta_value(_value, _opts), do: nil
+
+  defp format_time_value(nil), do: ""
+
+  defp format_time_value(%DateTime{} = dt) do
+    Calendar.strftime(dt, "%Y-%m-%d %H:%M")
+  end
+
+  defp format_time_value(%NaiveDateTime{} = ndt) do
+    Calendar.strftime(ndt, "%Y-%m-%d %H:%M")
+  end
+
+  defp format_time_value(%Date{} = d) do
+    Date.to_iso8601(d)
+  end
+
+  defp format_time_value(value) when is_binary(value) do
+    String.trim(value)
+  end
+
+  defp format_time_value(_), do: ""
+
+  defp fetch_first(map, keys) when is_map(map) do
+    Enum.find_value(keys, fn key -> Map.get(map, key) end)
+  end
+
+
+
+  defp present_string(nil), do: ""
+
+  defp present_string(value) when is_binary(value) do
+    value
+    |> String.trim()
+  end
+
+  defp present_string(value) when is_atom(value) do
+    value
+    |> Atom.to_string()
+    |> String.replace("_", " ")
+    |> String.upcase()
+  end
+
+  defp present_string(value) when is_number(value), do: to_string(value)
+  defp present_string(%Decimal{} = dec), do: Decimal.to_string(dec)
+  defp present_string(_), do: ""
+
+  # Convert map-based chains like %{"1" => %{...}, "2" => %{...}} to a list ordered by numeric key
+  defp map_chain_to_list(map) when is_map(map) do
+    map
+    |> Enum.map(fn {k, v} -> {coerce_key_to_int(k), v} end)
+    |> Enum.sort_by(fn {i, _} -> i end)
+    |> Enum.map(fn {_i, v} -> v end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+
+
+  defp coerce_key_to_int(k) when is_integer(k), do: k
+  defp coerce_key_to_int(k) when is_binary(k) do
+    case Integer.parse(k) do
+      {i, _} -> i
+      :error -> 9_223_372_036_854_775_807
+    end
+  end
+  defp coerce_key_to_int(k) when is_atom(k), do: coerce_key_to_int(Atom.to_string(k))
+  defp coerce_key_to_int(_), do: 9_223_372_036_854_775_807
+
+  defp format_action_text(nil), do: ""
+  defp format_action_text(v) when is_binary(v) do
+    v
+    |> String.trim()
+    |> String.replace("_", " ")
+    |> String.upcase()
+  end
+  defp format_action_text(v) when is_atom(v) do
+    v
+    |> Atom.to_string()
+    |> String.replace("_", " ")
+    |> String.upcase()
+  end
+  defp format_action_text(v), do: present_string(v)
 end
