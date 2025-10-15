@@ -32,6 +32,7 @@ defmodule JournalexWeb.TradesDatesLive do
      |> assign(:trades_expanded, true)
      |> assign(:calendar_month, first)
      |> assign(:date_grid, default_grid)
+    |> assign(:pick_one_day, false)
      |> assign(:error, nil)}
   end
 
@@ -66,14 +67,32 @@ defmodule JournalexWeb.TradesDatesLive do
     <div class="mx-auto max-w-6xl p-6">
       <div class="flex items-center justify-between mb-6">
         <h1 class="text-2xl font-bold">Trades by Date Range</h1>
-        
+
         <.link navigate={~p"/trade/all"} class="text-blue-600 hover:underline">
           Back to All Trades
         </.link>
       </div>
-      
+
       <%= if not Enum.empty?(@date_grid) do %>
         <div class="mb-6">
+          <div class="flex items-center justify-end mb-2">
+            <button
+              phx-click="enable_pick_one_day"
+              class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              aria-pressed={@pick_one_day}
+            >
+              Pick a day
+            </button>
+            <%= if @start_date && @end_date do %>
+              <button
+                phx-click="clear_dates"
+                class="ml-2 px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                title="Clear selected date range"
+              >
+                Clear
+              </button>
+            <% end %>
+          </div>
           <JournalexWeb.MonthGrid.month_grid
             months={@date_grid}
             show_nav={true}
@@ -84,10 +103,11 @@ defmodule JournalexWeb.TradesDatesLive do
             title="Dates"
             start_date={@start_date && parse_yyyymmdd(@start_date)}
             end_date={@end_date && parse_yyyymmdd(@end_date)}
+            day_click_event={if @pick_one_day, do: "pick_one_day_date", else: nil}
           />
         </div>
       <% end %>
-      
+
       <.simple_form for={%{}} as={:dates} phx-submit="submit_dates" class="mb-6">
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
           <.input
@@ -108,23 +128,23 @@ defmodule JournalexWeb.TradesDatesLive do
             <.button type="submit">Apply</.button>
           </div>
         </div>
-        
+
         <%= if @error do %>
           <p class="mt-2 text-sm text-red-600">{@error}</p>
         <% end %>
       </.simple_form>
-      
+
       <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg">
         <!-- Trades List -->
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
               <h2 class="text-lg font-semibold text-gray-900">Trades by Ticker</h2>
-              
+
               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                 {length(@summary_by_symbol)}
               </span>
-              
+
               <button
                 phx-click="toggle_trades"
                 class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -140,7 +160,7 @@ defmodule JournalexWeb.TradesDatesLive do
             </div>
           </div>
         </div>
-        
+
         <ActivityStatementSummary.summary_table
           rows={@summary_by_symbol}
           total={@summary_total}
@@ -259,6 +279,48 @@ defmodule JournalexWeb.TradesDatesLive do
   @impl true
   def handle_event("toggle_trades", _params, socket) do
     {:noreply, assign(socket, :trades_expanded, !socket.assigns.trades_expanded)}
+  end
+
+  @impl true
+  def handle_event("enable_pick_one_day", _params, socket) do
+    {:noreply, assign(socket, :pick_one_day, true)}
+  end
+
+  @impl true
+  def handle_event("pick_one_day_date", %{"date" => iso_date}, socket) do
+    sd = sanitize_date(iso_date)
+    ed = sd
+
+    case valid_range?(sd, ed) do
+      true ->
+        {:noreply,
+         socket
+         |> assign(:pick_one_day, false)
+         |> push_patch(to: ~p"/trade/dates?start_date=#{sd}&end_date=#{ed}")}
+
+      false ->
+        {:noreply, assign(socket, error: "Invalid date selected.")}
+    end
+  end
+
+  @impl true
+  def handle_event("clear_dates", _params, socket) do
+    first = socket.assigns.calendar_month
+    all_trades_for_month = load_trades_for_calendar_month(first)
+    date_grid = build_date_grid_for_month(first, all_trades_for_month)
+
+    {:noreply,
+     socket
+     |> assign(:start_date, nil)
+     |> assign(:end_date, nil)
+     |> assign(:trades, [])
+     |> assign(:summary_by_symbol, [])
+     |> assign(:summary_total, 0.0)
+     |> assign(:selected_days, 0)
+     |> assign(:date_grid, date_grid)
+     |> assign(:pick_one_day, false)
+     |> assign(:error, nil)
+     |> push_patch(to: ~p"/trade/dates")}
   end
 
   defp update_calendar_month(socket, %Date{} = first) do

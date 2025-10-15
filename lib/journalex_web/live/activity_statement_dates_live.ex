@@ -33,6 +33,7 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
      |> assign(:calendar_month, first)
      |> assign(:date_grid, default_grid)
      |> assign(:selected_days, 0)
+      |> assign(:pick_one_day, false)
      |> assign(:error, nil)}
   end
 
@@ -75,6 +76,24 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
 
       <%= if not Enum.empty?(@date_grid) do %>
         <div class="mb-6">
+          <div class="flex items-center justify-end mb-2">
+            <button
+              phx-click="enable_pick_one_day"
+              class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              aria-pressed={@pick_one_day}
+            >
+              Pick a day
+            </button>
+            <%= if @start_date && @end_date do %>
+              <button
+                phx-click="clear_dates"
+                class="ml-2 px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                title="Clear selected date range"
+              >
+                Clear
+              </button>
+            <% end %>
+          </div>
           <JournalexWeb.MonthGrid.month_grid
             months={@date_grid}
             show_nav={true}
@@ -85,6 +104,7 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
             title="Dates"
             start_date={@start_date && parse_yyyymmdd(@start_date)}
             end_date={@end_date && parse_yyyymmdd(@end_date)}
+            day_click_event={if @pick_one_day, do: "pick_one_day_date", else: nil}
           />
         </div>
       <% end %>
@@ -267,6 +287,57 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
   @impl true
   def handle_event("toggle_activity", _params, socket) do
     {:noreply, assign(socket, :activity_expanded, !socket.assigns.activity_expanded)}
+  end
+
+  @impl true
+  def handle_event("enable_pick_one_day", _params, socket) do
+    {:noreply, assign(socket, :pick_one_day, true)}
+  end
+
+  @impl true
+  def handle_event("pick_one_day_date", %{"date" => iso_date}, socket) do
+    sd = sanitize_date(iso_date)
+    ed = sd
+
+    case valid_range?(sd, ed) do
+      true ->
+        {:noreply,
+         socket
+         |> assign(:pick_one_day, false)
+         |> push_patch(to: ~p"/activity_statement/dates?start_date=#{sd}&end_date=#{ed}")}
+
+      false ->
+        {:noreply, assign(socket, error: "Invalid date selected.")}
+    end
+  end
+
+  @impl true
+  def handle_event("clear_dates", _params, socket) do
+    first = socket.assigns.calendar_month
+    last = end_of_month(first)
+    sd = yyyymmdd(first)
+    ed = yyyymmdd(last)
+
+    results =
+      case Activity.list_activity_statements_between(sd, ed) do
+        {:error, _} -> []
+        list when is_list(list) -> Activity.dedupe_by_datetime_symbol(list)
+      end
+
+    date_grid = build_date_grid(sd, ed, results)
+
+    {:noreply,
+     socket
+     |> assign(:start_date, nil)
+     |> assign(:end_date, nil)
+     |> assign(:statements, [])
+     |> assign(:summary_by_symbol, [])
+     |> assign(:summary_total, 0.0)
+     |> assign(:selected_days, 0)
+     |> assign(:date_grid, date_grid)
+     |> assign(:pick_one_day, false)
+     |> assign(:error, nil)
+     |> push_patch(to: ~p"/activity_statement/dates")}
   end
 
   defp update_calendar_month(socket, %Date{} = first) do

@@ -30,6 +30,8 @@ defmodule JournalexWeb.MonthGrid do
   # New optional selection attrs
   attr :start_date, :any, default: nil
   attr :end_date, :any, default: nil
+  # Optional: when set, clicking a day cell will emit this event with phx-value-date=YYYY-MM-DD
+  attr :day_click_event, :string, default: nil
 
   def month_grid(assigns) do
     ~H"""
@@ -96,11 +98,16 @@ defmodule JournalexWeb.MonthGrid do
               <%= for cell <- List.flatten(month.weeks) do %>
                 <% date = cell[:date] %>
                 <% selected? = in_range?(date, @start_date, @end_date, false) %>
-                <div class={[
-                  "h-16 border rounded-md p-1 flex flex-col justify-between",
-                  date == nil && "bg-gray-50",
-                  selected? && "bg-indigo-50 ring-1 ring-indigo-300"
-                ]}>
+                <div
+                  phx-click={if @day_click_event && date, do: @day_click_event}
+                  phx-value-date={if @day_click_event && date, do: Date.to_iso8601(date)}
+                  class={[
+                    "h-16 border rounded-md p-1 flex flex-col justify-between",
+                    date == nil && "bg-gray-50",
+                    selected? && "bg-indigo-50 ring-1 ring-indigo-300",
+                    @day_click_event && date && "cursor-pointer hover:bg-indigo-100"
+                  ]}
+                >
                   <div class={[
                     "text-[10px] text-right",
                     selected? && "text-indigo-800",
