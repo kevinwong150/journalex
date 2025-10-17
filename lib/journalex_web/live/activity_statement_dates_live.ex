@@ -33,7 +33,7 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
      |> assign(:calendar_month, first)
      |> assign(:date_grid, default_grid)
      |> assign(:selected_days, 0)
-      |> assign(:pick_one_day, false)
+     |> assign(:pick_one_day, false)
      |> assign(:error, nil)}
   end
 

@@ -21,23 +21,30 @@ defmodule JournalexWeb.DumpProgress do
       <% percent = if @total > 0, do: Float.round(@processed * 100.0 / @total, 1), else: 0.0 %>
       <div class="flex items-center justify-between text-xs text-gray-600">
         <span>
-          {@title || "Progress"}: {@processed}/{@total} ({percent}%) {if @in_progress?, do: "- in progress", else: "- completed"} · Time: {format_duration(@elapsed_ms)}
+          {@title || "Progress"}: {@processed}/{@total} ({percent}%) {if @in_progress?,
+            do: "- in progress",
+            else: "- completed"} · Time: {format_duration(@elapsed_ms)}
         </span>
+        
         <span :if={@current_text} class="font-medium text-gray-700">
           Currently: {@current_text}
         </span>
       </div>
-
+      
       <div class="w-full bg-gray-200 rounded h-2 overflow-hidden">
         <div class="bg-green-500 h-2" style={"width: #{percent}%"}></div>
       </div>
-
+      
       <div class="text-xs text-gray-700">
         <div class="flex items-center gap-2 flex-wrap">
           <%= for {key, value} <- @metrics do %>
-            <% label = Map.get(@labels, key, key |> to_string() |> String.capitalize()) %>
-            <% {bg, text} = pill_colors(key) %>
-            <span class={["inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", bg, text]}>
+            <% label = Map.get(@labels, key, key |> to_string() |> String.capitalize()) %> <% {bg,
+             text} = pill_colors(key) %>
+            <span class={[
+              "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
+              bg,
+              text
+            ]}>
               {label}: {value}
             </span>
           <% end %>
@@ -56,8 +63,8 @@ defmodule JournalexWeb.DumpProgress do
 
   defp format_duration(ms) when is_integer(ms) and ms >= 0 do
     total_ms = ms
-  hours = div(total_ms, 3_600_000)
-  rem_after_h = rem(total_ms, 3_600_000)
+    hours = div(total_ms, 3_600_000)
+    rem_after_h = rem(total_ms, 3_600_000)
     minutes = div(rem_after_h, 60_000)
     rem_after_m = rem(rem_after_h, 60_000)
     seconds = div(rem_after_m, 1_000)

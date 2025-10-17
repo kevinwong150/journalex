@@ -345,7 +345,7 @@ defmodule Journalex.Trades.ActionChainBuilder do
          "action" => action,
          "quantity" => Decimal.to_float(stmt.quantity),
          "datetime" => DateTime.to_iso8601(stmt.datetime),
-         "price" => (stmt.trade_price && Decimal.to_float(stmt.trade_price))
+         "price" => stmt.trade_price && Decimal.to_float(stmt.trade_price)
        }}
     end)
     |> Enum.into(%{})

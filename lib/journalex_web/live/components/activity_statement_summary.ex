@@ -115,7 +115,7 @@ defmodule JournalexWeb.ActivityStatementSummary do
           </button>
         </div>
       </div>
-
+      
     <!-- Grouped-by-ticker summary table (default) -->
       <div id={@id <> "-grouped"} class={if(@group_by_ticker, do: nil, else: "hidden")}>
         <table class="min-w-full divide-y divide-gray-200">
@@ -217,7 +217,7 @@ defmodule JournalexWeb.ActivityStatementSummary do
           <% end %>
         </table>
       </div>
-
+      
     <!-- Flat aggregated trades list -->
       <div id={@id <> "-flat"} class={if(@group_by_ticker, do: "hidden", else: nil)}>
         <!-- Preserve the Total row in flat list mode -->

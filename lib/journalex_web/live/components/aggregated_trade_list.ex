@@ -341,7 +341,10 @@ defmodule JournalexWeb.AggregatedTradeList do
                   ])
                 }
               >
-                <td :if={show_action_toggle?} class="px-3 py-2 whitespace-nowrap text-sm text-center align-middle">
+                <td
+                  :if={show_action_toggle?}
+                  class="px-3 py-2 whitespace-nowrap text-sm text-center align-middle"
+                >
                   <button
                     type="button"
                     class="inline-flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold transition border-slate-300 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-100 shadow-sm"
@@ -357,7 +360,8 @@ defmodule JournalexWeb.AggregatedTradeList do
                   <span
                     class={[
                       "ml-2 inline-flex items-center justify-center rounded-full px-1.5 text-[10px] font-semibold align-middle h-5 min-w-[1.25rem] shadow-sm",
-                      (chain_length > 0 && "bg-blue-100 text-blue-700") || "bg-slate-100 text-slate-500"
+                      (chain_length > 0 && "bg-blue-100 text-blue-700") ||
+                        "bg-slate-100 text-slate-500"
                     ]}
                     title={"#{chain_length} step" <> if(chain_length == 1, do: "", else: "s")}
                   >
@@ -461,12 +465,15 @@ defmodule JournalexWeb.AggregatedTradeList do
                 <td class={"px-4 py-2 whitespace-nowrap text-sm text-right #{pl_class_amount(to_float(Map.get(item, :realized_pl)))}"}>
                   {format_amount(Map.get(item, :realized_pl))}
                 </td>
-                <td :if={@show_page_id_column?} class="px-4 py-2 whitespace-nowrap text-xs text-gray-700">
-                  <% title_for_lookup = (item_ticker(item) || "-") <> "@" <> (item_datetime_value(item) || "") %>
+                <td
+                  :if={@show_page_id_column?}
+                  class="px-4 py-2 whitespace-nowrap text-xs text-gray-700"
+                >
+                  <% title_for_lookup =
+                    (item_ticker(item) || "-") <> "@" <> (item_datetime_value(item) || "") %>
                   <%= if page_id = Map.get(@page_ids_map || %{}, title_for_lookup) do %>
                     <code class="text-[11px] bg-gray-100 rounded px-1 py-0.5">{page_id}</code>
                   <% else %>
-
                   <% end %>
                 </td>
               </tr>
@@ -483,7 +490,9 @@ defmodule JournalexWeb.AggregatedTradeList do
                     <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm mb-3">
                       <div class="flex flex-wrap items-center justify-between gap-2">
                         <h4 class="text-sm font-semibold text-amber-800">Notion mismatches</h4>
-                        <span class="text-xs text-amber-700">{map_size(diffs)} difference{if map_size(diffs) == 1, do: "", else: "s"}</span>
+                        <span class="text-xs text-amber-700">
+                          {map_size(diffs)} difference{if map_size(diffs) == 1, do: "", else: "s"}
+                        </span>
                       </div>
                       <div class="mt-3 overflow-x-auto">
                         <table class="min-w-full text-xs">
@@ -497,8 +506,12 @@ defmodule JournalexWeb.AggregatedTradeList do
                           <tbody class="text-amber-900">
                             <%= for {field, change} <- ordered_diff_list(diffs) do %>
                               <tr class="align-top">
-                                <td class="px-2 py-1 whitespace-nowrap font-medium">{diff_field_label(field)}</td>
-                                <td class="px-2 py-1">{present_string(Map.get(change, :expected))}</td>
+                                <td class="px-2 py-1 whitespace-nowrap font-medium">
+                                  {diff_field_label(field)}
+                                </td>
+                                <td class="px-2 py-1">
+                                  {present_string(Map.get(change, :expected))}
+                                </td>
                                 <td class="px-2 py-1">{present_string(Map.get(change, :actual))}</td>
                               </tr>
                             <% end %>
@@ -513,7 +526,7 @@ defmodule JournalexWeb.AggregatedTradeList do
                       <div class="flex flex-wrap items-center justify-between gap-2">
                         <h4 class="text-sm font-semibold text-slate-700">Action chain</h4>
                         <span class="text-xs text-slate-500">
-                          <%= chain_length %> <%= if chain_length == 1, do: "step", else: "steps" %>
+                          {chain_length} {if chain_length == 1, do: "step", else: "steps"}
                         </span>
                       </div>
                       <ol class="mt-4 space-y-3">
@@ -524,16 +537,29 @@ defmodule JournalexWeb.AggregatedTradeList do
                           <li class="relative">
                             <div class="grid grid-cols-[auto_1fr_auto] items-start gap-3">
                               <div class="relative">
-                                <div class="z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white shadow">{action_idx + 1}</div>
-                                <div :if={action_idx < chain_length - 1} class="absolute left-1/2 top-6 -ml-px h-full w-px bg-slate-200"></div>
+                                <div class="z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white shadow">
+                                  {action_idx + 1}
+                                </div>
+                                <div
+                                  :if={action_idx < chain_length - 1}
+                                  class="absolute left-1/2 top-6 -ml-px h-full w-px bg-slate-200"
+                                >
+                                </div>
                               </div>
                               <div class="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
                                 <div class="flex flex-wrap items-center justify-between gap-2">
-                                  <span class="text-sm font-medium text-slate-800">{action_label(action, action_idx)}</span>
-                                  <span :if={action_time != ""} class="text-xs text-slate-500">{action_time}</span>
+                                  <span class="text-sm font-medium text-slate-800">
+                                    {action_label(action, action_idx)}
+                                  </span>
+                                  <span :if={action_time != ""} class="text-xs text-slate-500">
+                                    {action_time}
+                                  </span>
                                 </div>
                                 <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
-                                  <div :if={action_price(action)} class="inline-flex items-center gap-1 font-medium text-slate-700">
+                                  <div
+                                    :if={action_price(action)}
+                                    class="inline-flex items-center gap-1 font-medium text-slate-700"
+                                  >
                                     <span class="text-slate-500">Price:</span>
                                     <span>{action_price(action)}</span>
                                   </div>
@@ -544,20 +570,26 @@ defmodule JournalexWeb.AggregatedTradeList do
                                     </span>
                                   <% end %>
                                   <.link
-                                    :if={action_id = (Map.get(action, :activity_statement_id) || Map.get(action, "activity_statement_id"))}
-                                    navigate={~p"/activity_statement/#{action_id}"
+                                    :if={
+                                      action_id =
+                                        Map.get(action, :activity_statement_id) ||
+                                          Map.get(action, "activity_statement_id")
                                     }
+                                    navigate={~p"/activity_statement/#{action_id}"}
                                     class="inline-flex items-center rounded border border-blue-200 px-2 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-50"
                                     title="View activity statement"
                                   >
                                     View statement →
                                   </.link>
                                 </div>
-                                <p :if={action_notes != ""} class="mt-2 text-xs leading-relaxed text-slate-600">{action_notes}</p>
+                                <p
+                                  :if={action_notes != ""}
+                                  class="mt-2 text-xs leading-relaxed text-slate-600"
+                                >
+                                  {action_notes}
+                                </p>
                               </div>
-                              <div class="pt-1 text-right">
-
-                              </div>
+                              <div class="pt-1 text-right"></div>
                             </div>
                           </li>
                         <% end %>
@@ -672,23 +704,29 @@ defmodule JournalexWeb.AggregatedTradeList do
   # Format duration in seconds to a human-readable string
   defp format_duration(nil), do: "-"
   defp format_duration(seconds) when is_integer(seconds) and seconds < 0, do: "-"
+
   defp format_duration(seconds) when is_integer(seconds) do
     cond do
-      seconds < 60 -> "#{seconds}s"
+      seconds < 60 ->
+        "#{seconds}s"
+
       seconds < 3600 ->
         mins = div(seconds, 60)
         secs = rem(seconds, 60)
         if secs == 0, do: "#{mins}m", else: "#{mins}m #{secs}s"
+
       seconds < 86400 ->
         hours = div(seconds, 3600)
         mins = div(rem(seconds, 3600), 60)
         if mins == 0, do: "#{hours}h", else: "#{hours}h #{mins}m"
+
       true ->
         days = div(seconds, 86400)
         hours = div(rem(seconds, 86400), 3600)
         if hours == 0, do: "#{days}d", else: "#{days}d #{hours}h"
     end
   end
+
   defp format_duration(_), do: "-"
 
   # Sorting helpers
@@ -839,8 +877,10 @@ defmodule JournalexWeb.AggregatedTradeList do
       label
     else
       parts =
-  [:type, :side, :verb]
-  |> Enum.map(fn key -> action |> fetch_first([key, Atom.to_string(key)]) |> format_action_text() end)
+        [:type, :side, :verb]
+        |> Enum.map(fn key ->
+          action |> fetch_first([key, Atom.to_string(key)]) |> format_action_text()
+        end)
         |> Enum.reject(&(&1 == ""))
 
       case parts do
@@ -875,7 +915,11 @@ defmodule JournalexWeb.AggregatedTradeList do
     [
       meta_segment(action, [:quantity, "quantity", :qty, "qty"], "Qty", decimals: 0),
       meta_segment(action, [:contracts, "contracts"], "Contracts", decimals: 0),
-      meta_segment(action, [:avg_price, "avg_price", :average_price, "average_price"], "Avg Price"),
+      meta_segment(
+        action,
+        [:avg_price, "avg_price", :average_price, "average_price"],
+        "Avg Price"
+      ),
       meta_segment(action, [:realized_pl, "realized_pl", :pl, "pl"], "P/L"),
       meta_segment(action, [:commission, "commission", :fee, "fee", :fees, "fees"], "Fees")
     ]
@@ -896,9 +940,15 @@ defmodule JournalexWeb.AggregatedTradeList do
     price = fetch_first(action, [:price, "price", :trade_price, "trade_price"])
 
     cond do
-      is_nil(price) -> nil
-      match?(%Decimal{}, price) -> format_meta_value(price, [])
-      is_number(price) -> format_meta_value(price, [])
+      is_nil(price) ->
+        nil
+
+      match?(%Decimal{}, price) ->
+        format_meta_value(price, [])
+
+      is_number(price) ->
+        format_meta_value(price, [])
+
       is_binary(price) ->
         price
         |> String.trim()
@@ -906,9 +956,12 @@ defmodule JournalexWeb.AggregatedTradeList do
           "" -> nil
           s -> s
         end
-      true -> nil
+
+      true ->
+        nil
     end
   end
+
   defp action_price(_), do: nil
 
   defp meta_segment(action, keys, label, opts \\ []) do
@@ -922,7 +975,9 @@ defmodule JournalexWeb.AggregatedTradeList do
   end
 
   defp format_meta_value(nil, _opts), do: nil
-  defp format_meta_value(%Decimal{} = dec, opts), do: format_meta_value(Decimal.to_float(dec), opts)
+
+  defp format_meta_value(%Decimal{} = dec, opts),
+    do: format_meta_value(Decimal.to_float(dec), opts)
 
   defp format_meta_value(value, opts) when is_number(value) do
     if is_integer(value) do
@@ -973,8 +1028,6 @@ defmodule JournalexWeb.AggregatedTradeList do
     Enum.find_value(keys, fn key -> Map.get(map, key) end)
   end
 
-
-
   defp present_string(nil), do: ""
 
   defp present_string(value) when is_binary(value) do
@@ -1002,31 +1055,34 @@ defmodule JournalexWeb.AggregatedTradeList do
     |> Enum.reject(&is_nil/1)
   end
 
-
-
   defp coerce_key_to_int(k) when is_integer(k), do: k
+
   defp coerce_key_to_int(k) when is_binary(k) do
     case Integer.parse(k) do
       {i, _} -> i
       :error -> 9_223_372_036_854_775_807
     end
   end
+
   defp coerce_key_to_int(k) when is_atom(k), do: coerce_key_to_int(Atom.to_string(k))
   defp coerce_key_to_int(_), do: 9_223_372_036_854_775_807
 
   defp format_action_text(nil), do: ""
+
   defp format_action_text(v) when is_binary(v) do
     v
     |> String.trim()
     |> String.replace("_", " ")
     |> String.upcase()
   end
+
   defp format_action_text(v) when is_atom(v) do
     v
     |> Atom.to_string()
     |> String.replace("_", " ")
     |> String.upcase()
   end
+
   defp format_action_text(v), do: present_string(v)
 
   # --- Diff helpers for mismatch display ---
@@ -1041,13 +1097,17 @@ defmodule JournalexWeb.AggregatedTradeList do
     end)
     |> Enum.join("\n")
   end
+
   defp diffs_tooltip(_), do: nil
 
   defp ordered_diff_list(diffs) when is_map(diffs) do
     order = [:title, :ticker, :side, :result, :realized_pl]
+
     ordered =
       order
-      |> Enum.flat_map(fn k -> if Map.has_key?(diffs, k), do: [{k, Map.fetch!(diffs, k)}], else: [] end)
+      |> Enum.flat_map(fn k ->
+        if Map.has_key?(diffs, k), do: [{k, Map.fetch!(diffs, k)}], else: []
+      end)
 
     remaining =
       diffs
@@ -1057,6 +1117,7 @@ defmodule JournalexWeb.AggregatedTradeList do
 
     ordered ++ remaining
   end
+
   defp ordered_diff_list(_), do: []
 
   defp diff_field_label(:title), do: "Title"
@@ -1065,16 +1126,19 @@ defmodule JournalexWeb.AggregatedTradeList do
   defp diff_field_label(:side), do: "Side"
   defp diff_field_label(:result), do: "Result"
   defp diff_field_label(:realized_pl), do: "Realized P/L"
+
   defp diff_field_label(other) when is_atom(other) do
     other
     |> Atom.to_string()
     |> String.replace("_", " ")
     |> String.capitalize()
   end
+
   defp diff_field_label(other) when is_binary(other) do
     other
     |> String.replace("_", " ")
     |> String.capitalize()
   end
+
   defp diff_field_label(_), do: "Field"
 end

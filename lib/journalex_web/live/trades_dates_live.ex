@@ -32,7 +32,7 @@ defmodule JournalexWeb.TradesDatesLive do
      |> assign(:trades_expanded, true)
      |> assign(:calendar_month, first)
      |> assign(:date_grid, default_grid)
-    |> assign(:pick_one_day, false)
+     |> assign(:pick_one_day, false)
      |> assign(:error, nil)}
   end
 

@@ -42,18 +42,18 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:dump_timer_ref, nil)
       |> assign(:dump_report_text, nil)
       |> assign(:hide_exists?, false)
-  # Notion page ids per row title ("TICKER@ISO")
-  |> assign(:notion_page_ids, %{})
-    # Update (bulk) progress state
-    |> assign(:update_queue, [])
-    |> assign(:update_total, 0)
-    |> assign(:update_processed, 0)
-    |> assign(:update_in_progress?, false)
-    |> assign(:update_current, nil)
-    |> assign(:update_started_at_mono, nil)
-    |> assign(:update_finished_at_mono, nil)
-    |> assign(:update_elapsed_ms, 0)
-  |> assign(:update_timer_ref, nil)
+      # Notion page ids per row title ("TICKER@ISO")
+      |> assign(:notion_page_ids, %{})
+      # Update (bulk) progress state
+      |> assign(:update_queue, [])
+      |> assign(:update_total, 0)
+      |> assign(:update_processed, 0)
+      |> assign(:update_in_progress?, false)
+      |> assign(:update_current, nil)
+      |> assign(:update_started_at_mono, nil)
+      |> assign(:update_finished_at_mono, nil)
+      |> assign(:update_elapsed_ms, 0)
+      |> assign(:update_timer_ref, nil)
 
     if connected?(socket), do: send(self(), :auto_check_notion)
 
@@ -184,7 +184,8 @@ defmodule JournalexWeb.TradesDumpLive do
         {:noreply,
          assign(socket,
            row_statuses: Map.merge(socket.assigns.row_statuses, row_statuses),
-           row_inconsistencies: Map.merge(socket.assigns.row_inconsistencies || %{}, inconsistencies),
+           row_inconsistencies:
+             Map.merge(socket.assigns.row_inconsistencies || %{}, inconsistencies),
            notion_exists_count: exists_count,
            notion_missing_count: missing_count,
            notion_page_ids: id_map
@@ -356,6 +357,7 @@ defmodule JournalexWeb.TradesDumpLive do
     case list_all_trade_trademarks_with_ids() do
       {:ok, {trademark_set, id_map}} ->
         pairs = Enum.with_index(rows)
+
         {row_statuses, exists_count, missing_count} =
           compute_statuses_for_pairs(pairs, trademark_set)
 
@@ -365,7 +367,8 @@ defmodule JournalexWeb.TradesDumpLive do
         {:noreply,
          assign(socket,
            row_statuses: Map.merge(socket.assigns.row_statuses, row_statuses),
-           row_inconsistencies: Map.merge(socket.assigns.row_inconsistencies || %{}, inconsistencies),
+           row_inconsistencies:
+             Map.merge(socket.assigns.row_inconsistencies || %{}, inconsistencies),
            notion_exists_count: exists_count,
            notion_missing_count: missing_count,
            notion_conn_status: :ok,
@@ -458,7 +461,8 @@ defmodule JournalexWeb.TradesDumpLive do
           socket = assign(socket, dump_current: row)
 
           {row_statuses, result_tag, next_queue, next_retry_counts, increment_processed?,
-           next_delay_ms, new_id_map} =
+           next_delay_ms,
+           new_id_map} =
             case Notion.exists_by_timestamp_and_ticker?(row.datetime, row.ticker || row.symbol,
                    data_source_id: trades_data_source_id()
                  ) do
@@ -542,14 +546,18 @@ defmodule JournalexWeb.TradesDumpLive do
     case queue do
       [] ->
         now = System.monotonic_time(:millisecond)
+
         socket =
           socket
           |> assign(:update_in_progress?, false)
           |> assign(:update_current, nil)
           |> assign(:update_finished_at_mono, socket.assigns.update_finished_at_mono || now)
-          |> assign(:update_elapsed_ms,
+          |> assign(
+            :update_elapsed_ms,
             if(socket.assigns.update_started_at_mono,
-              do: (socket.assigns.update_finished_at_mono || now) - socket.assigns.update_started_at_mono,
+              do:
+                (socket.assigns.update_finished_at_mono || now) -
+                  socket.assigns.update_started_at_mono,
               else: 0
             )
           )
@@ -570,31 +578,47 @@ defmodule JournalexWeb.TradesDumpLive do
                 {:ok, _} -> {rest, true}
                 _ -> {rest, true}
               end
+
             _ ->
               {rest, true}
           end
 
         # Recompute diffs for this row
         row_incons = socket.assigns.row_inconsistencies || %{}
+
         row_incons =
           case page_id do
             id when is_binary(id) ->
               case NotionClient.retrieve_page(id) do
                 {:ok, page} ->
                   diffs = Notion.diff_trade_vs_page(row, page)
-                  if map_size(diffs) > 0, do: Map.put(row_incons, idx, diffs), else: Map.delete(row_incons, idx)
-                _ -> row_incons
+
+                  if map_size(diffs) > 0,
+                    do: Map.put(row_incons, idx, diffs),
+                    else: Map.delete(row_incons, idx)
+
+                _ ->
+                  row_incons
               end
-            _ -> row_incons
+
+            _ ->
+              row_incons
           end
 
         now = System.monotonic_time(:millisecond)
-        elapsed_ms = if socket.assigns.update_started_at_mono, do: now - socket.assigns.update_started_at_mono, else: 0
+
+        elapsed_ms =
+          if socket.assigns.update_started_at_mono,
+            do: now - socket.assigns.update_started_at_mono,
+            else: 0
 
         socket =
           socket
           |> assign(:update_queue, next_queue)
-          |> assign(:update_processed, socket.assigns.update_processed + if(increment_processed?, do: 1, else: 0))
+          |> assign(
+            :update_processed,
+            socket.assigns.update_processed + if(increment_processed?, do: 1, else: 0)
+          )
           |> assign(:update_elapsed_ms, elapsed_ms)
           |> assign(:row_inconsistencies, row_incons)
 
@@ -719,9 +743,21 @@ defmodule JournalexWeb.TradesDumpLive do
           total={@dump_total}
           in_progress?={@dump_in_progress?}
           elapsed_ms={@dump_elapsed_ms}
-          current_text={@dump_current && ((@dump_current.ticker || @dump_current.symbol) <> " @ " <> DateTime.to_iso8601(@dump_current.datetime))}
+          current_text={
+            @dump_current &&
+              (@dump_current.ticker || @dump_current.symbol) <>
+                " @ " <> DateTime.to_iso8601(@dump_current.datetime)
+          }
           metrics={dump_metrics(@dump_results, @dump_queue)}
-          labels={%{created: "Created", skipped: "Skipped", retrying: "Retrying", errors: "Errors", remaining: "Remaining"}}
+          labels={
+            %{
+              created: "Created",
+              skipped: "Skipped",
+              retrying: "Retrying",
+              errors: "Errors",
+              remaining: "Remaining"
+            }
+          }
         />
 
         <DumpProgress.progress
@@ -732,7 +768,11 @@ defmodule JournalexWeb.TradesDumpLive do
           total={@update_total}
           in_progress?={@update_in_progress?}
           elapsed_ms={@update_elapsed_ms}
-          current_text={@update_current && ((@update_current.ticker || @update_current.symbol) <> " @ " <> DateTime.to_iso8601(@update_current.datetime))}
+          current_text={
+            @update_current &&
+              (@update_current.ticker || @update_current.symbol) <>
+                " @ " <> DateTime.to_iso8601(@update_current.datetime)
+          }
           metrics={%{remaining: length(@update_queue || [])}}
           labels={%{remaining: "Remaining"}}
         />
@@ -833,13 +873,22 @@ defmodule JournalexWeb.TradesDumpLive do
     retrying = Enum.count(values, &(&1 == :retrying))
     remaining = length(queue || [])
 
-    %{created: created, skipped: skipped, retrying: retrying, errors: errors, remaining: remaining}
+    %{
+      created: created,
+      skipped: skipped,
+      retrying: retrying,
+      errors: errors,
+      remaining: remaining
+    }
   end
+
   defp dump_metrics(_, _), do: %{}
 
   defp list_all_trade_trademarks_with_ids do
     case trades_data_source_id() do
-      nil -> {:error, :missing_data_source_id}
+      nil ->
+        {:error, :missing_data_source_id}
+
       id ->
         with {:ok, id_map} <- Notion.list_all_trademarks_with_ids(data_source_id: id) do
           {:ok, {Map.keys(id_map) |> MapSet.new(), id_map}}
@@ -864,6 +913,7 @@ defmodule JournalexWeb.TradesDumpLive do
   defp compute_statuses_for_pairs(pairs, trademark_set) when is_list(pairs) do
     Enum.reduce(pairs, {%{}, 0, 0}, fn {row, idx}, {acc, ec, mc} ->
       title = row_title(row)
+
       if not is_nil(title) and MapSet.member?(trademark_set, title) do
         {Map.put(acc, idx, :exists), ec + 1, mc}
       else

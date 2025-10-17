@@ -506,7 +506,7 @@ defmodule JournalexWeb.StatementDumpLive do
             </button>
           </div>
         </div>
-
+        
     <!-- Row 2: Status badges on left, action buttons on right -->
         <div class="flex items-center justify-between gap-3 flex-wrap">
           <div class="flex items-center gap-2 flex-wrap">
@@ -593,7 +593,7 @@ defmodule JournalexWeb.StatementDumpLive do
             </button>
           </div>
         </div>
-
+        
     <!-- Row 3: Dump progress bar and details -->
         <DumpProgress.progress
           :if={@dump_total > 0}
@@ -603,9 +603,20 @@ defmodule JournalexWeb.StatementDumpLive do
           total={@dump_total}
           in_progress?={@dump_in_progress?}
           elapsed_ms={@dump_elapsed_ms}
-          current_text={@dump_current && (@dump_current.symbol <> " @ " <> DateTime.to_iso8601(@dump_current.datetime))}
+          current_text={
+            @dump_current &&
+              @dump_current.symbol <> " @ " <> DateTime.to_iso8601(@dump_current.datetime)
+          }
           metrics={dump_metrics(@dump_results, @dump_queue)}
-          labels={%{created: "Created", skipped: "Skipped", retrying: "Retrying", errors: "Errors", remaining: "Remaining"}}
+          labels={
+            %{
+              created: "Created",
+              skipped: "Skipped",
+              retrying: "Retrying",
+              errors: "Errors",
+              remaining: "Remaining"
+            }
+          }
         />
       </div>
 
@@ -695,7 +706,14 @@ defmodule JournalexWeb.StatementDumpLive do
     retrying = Enum.count(values, &(&1 == :retrying))
     remaining = length(queue || [])
 
-    %{created: created, skipped: skipped, retrying: retrying, errors: errors, remaining: remaining}
+    %{
+      created: created,
+      skipped: skipped,
+      retrying: retrying,
+      errors: errors,
+      remaining: remaining
+    }
   end
+
   defp dump_metrics(_, _), do: %{}
 end
