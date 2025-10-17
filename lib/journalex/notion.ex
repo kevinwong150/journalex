@@ -198,9 +198,11 @@ defmodule Journalex.Notion do
         iso = DateTime.to_iso8601(dt)
         title = ticker <> "@" <> iso
 
-        agg_side = Map.get(row, :aggregated_side) || Map.get(row, "aggregated_side")
-        result = Map.get(row, :result) || Map.get(row, "result")
-        realized = to_number(Map.get(row, :realized_pl) || Map.get(row, "realized_pl"))
+  agg_side = Map.get(row, :aggregated_side) || Map.get(row, "aggregated_side")
+  result = Map.get(row, :result) || Map.get(row, "result")
+  realized = to_number(Map.get(row, :realized_pl) || Map.get(row, "realized_pl"))
+  duration_secs = row_duration_seconds(row)
+  entry_slot_label = entry_timeslot_bucket(row)
 
         base_props = %{
           title_prop => %{title: [%{text: %{content: title}}]},
@@ -213,6 +215,8 @@ defmodule Journalex.Notion do
           |> maybe_put_select("Side", agg_side)
           |> maybe_put_select("Result", result)
           |> maybe_put_number("Realized P/L", realized)
+          |> maybe_put_number("Duration", duration_secs)
+          |> maybe_put_select("Entry Timeslot", entry_slot_label)
 
         payload = %{
           "parent" => %{"data_source_id" => data_source_id},
@@ -240,19 +244,23 @@ defmodule Journalex.Notion do
 
     dt = Map.get(row, :datetime) || Map.get(row, "datetime")
     ticker = Map.get(row, :ticker) || Map.get(row, :symbol) || Map.get(row, "ticker") || Map.get(row, "symbol")
-    agg_side = Map.get(row, :aggregated_side) || Map.get(row, "aggregated_side")
-    result = Map.get(row, :result) || Map.get(row, "result")
-    realized = to_number(Map.get(row, :realized_pl) || Map.get(row, "realized_pl"))
+  agg_side = Map.get(row, :aggregated_side) || Map.get(row, "aggregated_side")
+  result = Map.get(row, :result) || Map.get(row, "result")
+  realized = to_number(Map.get(row, :realized_pl) || Map.get(row, "realized_pl"))
+  duration_secs = row_duration_seconds(row)
+  entry_slot_label = entry_timeslot_bucket(row)
 
     iso = if dt, do: DateTime.to_iso8601(dt), else: nil
     title = if ticker && iso, do: ticker <> "@" <> iso, else: nil
 
     actual_title = page |> get_in(["properties", title_prop, "title"]) |> first_rich_text()
-    actual_date = page |> get_in(["properties", ts_prop, "date", "start"]) || nil
+  _actual_date = page |> get_in(["properties", ts_prop, "date", "start"]) || nil
     actual_ticker = page |> get_in(["properties", tk_prop, "rich_text"]) |> first_rich_text()
-    actual_side = page |> get_in(["properties", "Side", "select", "name"]) || nil
-    actual_result = page |> get_in(["properties", "Result", "select", "name"]) || nil
-    actual_realized = page |> get_in(["properties", "Realized P/L", "number"]) || nil
+  actual_side = page |> get_in(["properties", "Side", "select", "name"]) || nil
+  actual_result = page |> get_in(["properties", "Result", "select", "name"]) || nil
+  actual_realized = page |> get_in(["properties", "Realized P/L", "number"]) || nil
+  actual_duration = page |> get_in(["properties", "Duration", "number"]) || nil
+  actual_entry_slot = page |> get_in(["properties", "Entry Timeslot", "select", "name"]) || nil
 
   %{}
   |> maybe_put_diff(:title, title, actual_title)
@@ -262,6 +270,8 @@ defmodule Journalex.Notion do
     |> maybe_put_diff(:side, normalize_string(agg_side), normalize_string(actual_side))
     |> maybe_put_diff(:result, normalize_string(result), normalize_string(actual_result))
     |> maybe_put_diff(:realized_pl, realized, to_number(actual_realized))
+  |> maybe_put_diff(:duration, to_number(duration_secs), to_number(actual_duration))
+  |> maybe_put_diff(:entry_timeslot, entry_slot_label, normalize_string(actual_entry_slot))
   end
 
   @spec update_trade_page(binary(), map()) ::
@@ -285,19 +295,23 @@ defmodule Journalex.Notion do
     iso = if dt, do: DateTime.to_iso8601(dt), else: nil
     title = if ticker && iso, do: to_string(ticker) <> "@" <> iso, else: nil
 
-    agg_side = Map.get(row, :aggregated_side) || Map.get(row, "aggregated_side")
-    result = Map.get(row, :result) || Map.get(row, "result")
-    realized = to_number(Map.get(row, :realized_pl) || Map.get(row, "realized_pl"))
+  agg_side = Map.get(row, :aggregated_side) || Map.get(row, "aggregated_side")
+  result = Map.get(row, :result) || Map.get(row, "result")
+  realized = to_number(Map.get(row, :realized_pl) || Map.get(row, "realized_pl"))
+  duration_secs = row_duration_seconds(row)
+  entry_slot_label = entry_timeslot_bucket(row)
 
     base_props = %{}
     base_props = if title, do: Map.put(base_props, title_prop, %{title: [%{text: %{content: title}}]}), else: base_props
     base_props = if iso, do: Map.put(base_props, ts_prop, %{date: %{start: iso}}), else: base_props
     base_props = if ticker, do: Map.put(base_props, tk_prop, %{rich_text: [%{text: %{content: to_string(ticker)}}]}), else: base_props
 
-    extra_props = %{}
-    extra_props = maybe_put_select(extra_props, "Side", normalize_string(agg_side))
-    extra_props = maybe_put_select(extra_props, "Result", normalize_string(result))
-    extra_props = maybe_put_number(extra_props, "Realized P/L", realized)
+  extra_props = %{}
+  extra_props = maybe_put_select(extra_props, "Side", normalize_string(agg_side))
+  extra_props = maybe_put_select(extra_props, "Result", normalize_string(result))
+  extra_props = maybe_put_number(extra_props, "Realized P/L", realized)
+  extra_props = maybe_put_number(extra_props, "Duration", duration_secs)
+  extra_props = maybe_put_select(extra_props, "Entry Timeslot", entry_slot_label)
 
     payload = %{"properties" => Map.merge(base_props, extra_props)}
 
@@ -345,6 +359,87 @@ defmodule Journalex.Notion do
   defp maybe_put_number(map, key, value) when is_number(value) do
     Map.put(map, key, %{number: value})
   end
+  # (no date helper needed for Entry Timeslot; it's a select field now)
+
+  # Map a datetime from the first action in the chain to a half-hour bucket label like "0930-1000".
+  defp entry_timeslot_bucket(row) when is_map(row) do
+    case Map.get(row, :action_chain) || Map.get(row, "action_chain") do
+      chain when is_map(chain) ->
+        with %{} = open <- Map.get(chain, "1"),
+             dt when is_binary(dt) <- Map.get(open, "datetime"),
+             {:ok, entry_dt, _} <- DateTime.from_iso8601(dt) do
+          bucket_for_datetime(entry_dt)
+        else
+          _ -> nil
+        end
+      _ -> nil
+    end
+  end
+
+  defp bucket_for_datetime(%DateTime{} = dt) do
+    # Use time in dt's current timezone; labels are 24-hour HHMM-HHMM.
+    minutes = dt.hour * 60 + dt.minute
+    start_min = 9 * 60 + 30   # 09:30
+    end_min = 16 * 60         # 16:00 (exclusive)
+
+    cond do
+      minutes < start_min or minutes >= end_min -> nil
+      true ->
+        offset = minutes - start_min
+        slot_index = div(offset, 30)
+        slot_start = start_min + slot_index * 30
+        slot_end = min(slot_start + 30, end_min)
+        format_hhmm(slot_start) <> "-" <> format_hhmm(slot_end)
+    end
+  end
+
+  defp format_hhmm(mins) when is_integer(mins) do
+    h = div(mins, 60)
+    m = rem(mins, 60)
+    :io_lib.format("~2..0B~2..0B", [h, m]) |> IO.iodata_to_binary()
+  end
+
+  # --- Duration and Entry Timeslot helpers ---
+  # Prefer explicit row.duration; otherwise compute from action_chain when available.
+  defp row_duration_seconds(row) when is_map(row) do
+    case Map.get(row, :duration) || Map.get(row, "duration") do
+      n when is_integer(n) -> n
+      n when is_float(n) -> trunc(n)
+      _ ->
+        case Map.get(row, :action_chain) || Map.get(row, "action_chain") do
+          chain when is_map(chain) -> duration_from_action_chain(chain)
+          _ -> nil
+        end
+    end
+  end
+
+  defp duration_from_action_chain(chain) when is_map(chain) do
+    with %{} = open <- Map.get(chain, "1"),
+         open_dt when is_binary(open_dt) <- Map.get(open, "datetime"),
+         {:ok, open_iso, _} <- DateTime.from_iso8601(open_dt),
+         close_key when is_binary(close_key) <- find_close_position_key(chain),
+         %{} = close <- Map.get(chain, close_key),
+         close_dt when is_binary(close_dt) <- Map.get(close, "datetime"),
+         {:ok, close_iso, _} <- DateTime.from_iso8601(close_dt) do
+      DateTime.diff(close_iso, open_iso, :second)
+    else
+      _ -> nil
+    end
+  end
+
+  defp duration_from_action_chain(_), do: nil
+
+  # Entry timeslot ISO helper removed; replaced by half-hour bucket select label
+
+  defp find_close_position_key(action_chain) when is_map(action_chain) do
+    action_chain
+    |> Enum.find(fn {_k, action} -> is_map(action) and Map.get(action, "action") == "close_position" end)
+    |> case do
+      {key, _} -> key
+      _ -> nil
+    end
+  end
+
 
   # Catch-all removed as to_number returns nil | number
 
