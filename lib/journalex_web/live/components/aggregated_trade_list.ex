@@ -91,6 +91,26 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: :actions,
     doc: "Key to read for the action chain list (atom or string). Falls back to :action_chain"
 
+  # Optional: map of title (e.g. "TICKER@ISO8601") => Notion page id to display per row
+  attr :page_ids_map, :map,
+    default: %{},
+    doc: "Map of row title to Notion page id (used to render a Page ID column)"
+
+  # Optional: whether to show the Page ID column
+  attr :show_page_id_column?, :boolean,
+    default: false,
+    doc: "Show a Page ID column using :page_ids_map lookups"
+
+  # Optional: map index => diff map to show inconsistencies per row
+  attr :row_inconsistencies, :map,
+    default: %{},
+    doc: "Map of row index => %{field => %{expected, actual}} for display"
+
+  # Optional: whether to show an Inconsistencies column
+  attr :show_inconsistency_column?, :boolean,
+    default: true,
+    doc: "Show a column indicating mismatched properties when present"
+
   def aggregated_trade_list(assigns) do
     ~H"""
     <% chain_key = @action_chain_key %>
@@ -132,6 +152,13 @@ defmodule JournalexWeb.AggregatedTradeList do
                 class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
               >
                 Status
+              </th>
+              <th
+                :if={@show_inconsistency_column?}
+                class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                title="Detected differences between this row and the Notion page"
+              >
+                Mismatch
               </th>
               <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider select-none">
                 <%= if @sortable do %>
@@ -273,6 +300,12 @@ defmodule JournalexWeb.AggregatedTradeList do
                   Realized P/L
                 <% end %>
               </th>
+              <th
+                :if={@show_page_id_column?}
+                class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider select-none"
+              >
+                Page ID
+              </th>
             </tr>
           </thead>
 
@@ -392,6 +425,22 @@ defmodule JournalexWeb.AggregatedTradeList do
                   <% end %>
                 </td>
 
+                <td :if={@show_inconsistency_column?} class="px-3 py-2 whitespace-nowrap text-xs">
+                  <% diffs = Map.get(@row_inconsistencies || %{}, idx) %>
+                  <%= if is_map(diffs) and map_size(diffs) > 0 do %>
+                    <% count = map_size(diffs) %>
+                    <span
+                      class="inline-flex items-center gap-1 rounded bg-amber-100 text-amber-800 px-2 py-0.5"
+                      title={diffs_tooltip(diffs)}
+                    >
+                      <span class="text-[10px] font-semibold">{count}</span>
+                      <span class="text-[11px]">diff</span>
+                    </span>
+                  <% else %>
+                    <span class="text-[11px] text-slate-400">—</span>
+                  <% end %>
+                </td>
+
                 <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{item_label(item)}</td>
 
                 <td class="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">
@@ -412,6 +461,14 @@ defmodule JournalexWeb.AggregatedTradeList do
                 <td class={"px-4 py-2 whitespace-nowrap text-sm text-right #{pl_class_amount(to_float(Map.get(item, :realized_pl)))}"}>
                   {format_amount(Map.get(item, :realized_pl))}
                 </td>
+                <td :if={@show_page_id_column?} class="px-4 py-2 whitespace-nowrap text-xs text-gray-700">
+                  <% title_for_lookup = (item_ticker(item) || "-") <> "@" <> (item_datetime_value(item) || "") %>
+                  <%= if page_id = Map.get(@page_ids_map || %{}, title_for_lookup) do %>
+                    <code class="text-[11px] bg-gray-100 rounded px-1 py-0.5">{page_id}</code>
+                  <% else %>
+
+                  <% end %>
+                </td>
               </tr>
               <tr
                 :if={show_action_toggle?}
@@ -421,6 +478,36 @@ defmodule JournalexWeb.AggregatedTradeList do
                 class={["hidden bg-slate-50"]}
               >
                 <td colspan={detail_colspan(assigns, show_action_toggle?)} class="px-6 py-4">
+                  <% diffs = Map.get(@row_inconsistencies || %{}, idx) %>
+                  <%= if is_map(diffs) and map_size(diffs) > 0 do %>
+                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm mb-3">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <h4 class="text-sm font-semibold text-amber-800">Notion mismatches</h4>
+                        <span class="text-xs text-amber-700">{map_size(diffs)} difference{if map_size(diffs) == 1, do: "", else: "s"}</span>
+                      </div>
+                      <div class="mt-3 overflow-x-auto">
+                        <table class="min-w-full text-xs">
+                          <thead>
+                            <tr class="text-left text-amber-900">
+                              <th class="px-2 py-1">Field</th>
+                              <th class="px-2 py-1">Expected</th>
+                              <th class="px-2 py-1">Actual</th>
+                            </tr>
+                          </thead>
+                          <tbody class="text-amber-900">
+                            <%= for {field, change} <- ordered_diff_list(diffs) do %>
+                              <tr class="align-top">
+                                <td class="px-2 py-1 whitespace-nowrap font-medium">{diff_field_label(field)}</td>
+                                <td class="px-2 py-1">{present_string(Map.get(change, :expected))}</td>
+                                <td class="px-2 py-1">{present_string(Map.get(change, :actual))}</td>
+                              </tr>
+                            <% end %>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  <% end %>
+
                   <%= if has_chain do %>
                     <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
                       <div class="flex flex-wrap items-center justify-between gap-2">
@@ -697,7 +784,10 @@ defmodule JournalexWeb.AggregatedTradeList do
 
   # Action chain helpers
   defp detail_colspan(assigns, show_toggle?) do
+    # base columns: Date, Ticker, Side, Result, Duration, P/L
     base = 6
+    # optional Page ID column
+    base = if Map.get(assigns, :show_page_id_column?), do: base + 1, else: base
 
     base = if show_toggle?, do: base + 1, else: base
     base = if Map.get(assigns, :selectable?), do: base + 1, else: base
@@ -938,4 +1028,53 @@ defmodule JournalexWeb.AggregatedTradeList do
     |> String.upcase()
   end
   defp format_action_text(v), do: present_string(v)
+
+  # --- Diff helpers for mismatch display ---
+  defp diffs_tooltip(diffs) when is_map(diffs) do
+    diffs
+    |> ordered_diff_list()
+    |> Enum.map(fn {field, change} ->
+      label = diff_field_label(field)
+      exp = present_string(Map.get(change, :expected))
+      act = present_string(Map.get(change, :actual))
+      label <> ": " <> exp <> " → " <> act
+    end)
+    |> Enum.join("\n")
+  end
+  defp diffs_tooltip(_), do: nil
+
+  defp ordered_diff_list(diffs) when is_map(diffs) do
+    order = [:title, :ticker, :side, :result, :realized_pl]
+    ordered =
+      order
+      |> Enum.flat_map(fn k -> if Map.has_key?(diffs, k), do: [{k, Map.fetch!(diffs, k)}], else: [] end)
+
+    remaining =
+      diffs
+      |> Map.drop(order)
+      |> Enum.to_list()
+      |> Enum.sort_by(fn {k, _} -> to_string(k) end)
+
+    ordered ++ remaining
+  end
+  defp ordered_diff_list(_), do: []
+
+  defp diff_field_label(:title), do: "Title"
+  defp diff_field_label(:datetime), do: "Datetime"
+  defp diff_field_label(:ticker), do: "Ticker"
+  defp diff_field_label(:side), do: "Side"
+  defp diff_field_label(:result), do: "Result"
+  defp diff_field_label(:realized_pl), do: "Realized P/L"
+  defp diff_field_label(other) when is_atom(other) do
+    other
+    |> Atom.to_string()
+    |> String.replace("_", " ")
+    |> String.capitalize()
+  end
+  defp diff_field_label(other) when is_binary(other) do
+    other
+    |> String.replace("_", " ")
+    |> String.capitalize()
+  end
+  defp diff_field_label(_), do: "Field"
 end

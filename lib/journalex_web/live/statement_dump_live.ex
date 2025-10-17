@@ -3,6 +3,7 @@ defmodule JournalexWeb.StatementDumpLive do
 
   alias Journalex.Activity
   alias JournalexWeb.ActivityStatementList
+  alias JournalexWeb.DumpProgress
   alias Journalex.Notion
   alias Journalex.Notion.Client, as: NotionClient
 
@@ -505,7 +506,7 @@ defmodule JournalexWeb.StatementDumpLive do
             </button>
           </div>
         </div>
-        
+
     <!-- Row 2: Status badges on left, action buttons on right -->
         <div class="flex items-center justify-between gap-3 flex-wrap">
           <div class="flex items-center gap-2 flex-wrap">
@@ -592,54 +593,20 @@ defmodule JournalexWeb.StatementDumpLive do
             </button>
           </div>
         </div>
-        
-    <!-- Row 3: Dump progress bar and details -->
-        <div :if={@dump_total > 0} class="w-full space-y-1">
-          <% percent =
-            if @dump_total > 0, do: Float.round(@dump_processed * 100.0 / @dump_total, 1), else: 0.0 %>
-          <div class="flex items-center justify-between text-xs text-gray-600">
-            <span>
-              Dump progress: {@dump_processed}/{@dump_total} ({percent}%) {if @dump_in_progress?,
-                do: "- in progress",
-                else: "- completed"} · Time: {format_duration(@dump_elapsed_ms)}
-            </span>
-            <span :if={@dump_current} class="font-medium text-gray-700">
-              Currently: {@dump_current.symbol <> " @ " <> DateTime.to_iso8601(@dump_current.datetime)}
-            </span>
-          </div>
-          <div class="w-full bg-gray-200 rounded h-2 overflow-hidden">
-            <div class="bg-green-500 h-2" style={"width: #{percent}%"}></div>
-          </div>
-          <div :if={!@dump_in_progress?} class="text-xs text-gray-600">
-            Total time: {format_duration(@dump_elapsed_ms)}
-          </div>
-          <div class="text-xs text-gray-700">
-            <% values = Map.values(@dump_results) %>
-            <% created = Enum.count(values, &(&1 == :created)) %>
-            <% skipped = Enum.count(values, &(&1 == :skipped_exists)) %>
-            <% errors = Enum.count(values, &(&1 == :error)) %>
-            <% retrying = Enum.count(values, &(&1 == :retrying)) %>
-            <% remaining = length(@dump_queue) %>
 
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                Created: {created}
-              </span>
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                Skipped: {skipped}
-              </span>
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
-                Retrying: {retrying}
-              </span>
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
-                Errors: {errors}
-              </span>
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                Remaining: {remaining}
-              </span>
-            </div>
-          </div>
-        </div>
+    <!-- Row 3: Dump progress bar and details -->
+        <DumpProgress.progress
+          :if={@dump_total > 0}
+          id="insert-progress-statements"
+          title="Insert progress"
+          processed={@dump_processed}
+          total={@dump_total}
+          in_progress?={@dump_in_progress?}
+          elapsed_ms={@dump_elapsed_ms}
+          current_text={@dump_current && (@dump_current.symbol <> " @ " <> DateTime.to_iso8601(@dump_current.datetime))}
+          metrics={dump_metrics(@dump_results, @dump_queue)}
+          labels={%{created: "Created", skipped: "Skipped", retrying: "Retrying", errors: "Errors", remaining: "Remaining"}}
+        />
       </div>
 
       <ActivityStatementList.list
@@ -700,27 +667,6 @@ defmodule JournalexWeb.StatementDumpLive do
     {exists, missing}
   end
 
-  # Format milliseconds into H:MM:SS.mmm or M:SS.mmm (minimal hours)
-  defp format_duration(ms) when is_integer(ms) and ms >= 0 do
-    total_ms = ms
-    hours = div(total_ms, 3_600_000)
-    rem_after_h = rem(total_ms, 3_600_000)
-    minutes = div(rem_after_h, 60_000)
-    rem_after_m = rem(rem_after_h, 60_000)
-    seconds = div(rem_after_m, 1_000)
-    millis = rem(rem_after_m, 1_000)
-
-    if hours > 0 do
-      :io_lib.format("~B:~2..0B:~2..0B.~3..0B", [hours, minutes, seconds, millis])
-      |> IO.iodata_to_binary()
-    else
-      :io_lib.format("~B:~2..0B.~3..0B", [minutes, seconds, millis])
-      |> IO.iodata_to_binary()
-    end
-  end
-
-  defp format_duration(_), do: "0:00.000"
-
   # Build a simple text report for current dump progress
   defp build_dump_report(results_map, _total, _processed, remaining) do
     values = Map.values(results_map)
@@ -739,4 +685,17 @@ defmodule JournalexWeb.StatementDumpLive do
       Integer.to_string(retrying) <>
       ", Remaining " <> Integer.to_string(remaining)
   end
+
+  # Build metrics map for DumpProgress component
+  defp dump_metrics(results_map, queue) when is_map(results_map) do
+    values = Map.values(results_map)
+    created = Enum.count(values, &(&1 == :created))
+    skipped = Enum.count(values, &(&1 == :skipped_exists))
+    errors = Enum.count(values, &(&1 == :error))
+    retrying = Enum.count(values, &(&1 == :retrying))
+    remaining = length(queue || [])
+
+    %{created: created, skipped: skipped, retrying: retrying, errors: errors, remaining: remaining}
+  end
+  defp dump_metrics(_, _), do: %{}
 end

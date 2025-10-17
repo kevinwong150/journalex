@@ -125,6 +125,21 @@ defmodule Journalex.Notion.Client do
   end
 
   @doc """
+  Update a page by id with the provided payload.
+
+  Typically payload is of the form `%{"properties" => %{...}}` matching Notion property formats.
+  Returns `{:ok, map}` or `{:error, reason}`.
+  """
+  @spec update_page(binary(), map()) :: {:ok, map()} | {:error, term()}
+  def update_page(page_id, payload) when is_binary(page_id) and is_map(payload) do
+    case request(:patch, "/pages/#{page_id}", payload) do
+      {:ok, status, map} when status in 200..299 -> {:ok, map}
+      {:ok, status, map} -> {:error, {:http_error, status, map}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
   Fetch the current integration user (handy to test the token).
   """
   @spec me() :: {:ok, map()} | {:error, term()}

@@ -226,6 +226,111 @@ defmodule Journalex.Notion do
     end
   end
 
+  @doc """
+  Compare a trade row with a Notion page map and return a map of mismatched fields.
+
+  Compares Title/Datetime/Ticker plus optional Side, Result, Realized P/L when present.
+  Returns a map like `%{field => %{expected: v1, actual: v2}}` or `%{}` if no diffs.
+  """
+  def diff_trade_vs_page(row, page, opts \\ []) when is_map(row) and is_map(page) do
+    conf = Application.get_env(:journalex, __MODULE__, [])
+    ts_prop = Keyword.get(opts, :datetime_property, conf[:datetime_property] || "Datetime")
+    tk_prop = Keyword.get(opts, :ticker_property, conf[:ticker_property] || "Ticker")
+    title_prop = Keyword.get(opts, :title_property, conf[:title_property] || "Trademark")
+
+    dt = Map.get(row, :datetime) || Map.get(row, "datetime")
+    ticker = Map.get(row, :ticker) || Map.get(row, :symbol) || Map.get(row, "ticker") || Map.get(row, "symbol")
+    agg_side = Map.get(row, :aggregated_side) || Map.get(row, "aggregated_side")
+    result = Map.get(row, :result) || Map.get(row, "result")
+    realized = to_number(Map.get(row, :realized_pl) || Map.get(row, "realized_pl"))
+
+    iso = if dt, do: DateTime.to_iso8601(dt), else: nil
+    title = if ticker && iso, do: ticker <> "@" <> iso, else: nil
+
+    actual_title = page |> get_in(["properties", title_prop, "title"]) |> first_rich_text()
+    actual_date = page |> get_in(["properties", ts_prop, "date", "start"]) || nil
+    actual_ticker = page |> get_in(["properties", tk_prop, "rich_text"]) |> first_rich_text()
+    actual_side = page |> get_in(["properties", "Side", "select", "name"]) || nil
+    actual_result = page |> get_in(["properties", "Result", "select", "name"]) || nil
+    actual_realized = page |> get_in(["properties", "Realized P/L", "number"]) || nil
+
+  %{}
+  |> maybe_put_diff(:title, title, actual_title)
+  # Skip datetime mismatches per requirement
+  # |> maybe_put_diff(:datetime, iso, actual_date)
+  |> maybe_put_diff(:ticker, to_string(ticker || ""), actual_ticker)
+    |> maybe_put_diff(:side, normalize_string(agg_side), normalize_string(actual_side))
+    |> maybe_put_diff(:result, normalize_string(result), normalize_string(actual_result))
+    |> maybe_put_diff(:realized_pl, realized, to_number(actual_realized))
+  end
+
+  @spec update_trade_page(binary(), map()) ::
+          {:error,
+           :missing_notion_api_token
+           | {:http_error, non_neg_integer(), map()}
+           | %{:__exception__ => true, :__struct__ => atom(), optional(atom()) => any()}}
+          | {:ok, map()}
+  @doc """
+  Update a Notion page to match the given trade row. Returns {:ok, map} or {:error, reason}.
+  Only sends properties present in the trade row; does not attempt to change parent.
+  """
+  def update_trade_page(page_id, row, opts \\ []) when is_binary(page_id) and is_map(row) do
+    conf = Application.get_env(:journalex, __MODULE__, [])
+    ts_prop = Keyword.get(opts, :datetime_property, conf[:datetime_property] || "Datetime")
+    tk_prop = Keyword.get(opts, :ticker_property, conf[:ticker_property] || "Ticker")
+    title_prop = Keyword.get(opts, :title_property, conf[:title_property] || "Trademark")
+
+    dt = Map.get(row, :datetime) || Map.get(row, "datetime")
+    ticker = Map.get(row, :ticker) || Map.get(row, :symbol) || Map.get(row, "ticker") || Map.get(row, "symbol")
+    iso = if dt, do: DateTime.to_iso8601(dt), else: nil
+    title = if ticker && iso, do: to_string(ticker) <> "@" <> iso, else: nil
+
+    agg_side = Map.get(row, :aggregated_side) || Map.get(row, "aggregated_side")
+    result = Map.get(row, :result) || Map.get(row, "result")
+    realized = to_number(Map.get(row, :realized_pl) || Map.get(row, "realized_pl"))
+
+    base_props = %{}
+    base_props = if title, do: Map.put(base_props, title_prop, %{title: [%{text: %{content: title}}]}), else: base_props
+    base_props = if iso, do: Map.put(base_props, ts_prop, %{date: %{start: iso}}), else: base_props
+    base_props = if ticker, do: Map.put(base_props, tk_prop, %{rich_text: [%{text: %{content: to_string(ticker)}}]}), else: base_props
+
+    extra_props = %{}
+    extra_props = maybe_put_select(extra_props, "Side", normalize_string(agg_side))
+    extra_props = maybe_put_select(extra_props, "Result", normalize_string(result))
+    extra_props = maybe_put_number(extra_props, "Realized P/L", realized)
+
+    payload = %{"properties" => Map.merge(base_props, extra_props)}
+
+    Client.update_page(page_id, payload)
+  end
+
+  # --- local compare helpers ---
+  defp first_rich_text(list) when is_list(list) and list != [] do
+    first = hd(list)
+    Map.get(first, "plain_text") || get_in(first, ["text", "content"]) || nil
+  end
+  defp first_rich_text(_), do: nil
+
+  defp maybe_put_diff(map, _key, nil, nil), do: map
+  defp maybe_put_diff(map, key, expected, actual) do
+    if expected == actual do
+      map
+    else
+      Map.put(map, key, %{expected: expected, actual: actual})
+    end
+  end
+
+  defp normalize_string(nil), do: nil
+  defp normalize_string(s) when is_binary(s) do
+    s
+    |> String.trim()
+    |> String.downcase()
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.map(&String.capitalize/1)
+    |> Enum.join(" ")
+  end
+  defp normalize_string(other), do: other
+
   # Helpers to build optional Notion properties safely
   defp maybe_put_select(map, _key, nil), do: map
 
@@ -340,6 +445,44 @@ defmodule Journalex.Notion do
     end
   end
 
+  @doc """
+  List all pages in the configured Notion data source and return a map of
+  title (Trademark) => page id.
+
+  Options:
+    * :data_source_id - overrides configured data source id
+    * :title_property - overrides the title property name (default "Trademark")
+    * :page_size - query page size for pagination (default 10000)
+
+  Returns `{:ok, %{title => page_id}}` or `{:error, reason}`.
+  """
+  def list_all_trademarks_with_ids(opts \\ []) do
+    conf = Application.get_env(:journalex, __MODULE__, [])
+    data_source_id = resolve_data_source_id(opts, conf, Keyword.get(opts, :source, :activity))
+    title_prop = Keyword.get(opts, :title_property, conf[:title_property] || "Trademark")
+    page_size = Keyword.get(opts, :page_size, 10000)
+
+    if is_nil(data_source_id) do
+      {:error, :missing_data_source_id}
+    else
+      case Client.retrieve_database(data_source_id) do
+        {:ok, resp} ->
+          case extract_pages_from_db_response(resp) do
+            {:ok, pages} -> {:ok, build_title_id_map(pages, title_prop)}
+            {:error, _} ->
+              with {:ok, pages} <- paginate_all_pages(data_source_id, page_size) do
+                {:ok, build_title_id_map(pages, title_prop)}
+              end
+          end
+
+        {:error, _reason} ->
+          with {:ok, pages} <- paginate_all_pages(data_source_id, page_size) do
+            {:ok, build_title_id_map(pages, title_prop)}
+          end
+      end
+    end
+  end
+
   # --- Internal helpers for pagination and parsing ---
 
   defp paginate_all_pages(data_source_id, page_size) do
@@ -403,6 +546,19 @@ defmodule Journalex.Notion do
     do: {:ok, results}
 
   defp extract_pages_from_db_response(_), do: {:error, :no_pages_in_response}
+
+  defp build_title_id_map(pages, title_prop) when is_list(pages) do
+    Enum.reduce(pages, %{}, fn page, acc ->
+      title = extract_title(page, title_prop)
+      id = Map.get(page, "id")
+
+      if is_binary(title) and title != "" and is_binary(id) and id != "" do
+        Map.put_new(acc, title, id)
+      else
+        acc
+      end
+    end)
+  end
 
   # --- Data source resolution ---
   # Centralized resolver to pick the right Notion database ID depending on the context.
