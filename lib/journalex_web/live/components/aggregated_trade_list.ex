@@ -108,7 +108,7 @@ defmodule JournalexWeb.AggregatedTradeList do
 
   # Optional: whether to show an Inconsistencies column
   attr :show_inconsistency_column?, :boolean,
-    default: true,
+    default: false,
     doc: "Show a column indicating mismatched properties when present"
 
   def aggregated_trade_list(assigns) do
@@ -469,8 +469,7 @@ defmodule JournalexWeb.AggregatedTradeList do
                   :if={@show_page_id_column?}
                   class="px-4 py-2 whitespace-nowrap text-xs text-gray-700"
                 >
-                  <% title_for_lookup =
-                    (item_ticker(item) || "-") <> "@" <> (item_datetime_value(item) || "") %>
+                  <% title_for_lookup = item_ticker(item) <> "@" <> item_datetime_value(item) %>
                   <%= if page_id = Map.get(@page_ids_map || %{}, title_for_lookup) do %>
                     <code class="text-[11px] bg-gray-100 rounded px-1 py-0.5">{page_id}</code>
                   <% else %>
@@ -826,6 +825,8 @@ defmodule JournalexWeb.AggregatedTradeList do
     base = 6
     # optional Page ID column
     base = if Map.get(assigns, :show_page_id_column?), do: base + 1, else: base
+    # optional Mismatch column
+    base = if Map.get(assigns, :show_inconsistency_column?), do: base + 1, else: base
 
     base = if show_toggle?, do: base + 1, else: base
     base = if Map.get(assigns, :selectable?), do: base + 1, else: base
@@ -1098,7 +1099,6 @@ defmodule JournalexWeb.AggregatedTradeList do
     |> Enum.join("\n")
   end
 
-  defp diffs_tooltip(_), do: nil
 
   defp ordered_diff_list(diffs) when is_map(diffs) do
     order = [:title, :ticker, :side, :result, :realized_pl]
@@ -1118,7 +1118,6 @@ defmodule JournalexWeb.AggregatedTradeList do
     ordered ++ remaining
   end
 
-  defp ordered_diff_list(_), do: []
 
   defp diff_field_label(:title), do: "Title"
   defp diff_field_label(:datetime), do: "Datetime"
