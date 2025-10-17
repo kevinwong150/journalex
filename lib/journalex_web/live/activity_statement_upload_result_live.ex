@@ -64,7 +64,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
       <div class="mb-8">
         <div class="flex items-center justify-between">
           <h1 class="text-3xl font-bold text-gray-900">Activity Statement Upload Result</h1>
-          
+
           <button
             phx-click="delete_all_uploads"
             phx-confirm="Delete all uploaded CSV files? This cannot be undone."
@@ -87,16 +87,16 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
             Delete All Uploads
           </button>
         </div>
-        
+
         <p class="mt-2 text-gray-600">View your account activity and transaction history</p>
-        
+
         <%= if @statement_period do %>
           <p class="mt-1 text-sm text-gray-500">
             Statement Date: <span class="font-medium text-gray-700">{@statement_period}</span>
           </p>
         <% end %>
       </div>
-      
+
       <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg">
         <!-- Day toggles -->
         <div class="px-6 pt-4 pb-2 border-b border-gray-200">
@@ -122,7 +122,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
                 </button>
               <% end %>
             </div>
-            
+
             <div class="flex items-center gap-2">
               <button
                 phx-click="select_all_days"
@@ -130,7 +130,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
               >
                 All
               </button>
-              
+
               <button
                 phx-click="deselect_all_days"
                 class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -140,17 +140,17 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
             </div>
           </div>
         </div>
-        
+
     <!-- Summary: Realized P/L by Symbol -->
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
               <h2 class="text-lg font-semibold text-gray-900">Summary (Realized P/L by Symbol)</h2>
-              
+
               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                 {length(@summary_by_symbol)}
               </span>
-              
+
               <button
                 phx-click="toggle_summary"
                 class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -164,7 +164,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
                 <% end %>
               </button>
             </div>
-            
+
             <.link
               navigate={~p"/activity_statement/upload"}
               class="inline-flex items-center px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-md hover:bg-blue-100"
@@ -173,7 +173,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
             </.link>
           </div>
         </div>
-        
+
         <ActivityStatementSummary.summary_table
           rows={@summary_by_symbol}
           total={@summary_total}
@@ -183,7 +183,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
           on_save_all_aggregated?="save_all_aggregated"
           on_save_row_event="save_aggregated_row"
         />
-        
+
     <!-- Unsaved records indicator -->
         <div class="px-6 py-3 border-b border-gray-200 flex items-center justify-between">
           <div class="flex items-center gap-2">
@@ -198,12 +198,12 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
               {@unsaved_count}
             </span>
           </div>
-          
+
           <%= if @unsaved_count > 0 do %>
             <span class="text-xs text-gray-500">Click "Save all" or save individual rows.</span>
           <% end %>
         </div>
-        
+
         <ActivityStatementList.list
           id="activity-table"
           title="Recent Activity"
@@ -229,13 +229,13 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
                 />
               </svg>
             </div>
-            
+
             <h3 class="text-sm font-medium text-gray-900 mb-2">No activity data available</h3>
-            
+
             <p class="text-sm text-gray-500 mb-4">
               Upload CSV file(s) to view your activity statement
             </p>
-            
+
             <.link
               navigate={~p"/activity_statement/upload"}
               class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
@@ -647,54 +647,39 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
           )
           |> Journalex.Repo.all()
 
-        # Check if we have activity statements in DB for these dates
-        if Enum.empty?(db_statements) do
+        # Build action chains for all items using database statements (may be empty)
+        {rows, _errors} = build_trade_rows_with_action_chains(items, db_statements)
+
+        try do
+          {count, _} =
+            Journalex.Repo.insert_all(
+              "trades",
+              rows,
+              on_conflict: :nothing,
+              conflict_target: [:datetime, :ticker, :aggregated_side, :realized_pl]
+            )
+
+          # Refresh the summary rows with existence markers so UI updates immediately
+          updated_summary = annotate_summary_with_exists(socket.assigns.summary_by_symbol)
+
+          # Inform if some chains might be empty
+          empty_chain_count = Enum.count(rows, fn r -> is_nil(r.action_chain) end)
+          base_msg = "Saved #{count} aggregated trade records"
+          msg =
+            if empty_chain_count > 0, do: base_msg <> " (#{empty_chain_count} without action chains)", else: base_msg
+
           {:noreply,
            socket
-           |> put_flash(
-             :error,
-             "No activity statements found in database for #{Date.to_iso8601(min_date)} to #{Date.to_iso8601(max_date)}. Please save activity statements first before saving trades."
-           )}
-        else
-          # Build action chains for all items using database statements
-          {rows, errors} = build_trade_rows_with_action_chains(items, db_statements)
-
-          # If there are errors, show them
-          if not Enum.empty?(errors) do
-            error_msg =
-              "Missing activity statements for:\n" <>
-                Enum.map_join(errors, "\n", fn {ticker, dt} ->
-                  "- #{ticker} at #{DateTime.to_string(dt)}"
-                end)
-
-            {:noreply, socket |> put_flash(:error, error_msg)}
-          else
-            try do
-              {count, _} =
-                Journalex.Repo.insert_all(
-                  "trades",
-                  rows,
-                  on_conflict: :nothing,
-                  conflict_target: [:datetime, :ticker, :aggregated_side, :realized_pl]
-                )
-
-              # Refresh the summary rows with existence markers so UI updates immediately
-              updated_summary = annotate_summary_with_exists(socket.assigns.summary_by_symbol)
-
-              {:noreply,
-               socket
-               |> assign(:summary_by_symbol, updated_summary)
-               |> put_flash(:info, "Saved #{count} aggregated trade records with action chains")}
-            rescue
-              e ->
-                {:noreply,
-                 socket
-                 |> put_flash(
-                   :error,
-                   "Failed to save aggregated trades: #{Exception.message(e)}"
-                 )}
-            end
-          end
+           |> assign(:summary_by_symbol, updated_summary)
+           |> put_flash(:info, msg)}
+        rescue
+          e ->
+            {:noreply,
+             socket
+             |> put_flash(
+               :error,
+               "Failed to save aggregated trades: #{Exception.message(e)}"
+             )}
         end
       end
     end
@@ -802,7 +787,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
 
       if action_chain do
         pl_decimal = decimal_from_value(pl)
-        result = if Decimal.cmp(pl_decimal, Decimal.new(0)) == :gt, do: "WIN", else: "LOSE"
+  result = if Decimal.cmp(pl_decimal, Decimal.new(0)) == :gt, do: "WIN", else: "LOSE"
         duration = calculate_duration_from_action_chain(action_chain)
 
         row = %{
@@ -850,12 +835,50 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
             {:noreply, socket |> put_flash(:error, "Failed to save row: #{Exception.message(e)}")}
         end
       else
-        {:noreply,
-         socket
-         |> put_flash(
-           :error,
-           "Cannot build action chain for #{ticker}. Ensure activity statements exist for this date."
-         )}
+        # Proceed to save without an action chain
+        pl_decimal = decimal_from_value(pl)
+  result = if Decimal.cmp(pl_decimal, Decimal.new(0)) == :gt, do: "WIN", else: "LOSE"
+        row = %{
+          datetime: temp_item.datetime,
+          ticker: ticker,
+          aggregated_side: side,
+          result: result,
+          realized_pl: pl_decimal,
+          action_chain: nil,
+          duration: nil,
+          inserted_at: now,
+          updated_at: now
+        }
+
+        try do
+          {count, _} =
+            Journalex.Repo.insert_all(
+              "trades",
+              [row],
+              on_conflict: :nothing,
+              conflict_target: [:datetime, :ticker, :aggregated_side, :realized_pl]
+            )
+
+          updated_summary =
+            if count > 0 do
+              maybe_mark_aggregated_exists(socket.assigns.summary_by_symbol, %{
+                datetime: row.datetime,
+                ticker: row.ticker,
+                aggregated_side: row.aggregated_side,
+                realized_pl: Decimal.to_float(row.realized_pl)
+              })
+            else
+              socket.assigns.summary_by_symbol
+            end
+
+          {:noreply,
+           socket
+           |> assign(:summary_by_symbol, updated_summary)
+           |> put_flash(:info, if(count > 0, do: "Saved without action chain", else: "Already exists"))}
+        rescue
+          e ->
+            {:noreply, socket |> put_flash(:error, "Failed to save row: #{Exception.message(e)}")}
+        end
       end
     end
   end
@@ -1174,30 +1197,23 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
             all_statements: db_statements
           )
 
-        if action_chain do
-          pl_decimal = decimal_from_value(Map.get(item, :realized_pl))
-          result = if Decimal.cmp(pl_decimal, Decimal.new(0)) == :gt, do: "WIN", else: "LOSE"
-          duration = calculate_duration_from_action_chain(action_chain)
+        pl_decimal = decimal_from_value(Map.get(item, :realized_pl))
+  result = if Decimal.cmp(pl_decimal, Decimal.new(0)) == :gt, do: "WIN", else: "LOSE"
+        duration = if action_chain, do: calculate_duration_from_action_chain(action_chain), else: nil
 
-          row = %{
-            datetime: normalized_item.datetime,
-            ticker: normalized_item.ticker || "-",
-            aggregated_side: Map.get(item, :aggregated_side) || "-",
-            result: result,
-            realized_pl: pl_decimal,
-            action_chain: action_chain,
-            duration: duration,
-            inserted_at: now,
-            updated_at: now
-          }
+        row = %{
+          datetime: normalized_item.datetime,
+          ticker: normalized_item.ticker || "-",
+          aggregated_side: Map.get(item, :aggregated_side) || "-",
+          result: result,
+          realized_pl: pl_decimal,
+          action_chain: action_chain,
+          duration: duration,
+          inserted_at: now,
+          updated_at: now
+        }
 
-          {[row | acc_rows], acc_errors}
-        else
-          # Chain building failed - record error
-          ticker = normalized_item.ticker || "UNKNOWN"
-          dt = normalized_item.datetime
-          {acc_rows, [{ticker, dt} | acc_errors]}
-        end
+        {[row | acc_rows], acc_errors}
       end)
 
     {Enum.reverse(rows), Enum.uniq(Enum.reverse(errors))}
@@ -1256,4 +1272,16 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
   end
 
   # Moved helper functions to the bottom to keep handle_event clauses contiguous
+
+  # Safely format DateTime/NaiveDateTime or string for display in flash/errors
+  defp format_datetime_for_display(%DateTime{} = dt), do: DateTime.to_string(dt)
+
+  defp format_datetime_for_display(%NaiveDateTime{} = ndt) do
+    ndt
+    |> DateTime.from_naive!("Etc/UTC")
+    |> DateTime.to_string()
+  end
+
+  defp format_datetime_for_display(s) when is_binary(s), do: s
+  defp format_datetime_for_display(other), do: inspect(other)
 end
