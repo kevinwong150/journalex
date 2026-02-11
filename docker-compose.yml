@@ -13,6 +13,11 @@ services:
       - 6543:5432
     networks:
       - journalex_app
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U journalex -d journalex_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
   web:
     build: .
     working_dir: /app
@@ -21,7 +26,8 @@ services:
     ports: 
       - 4008:4008
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     command: [
       "sh",
       "-c",
