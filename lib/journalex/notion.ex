@@ -218,9 +218,12 @@ defmodule Journalex.Notion do
           |> maybe_put_number("Duration", duration_secs)
           |> maybe_put_select("Entry Timeslot", entry_slot_label)
 
+        # Add metadata fields if present
+        metadata_props = build_metadata_properties(row)
+
         payload = %{
           "parent" => %{"data_source_id" => data_source_id},
-          "properties" => Map.merge(base_props, extra_props)
+          "properties" => base_props |> Map.merge(extra_props) |> Map.merge(metadata_props)
         }
 
         case Client.create_page(payload) do
@@ -331,9 +334,127 @@ defmodule Journalex.Notion do
     extra_props = maybe_put_number(extra_props, "Duration", duration_secs)
     extra_props = maybe_put_select(extra_props, "Entry Timeslot", entry_slot_label)
 
-    payload = %{"properties" => Map.merge(base_props, extra_props)}
+    # Add metadata fields if present
+    metadata_props = build_metadata_properties(row)
+
+    payload = %{"properties" => base_props |> Map.merge(extra_props) |> Map.merge(metadata_props)}
 
     Client.update_page(page_id, payload)
+  end
+
+  @doc """
+  Sync metadata from a Notion page back to a trade record.
+
+  Fetches the Notion page, extracts metadata properties, detects the version,
+  and updates the trade's metadata and metadata_version fields.
+
+  Returns {:ok, updated_trade} on success or {:error, reason} on failure.
+
+  ## Examples
+
+      iex> Notion.sync_metadata_from_notion(trade.id, "notion-page-id-123")
+      {:ok, %Trade{metadata: %TradeMetadata{done?: true, ...}, metadata_version: 2}}
+  """
+  def sync_metadata_from_notion(trade_id, page_id) when is_binary(page_id) do
+    alias Journalex.Repo
+    alias Journalex.Trades.Trade
+    alias Journalex.Trades.TradeMetadata
+    alias Journalex.Notion.DataSources
+
+    with {:ok, trade} <- Repo.get(Trade, trade_id) |> validate_trade(),
+         {:ok, page} <- Client.retrieve_page(page_id),
+         properties <- Map.get(page, "properties", %{}),
+         parent <- Map.get(page, "parent", %{}),
+         data_source_id <- Map.get(parent, "data_source_id"),
+         version <- DataSources.get_version(data_source_id) || 2,
+         metadata_attrs <- extract_metadata_from_properties(properties),
+         {:ok, metadata} <- TradeMetadata.new(metadata_attrs) do
+      # Update trade with synced metadata
+      trade
+      |> Trade.changeset(%{
+        metadata: metadata,
+        metadata_version: version
+      })
+      |> Repo.update()
+    end
+  end
+
+  defp validate_trade(nil), do: {:error, :trade_not_found}
+  defp validate_trade(trade), do: {:ok, trade}
+
+  # Extract metadata attributes from Notion page properties.
+  # Converts Notion property format back to TradeMetadata struct attributes.
+  defp extract_metadata_from_properties(properties) when is_map(properties) do
+    %{}
+    # Status & control
+    |> put_if_present(:done?, get_checkbox(properties, "Done?"))
+    |> put_if_present(:lost_data?, get_checkbox(properties, "Lost Data?"))
+    # Trade classification
+    |> put_if_present(:rank, get_select(properties, "Rank"))
+    |> put_if_present(:setup, get_rich_text(properties, "Setup"))
+    |> put_if_present(:close_trigger, get_rich_text(properties, "Close Trigger"))
+    |> put_if_present(:sector, get_select(properties, "Sector"))
+    |> put_if_present(:cap_size, get_select(properties, "Cap Size"))
+    # Risk/reward metrics
+    |> put_if_present(:initial_risk_reward_ratio, get_number(properties, "Initial R:R"))
+    |> put_if_present(:best_risk_reward_ratio, get_number(properties, "Best R:R"))
+    # Position sizing
+    |> put_if_present(:size, get_number(properties, "Size"))
+    |> put_if_present(:order_type, get_select(properties, "Order Type"))
+    # Boolean flags
+    |> put_if_present(:revenge_trade?, get_checkbox(properties, "Revenge Trade?"))
+    |> put_if_present(:fomo?, get_checkbox(properties, "FOMO?"))
+    |> put_if_present(:add_size?, get_checkbox(properties, "Add Size?"))
+    |> put_if_present(:adjusted_risk_reward?, get_checkbox(properties, "Adjusted R:R?"))
+    |> put_if_present(:align_with_trend?, get_checkbox(properties, "Align with Trend?"))
+    |> put_if_present(:better_risk_reward_ratio?, get_checkbox(properties, "Better R:R?"))
+    |> put_if_present(:big_picture?, get_checkbox(properties, "Big Picture?"))
+    |> put_if_present(:earning_report?, get_checkbox(properties, "Earning Report?"))
+    |> put_if_present(:follow_up_trial?, get_checkbox(properties, "Follow Up Trial?"))
+    |> put_if_present(:good_lesson?, get_checkbox(properties, "Good Lesson?"))
+    |> put_if_present(:hot_sector?, get_checkbox(properties, "Hot Sector?"))
+    |> put_if_present(:momentum?, get_checkbox(properties, "Momentum?"))
+    |> put_if_present(:news?, get_checkbox(properties, "News?"))
+    |> put_if_present(:normal_emotion?, get_checkbox(properties, "Normal Emotion?"))
+    |> put_if_present(:operation_mistake?, get_checkbox(properties, "Operation Mistake?"))
+    |> put_if_present(:overnight?, get_checkbox(properties, "Overnight?"))
+    |> put_if_present(:overnight_in_purpose?, get_checkbox(properties, "Overnight in Purpose?"))
+    |> put_if_present(:skipped_position?, get_checkbox(properties, "Skipped Position?"))
+    # Comments
+    |> put_if_present(:close_time_comment, get_rich_text(properties, "Close Time Comment"))
+  end
+
+  defp extract_metadata_from_properties(_), do: %{}
+
+  defp put_if_present(map, _key, nil), do: map
+  defp put_if_present(map, key, value), do: Map.put(map, key, value)
+
+  defp get_checkbox(properties, key) do
+    case Map.get(properties, key) do
+      %{"checkbox" => value} when is_boolean(value) -> value
+      _ -> nil
+    end
+  end
+
+  defp get_select(properties, key) do
+    case Map.get(properties, key) do
+      %{"select" => %{"name" => name}} when is_binary(name) -> name
+      _ -> nil
+    end
+  end
+
+  defp get_number(properties, key) do
+    case Map.get(properties, key) do
+      %{"number" => value} when is_number(value) -> Decimal.new(to_string(value))
+      _ -> nil
+    end
+  end
+
+  defp get_rich_text(properties, key) do
+    case Map.get(properties, key) do
+      %{"rich_text" => list} when is_list(list) -> first_rich_text(list)
+      _ -> nil
+    end
   end
 
   # --- local compare helpers ---
@@ -381,6 +502,113 @@ defmodule Journalex.Notion do
   defp maybe_put_number(map, key, value) when is_number(value) do
     Map.put(map, key, %{number: value})
   end
+
+  defp maybe_put_checkbox(map, _key, nil), do: map
+
+  defp maybe_put_checkbox(map, key, value) when is_boolean(value) do
+    Map.put(map, key, %{checkbox: value})
+  end
+
+  defp maybe_put_checkbox(map, _key, _), do: map
+
+  defp maybe_put_rich_text(map, _key, nil), do: map
+  defp maybe_put_rich_text(map, _key, ""), do: map
+
+  defp maybe_put_rich_text(map, key, value) when is_binary(value) do
+    Map.put(map, key, %{rich_text: [%{text: %{content: value}}]})
+  end
+
+  defp maybe_put_rich_text(map, _key, _), do: map
+
+  # Build Notion properties from trade metadata.
+  # Extracts metadata from the trade row and converts it to Notion property format.
+  # Only includes non-nil fields to support partial metadata.
+  defp build_metadata_properties(row) when is_map(row) do
+    metadata = Map.get(row, :metadata)
+    version = Map.get(row, :metadata_version) || 2
+
+    case {metadata, version} do
+      {meta, 1} when is_map(meta) and map_size(meta) > 0 ->
+        build_v1_metadata_properties(meta)
+
+      {meta, 2} when is_map(meta) and map_size(meta) > 0 ->
+        build_v2_metadata_properties(meta)
+
+      _ ->
+        # No metadata
+        %{}
+    end
+  end
+
+  defp build_v1_metadata_properties(meta) when is_map(meta) do
+    %{}
+    # Status & control
+    |> maybe_put_checkbox("Done?", get_meta_field(meta, :done?))
+    |> maybe_put_checkbox("Lost Data?", get_meta_field(meta, :lost_data?))
+    # Trade classification
+    |> maybe_put_select("Rank", get_meta_field(meta, :rank))
+    |> maybe_put_rich_text("Setup", get_meta_field(meta, :setup))
+    |> maybe_put_rich_text("Close Trigger", get_meta_field(meta, :close_trigger))
+    |> maybe_put_select("Sector", get_meta_field(meta, :sector))
+    |> maybe_put_select("Cap Size", get_meta_field(meta, :cap_size))
+    # Time
+    |> maybe_put_rich_text("Entry Timeslot", get_meta_field(meta, :entry_timeslot))
+    # Boolean flags
+    |> maybe_put_checkbox("Operation Mistake?", get_meta_field(meta, :operation_mistake?))
+    |> maybe_put_checkbox("Follow Setup?", get_meta_field(meta, :follow_setup?))
+    |> maybe_put_checkbox("Follow Stop Loss Management?", get_meta_field(meta, :follow_stop_loss_management?))
+    |> maybe_put_checkbox("Revenge Trade?", get_meta_field(meta, :revenge_trade?))
+    |> maybe_put_checkbox("FOMO?", get_meta_field(meta, :fomo?))
+    |> maybe_put_checkbox("Unnecessary Trade?", get_meta_field(meta, :unnecessary_trade?))
+    # Comments
+    |> maybe_put_rich_text("Close Time Comment", get_meta_field(meta, :close_time_comment))
+  end
+
+  defp build_v2_metadata_properties(meta) when is_map(meta) do
+    %{}
+    # Status & control
+    |> maybe_put_checkbox("Done?", get_meta_field(meta, :done?))
+    |> maybe_put_checkbox("Lost Data?", get_meta_field(meta, :lost_data?))
+    # Trade classification
+    |> maybe_put_select("Rank", get_meta_field(meta, :rank))
+    |> maybe_put_rich_text("Setup", get_meta_field(meta, :setup))
+    |> maybe_put_rich_text("Close Trigger", get_meta_field(meta, :close_trigger))
+    |> maybe_put_select("Sector", get_meta_field(meta, :sector))
+    |> maybe_put_select("Cap Size", get_meta_field(meta, :cap_size))
+    # Risk/reward metrics
+    |> maybe_put_number("Initial R:R", to_number(get_meta_field(meta, :initial_risk_reward_ratio)))
+    |> maybe_put_number("Best R:R", to_number(get_meta_field(meta, :best_risk_reward_ratio)))
+    # Position sizing
+    |> maybe_put_number("Size", to_number(get_meta_field(meta, :size)))
+    |> maybe_put_select("Order Type", get_meta_field(meta, :order_type))
+    # Boolean flags
+    |> maybe_put_checkbox("Revenge Trade?", get_meta_field(meta, :revenge_trade?))
+    |> maybe_put_checkbox("FOMO?", get_meta_field(meta, :fomo?))
+    |> maybe_put_checkbox("Add Size?", get_meta_field(meta, :add_size?))
+    |> maybe_put_checkbox("Adjusted R:R?", get_meta_field(meta, :adjusted_risk_reward?))
+    |> maybe_put_checkbox("Align with Trend?", get_meta_field(meta, :align_with_trend?))
+    |> maybe_put_checkbox("Better R:R?", get_meta_field(meta, :better_risk_reward_ratio?))
+    |> maybe_put_checkbox("Big Picture?", get_meta_field(meta, :big_picture?))
+    |> maybe_put_checkbox("Earning Report?", get_meta_field(meta, :earning_report?))
+    |> maybe_put_checkbox("Follow Up Trial?", get_meta_field(meta, :follow_up_trial?))
+    |> maybe_put_checkbox("Good Lesson?", get_meta_field(meta, :good_lesson?))
+    |> maybe_put_checkbox("Hot Sector?", get_meta_field(meta, :hot_sector?))
+    |> maybe_put_checkbox("Momentum?", get_meta_field(meta, :momentum?))
+    |> maybe_put_checkbox("News?", get_meta_field(meta, :news?))
+    |> maybe_put_checkbox("Normal Emotion?", get_meta_field(meta, :normal_emotion?))
+    |> maybe_put_checkbox("Operation Mistake?", get_meta_field(meta, :operation_mistake?))
+    |> maybe_put_checkbox("Overnight?", get_meta_field(meta, :overnight?))
+    |> maybe_put_checkbox("Overnight in Purpose?", get_meta_field(meta, :overnight_in_purpose?))
+    |> maybe_put_checkbox("Skipped Position?", get_meta_field(meta, :skipped_position?))
+    # Comments
+    |> maybe_put_rich_text("Close Time Comment", get_meta_field(meta, :close_time_comment))
+  end
+
+  # Helper to get field from metadata map (supports both atom and string keys)
+  defp get_meta_field(meta, field) when is_map(meta) and is_atom(field) do
+    Map.get(meta, field) || Map.get(meta, Atom.to_string(field))
+  end
+  defp get_meta_field(_, _), do: nil
 
   # (no date helper needed for Entry Timeslot; it's a select field now)
 

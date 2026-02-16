@@ -9,7 +9,9 @@ import Config
 
 config :journalex,
   ecto_repos: [Journalex.Repo],
-  generators: [timestamp_type: :utc_datetime]
+  generators: [timestamp_type: :utc_datetime],
+  # Default metadata version for new trades (supported: 1, 2)
+  default_metadata_version: 2
 
 # Configures the endpoint
 config :journalex, JournalexWeb.Endpoint,

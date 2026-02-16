@@ -34,6 +34,10 @@ config :journalex, Journalex.Notion,
       System.get_env("NOTION_DATABASE_ID"),
   trades_data_source_id:
     System.get_env("NOTION_TRADES_DATA_SOURCE_ID") || System.get_env("NOTION_DATABASE_ID"),
+  trades_v2_data_source_id:
+    System.get_env("NOTION_TRADES_V2_DATA_SOURCE_ID") || System.get_env("NOTION_DATABASE_ID"),
+  trades_v3_data_source_id:
+    System.get_env("NOTION_TRADES_V3_DATA_SOURCE_ID"),
   datetime_property: System.get_env("NOTION_DATETIME_PROPERTY") || "Datetime",
   ticker_property: System.get_env("NOTION_TICKER_PROPERTY") || "Ticker",
   title_property: System.get_env("NOTION_TITLE_PROPERTY") || "Trademark"

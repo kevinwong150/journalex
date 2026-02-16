@@ -11,6 +11,7 @@ defmodule JournalexWeb.TradesDumpLive do
   alias Journalex.Notion.Client, as: NotionClient
 
   @dump_max_retries 3
+  @supported_versions [1, 2]
 
   @impl true
   def mount(_params, _session, socket) do
@@ -66,6 +67,9 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:update_finished_at_mono, nil)
       |> assign(:update_elapsed_ms, 0)
       |> assign(:update_timer_ref, nil)
+      # Global metadata version for all forms
+      |> assign(:global_metadata_version, Application.get_env(:journalex, :default_metadata_version, 2))
+      |> assign(:supported_versions, @supported_versions)
 
     if connected?(socket), do: send(self(), :auto_check_notion)
 
@@ -368,6 +372,60 @@ defmodule JournalexWeb.TradesDumpLive do
   @impl true
   def handle_event("toggle_hide_exists", _params, socket) do
     {:noreply, assign(socket, hide_exists?: !socket.assigns.hide_exists?)}
+  end
+
+  @impl true
+  def handle_event("save_metadata", %{"index" => idx_str} = params, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    version = socket.assigns.global_metadata_version
+
+    trade = Enum.at(socket.assigns.trades, idx)
+
+    if trade do
+      # Build metadata from form params based on global version
+      metadata_attrs = case version do
+        1 -> build_v1_metadata_attrs(params)
+        2 -> build_v2_metadata_attrs(params)
+        _ -> %{}
+      end
+
+      # Update trade in database with global version
+      case Journalex.Trades.update_trade(trade, %{
+        metadata: metadata_attrs,
+        metadata_version: version
+      }) do
+        {:ok, updated_trade} ->
+          # Update the specific trade in the list while preserving order
+          trades =
+            socket.assigns.trades
+            |> Enum.with_index()
+            |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+          socket =
+            socket
+            |> assign(:trades, trades)
+            |> put_flash(:info, "Metadata saved as V#{version}")
+
+          {:noreply, socket}
+
+        {:error, changeset} ->
+          socket = put_flash(socket, :error, "Failed to save metadata: #{inspect(changeset.errors)}")
+          {:noreply, socket}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Trade not found")}
+    end
+  end
+
+  @impl true
+  def handle_event("change_global_version", %{"version" => version_str}, socket) do
+    {version, _} = Integer.parse(version_str)
+
+    if version in @supported_versions do
+      {:noreply, assign(socket, :global_metadata_version, version)}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
@@ -769,6 +827,34 @@ defmodule JournalexWeb.TradesDumpLive do
           </div>
         </div>
 
+        <!-- Global Metadata Version Selector -->
+        <div class="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-semibold text-gray-700">Metadata Form Version</h3>
+              <p class="text-xs text-gray-500 mt-1">Select which version form to display for all trades</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <%= for version <- @supported_versions do %>
+                <button
+                  type="button"
+                  phx-click="change_global_version"
+                  phx-value-version={version}
+                  class={[
+                    "px-4 py-2 text-sm font-medium rounded-md transition-colors",
+                    if(@global_metadata_version == version,
+                      do: "bg-blue-600 text-white shadow-sm",
+                      else: "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    )
+                  ]}
+                >
+                  V{version}
+                </button>
+              <% end %>
+            </div>
+          </div>
+        </div>
+
         <div class="flex items-center justify-between gap-3 flex-wrap">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
@@ -933,6 +1019,9 @@ defmodule JournalexWeb.TradesDumpLive do
         show_page_id_column?={true}
         row_inconsistencies={@row_inconsistencies}
         show_inconsistency_column?={true}
+        show_metadata_column?={true}
+        on_save_metadata_event="save_metadata"
+        global_metadata_version={@global_metadata_version}
       />
     </div>
     """
@@ -1016,5 +1105,74 @@ defmodule JournalexWeb.TradesDumpLive do
     ticker = Map.get(row, :ticker) || Map.get(row, :symbol)
     iso = if is_struct(dt, DateTime), do: DateTime.to_iso8601(dt), else: nil
     if is_binary(ticker) and is_binary(iso), do: ticker <> "@" <> iso, else: nil
+  end
+
+  # --- Helpers for metadata form ---
+  defp parse_integer(nil), do: nil
+  defp parse_integer(""), do: nil
+  defp parse_integer(str) when is_binary(str) do
+    case Integer.parse(str) do
+      {int, _} -> int
+      _ -> nil
+    end
+  end
+  defp parse_integer(int) when is_integer(int), do: int
+
+  defp parse_string(nil), do: nil
+  defp parse_string(""), do: nil
+  defp parse_string(str) when is_binary(str), do: String.trim(str)
+
+  # Build V1 metadata attributes from form params
+  defp build_v1_metadata_attrs(params) do
+    %{
+      done?: params["done"] == "true",
+      lost_data?: params["lost_data"] == "true",
+      rank: parse_string(params["rank"]),
+      setup: parse_string(params["setup"]),
+      close_trigger: parse_string(params["close_trigger"]),
+      sector: parse_string(params["sector"]),
+      cap_size: parse_string(params["cap_size"]),
+      entry_timeslot: parse_string(params["entry_timeslot"]),
+      operation_mistake?: params["operation_mistake"] == "true",
+      follow_setup?: params["follow_setup"] == "true",
+      follow_stop_loss_management?: params["follow_stop_loss_management"] == "true",
+      revenge_trade?: params["revenge_trade"] == "true",
+      fomo?: params["fomo"] == "true",
+      unnecessary_trade?: params["unnecessary_trade"] == "true",
+      close_time_comment: parse_string(params["close_time_comment"])
+    }
+  end
+
+  # Build V2 metadata attributes from form params
+  defp build_v2_metadata_attrs(params) do
+    %{
+      done?: params["done"] == "true",
+      lost_data?: params["lost_data"] == "true",
+      rank: parse_string(params["rank"]),
+      setup: parse_string(params["setup"]),
+      close_trigger: parse_string(params["close_trigger"]),
+      sector: parse_string(params["sector"]),
+      cap_size: parse_string(params["cap_size"]),
+      entry_timeslot: parse_string(params["entry_timeslot"]),
+      revenge_trade?: params["revenge_trade"] == "true",
+      fomo?: params["fomo"] == "true",
+      add_size?: params["add_size"] == "true",
+      adjusted_risk_reward?: params["adjusted_risk_reward"] == "true",
+      align_with_trend?: params["align_with_trend"] == "true",
+      better_risk_reward_ratio?: params["better_risk_reward_ratio"] == "true",
+      big_picture?: params["big_picture"] == "true",
+      earning_report?: params["earning_report"] == "true",
+      follow_up_trial?: params["follow_up_trial"] == "true",
+      good_lesson?: params["good_lesson"] == "true",
+      hot_sector?: params["hot_sector"] == "true",
+      momentum?: params["momentum"] == "true",
+      news?: params["news"] == "true",
+      normal_emotion?: params["normal_emotion"] == "true",
+      operation_mistake?: params["operation_mistake"] == "true",
+      overnight?: params["overnight"] == "true",
+      overnight_in_purpose?: params["overnight_in_purpose"] == "true",
+      skipped_position?: params["skipped_position"] == "true",
+      close_time_comment: parse_string(params["close_time_comment"])
+    }
   end
 end

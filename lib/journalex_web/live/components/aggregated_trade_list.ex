@@ -111,6 +111,19 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: false,
     doc: "Show a column indicating mismatched properties when present"
 
+  # Metadata editing
+  attr :show_metadata_column?, :boolean,
+    default: false,
+    doc: "Show a Metadata column with status and form in expandable row"
+
+  attr :on_save_metadata_event, :string,
+    default: nil,
+    doc: "Event name to emit when metadata form is saved"
+
+  attr :global_metadata_version, :integer,
+    default: 2,
+    doc: "Global version for metadata forms (all rows use same version)"
+
   def aggregated_trade_list(assigns) do
     ~H"""
     <% chain_key = @action_chain_key %>
@@ -306,6 +319,12 @@ defmodule JournalexWeb.AggregatedTradeList do
               >
                 Page ID
               </th>
+              <th
+                :if={@show_metadata_column?}
+                class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider select-none"
+              >
+                Metadata
+              </th>
             </tr>
           </thead>
 
@@ -475,6 +494,17 @@ defmodule JournalexWeb.AggregatedTradeList do
                   <% else %>
                   <% end %>
                 </td>
+                <td
+                  :if={@show_metadata_column?}
+                  class="px-4 py-2 whitespace-nowrap text-xs text-center"
+                >
+                  <.metadata_version_badge
+                    saved_version={Map.get(item, :metadata_version)}
+                    global_version={@global_metadata_version}
+                    has_data={not is_nil(Map.get(item, :metadata)) and map_size(Map.get(item, :metadata, %{})) > 0}
+                    is_done={Map.get(Map.get(item, :metadata, %{}), :done?) == true}
+                  />
+                </td>
               </tr>
               <tr
                 :if={show_action_toggle?}
@@ -518,6 +548,15 @@ defmodule JournalexWeb.AggregatedTradeList do
                         </table>
                       </div>
                     </div>
+                  <% end %>
+
+                  <%= if @show_metadata_column? do %>
+                    <.render_metadata_form
+                      version={@global_metadata_version}
+                      item={item}
+                      idx={idx}
+                      on_save_event={@on_save_metadata_event}
+                    />
                   <% end %>
 
                   <%= if has_chain do %>
@@ -827,6 +866,8 @@ defmodule JournalexWeb.AggregatedTradeList do
     base = if Map.get(assigns, :show_page_id_column?), do: base + 1, else: base
     # optional Mismatch column
     base = if Map.get(assigns, :show_inconsistency_column?), do: base + 1, else: base
+    # optional Metadata column
+    base = if Map.get(assigns, :show_metadata_column?), do: base + 1, else: base
 
     base = if show_toggle?, do: base + 1, else: base
     base = if Map.get(assigns, :selectable?), do: base + 1, else: base
@@ -1140,4 +1181,82 @@ defmodule JournalexWeb.AggregatedTradeList do
   end
 
   defp diff_field_label(_), do: "Field"
+
+  # Smart metadata version badge that shows saved vs editing version
+  attr :saved_version, :integer, default: nil
+  attr :global_version, :integer, required: true
+  attr :has_data, :boolean, required: true
+  attr :is_done, :boolean, required: true
+
+  defp metadata_version_badge(assigns) do
+    ~H"""
+    <%= cond do %>
+      <%!-- Case 1: Has data, version matches, and done --%>
+      <% @has_data and @saved_version == @global_version and @is_done -> %>
+        <div class="inline-flex flex-col items-center gap-1" title="Saved and complete">
+          <span class="inline-flex items-center px-2 py-0.5 bg-green-100 text-green-700 font-medium rounded">
+            V{@saved_version} ✓
+          </span>
+          <span class="text-[10px] text-green-600 font-medium">Filled</span>
+        </div>
+
+      <%!-- Case 2: Has data, version matches, but not done --%>
+      <% @has_data and @saved_version == @global_version and not @is_done -> %>
+        <div class="inline-flex flex-col items-center gap-1" title="Saved but incomplete">
+          <span class="inline-flex items-center px-2 py-0.5 bg-blue-100 text-blue-700 font-medium rounded">
+            V{@saved_version}
+          </span>
+          <span class="text-[10px] text-gray-500">Draft</span>
+        </div>
+
+      <%!-- Case 3: No saved version - will save as global version --%>
+      <% is_nil(@saved_version) or not @has_data -> %>
+        <div class="inline-flex flex-col items-center gap-1" title={"Will save as V#{@global_version}"}>
+          <span class="inline-flex items-center px-2 py-0.5 bg-gray-100 text-gray-600 font-medium rounded border border-dashed border-gray-300">
+            V{@global_version}
+          </span>
+          <span class="text-[10px] text-gray-500">New</span>
+        </div>
+
+      <%!-- Case 4: Version mismatch - editing different version --%>
+      <% @has_data and @saved_version != @global_version -> %>
+        <div class="inline-flex flex-col items-center gap-1" title={"Saved as V#{@saved_version}, editing with V#{@global_version}"}>
+          <div class="flex items-center gap-1">
+            <span class="inline-flex items-center px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-medium rounded">
+              V{@saved_version}
+            </span>
+            <span class="text-gray-400">→</span>
+            <span class="inline-flex items-center px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-medium rounded">
+              V{@global_version}
+            </span>
+          </div>
+          <span class="text-[10px] text-amber-600">Converting</span>
+        </div>
+    <% end %>
+    """
+  end
+
+  # Render appropriate metadata form based on version
+  defp render_metadata_form(assigns) do
+    ~H"""
+    <%= case @version do %>
+      <% 1 -> %>
+        <JournalexWeb.MetadataForm.v1
+          item={@item}
+          idx={@idx}
+          on_save_event={@on_save_event}
+        />
+      <% 2 -> %>
+        <JournalexWeb.MetadataForm.v2
+          item={@item}
+          idx={@idx}
+          on_save_event={@on_save_event}
+        />
+      <% _ -> %>
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center text-sm text-gray-500">
+          Unsupported version: {@version}
+        </div>
+    <% end %>
+    """
+  end
 end

@@ -58,6 +58,15 @@ defmodule Journalex.Trades do
     ActionChainBuilder.build_action_chains_batch(trade_items)
   end
 
+  @doc """
+  Update a trade with new attributes.
+  """
+  def update_trade(%Trade{} = trade, attrs) do
+    trade
+    |> Trade.changeset(attrs)
+    |> Repo.update()
+  end
+
   # Normalize inputs like %Date{} or "yyyymmdd" to DateTime bounds
   defp normalize_date_start(%Date{} = d), do: {:ok, DateTime.new!(d, ~T[00:00:00], "Etc/UTC")}
 

@@ -2,13 +2,15 @@ defmodule Journalex.Trades.Trade do
   use Ecto.Schema
   import Ecto.Changeset
 
-  alias Journalex.Trades.TradeMetadata
+  alias Journalex.Trades.Metadata.V1, as: MetadataV1
+  alias Journalex.Trades.Metadata.V2, as: MetadataV2
 
   @moduledoc """
   Trade schema storing aggregated close trades for analysis.
   Fields mirror AggregatedTradeList columns.
 
   Metadata field stores Notion integration data and analysis flags as JSONB.
+  Supports multiple metadata versions (V1, V2, etc.) based on metadata_version field.
   """
 
   schema "trades" do
@@ -19,22 +21,55 @@ defmodule Journalex.Trades.Trade do
     field :realized_pl, :decimal
     field :action_chain, :map
     field :duration, :integer
+    field :metadata_version, :integer
 
-    embeds_one :metadata, TradeMetadata, on_replace: :update
+    # Polymorphic metadata - actual type determined by metadata_version
+    field :metadata, :map
 
     timestamps(type: :utc_datetime_usec)
   end
 
   @required ~w(datetime ticker aggregated_side result realized_pl)a
-  @optional ~w(action_chain duration)a
+  @optional ~w(action_chain duration metadata_version metadata)a
 
   def changeset(trade, attrs) do
     trade
     |> cast(attrs, @required ++ @optional)
-    |> cast_embed(:metadata, with: &TradeMetadata.changeset/2)
+    |> cast_polymorphic_metadata(attrs)
     |> validate_required(@required)
     |> validate_inclusion(:result, ["WIN", "LOSE"])
     |> validate_inclusion(:aggregated_side, ["LONG", "SHORT", "-"])
+  end
+
+  # Cast metadata based on version
+  defp cast_polymorphic_metadata(changeset, attrs) do
+    version = get_field(changeset, :metadata_version) || Map.get(attrs, :metadata_version)
+    metadata_attrs = Map.get(attrs, :metadata)
+
+    if metadata_attrs do
+      case version do
+        1 ->
+          case MetadataV1.changeset(%MetadataV1{}, metadata_attrs) |> apply_action(:insert) do
+            {:ok, metadata_struct} ->
+              put_change(changeset, :metadata, Map.from_struct(metadata_struct))
+            {:error, _} ->
+              changeset
+          end
+
+        2 ->
+          case MetadataV2.changeset(%MetadataV2{}, metadata_attrs) |> apply_action(:insert) do
+            {:ok, metadata_struct} ->
+              put_change(changeset, :metadata, Map.from_struct(metadata_struct))
+            {:error, _} ->
+              changeset
+          end
+
+        _ ->
+          changeset
+      end
+    else
+      changeset
+    end
   end
 
   @doc """
@@ -49,11 +84,10 @@ defmodule Journalex.Trades.Trade do
       iex> trade |> Trade.update_metadata(%{sector: "Technology", hot_sector?: true})
   """
   def update_metadata(%__MODULE__{} = trade, metadata_changes) when is_map(metadata_changes) do
-    current_metadata = trade.metadata || %TradeMetadata{}
-    current_map = Map.from_struct(current_metadata)
+    current_metadata = trade.metadata || %{}
 
-    # Merge changes into current metadata, keeping unchanged fields
-    merged = Map.merge(current_map, metadata_changes)
+    # Merge changes into current metadata
+    merged = Map.merge(current_metadata, metadata_changes)
 
     changeset(trade, %{metadata: merged})
   end
@@ -93,4 +127,18 @@ defmodule Journalex.Trades.Trade do
   def add_analysis_flags(%__MODULE__{} = trade, flags) when is_map(flags) do
     update_metadata(trade, flags)
   end
+
+  @doc """
+  Set the metadata version for this trade.
+  """
+  def set_metadata_version(%__MODULE__{} = trade, version) when is_integer(version) do
+    changeset(trade, %{metadata_version: version})
+  end
+
+  @doc """
+  Check if trade has any metadata.
+  """
+  def has_metadata?(%__MODULE__{metadata: nil}), do: false
+  def has_metadata?(%__MODULE__{metadata: metadata}) when is_map(metadata) and map_size(metadata) > 0, do: true
+  def has_metadata?(_), do: false
 end
