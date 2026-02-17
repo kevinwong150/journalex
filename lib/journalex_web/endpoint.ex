@@ -25,6 +25,12 @@ defmodule JournalexWeb.Endpoint do
     gzip: false,
     only: JournalexWeb.static_paths()
 
+  # Tidewave - AI coding agent integration
+  # allow_remote_access needed for Tidewave Web app running on different port
+  if Mix.env() == :dev do
+    plug Tidewave, allow_remote_access: true
+  end
+
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.
   if code_reloading? do
