@@ -159,7 +159,7 @@ defmodule JournalexWeb.MetadataForm do
                   name={flag_name}
                   id={"#{flag_name}_#{@idx}"}
                   value="true"
-                  checked={Map.get(metadata, String.to_atom(flag_name)) || Map.get(metadata, flag_name)}
+                  checked={Map.get(metadata, String.to_atom(flag_name <> "?")) || Map.get(metadata, flag_name <> "?")}
                   class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                 />
                 <label for={"#{flag_name}_#{@idx}"} class="text-xs text-gray-600">
@@ -357,7 +357,7 @@ defmodule JournalexWeb.MetadataForm do
                   name={flag_name}
                   id={"#{flag_name}_#{@idx}"}
                   value="true"
-                  checked={Map.get(metadata, String.to_atom(flag_name)) || Map.get(metadata, flag_name)}
+                  checked={Map.get(metadata, String.to_atom(flag_name <> "?")) || Map.get(metadata, flag_name <> "?")}
                   class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label for={"#{flag_name}_#{@idx}"} class="text-xs text-gray-600">
