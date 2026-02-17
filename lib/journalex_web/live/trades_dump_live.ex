@@ -418,6 +418,34 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   @impl true
+  def handle_event("reset_metadata", %{"index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    trade = Enum.at(socket.assigns.trades, idx)
+
+    if trade do
+      case Journalex.Trades.update_trade(trade, %{metadata: %{}, metadata_version: nil}) do
+        {:ok, updated_trade} ->
+          trades =
+            socket.assigns.trades
+            |> Enum.with_index()
+            |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+          socket =
+            socket
+            |> assign(:trades, trades)
+            |> put_flash(:info, "Metadata cleared")
+
+          {:noreply, socket}
+
+        {:error, changeset} ->
+          {:noreply, put_flash(socket, :error, "Failed to reset metadata: #{inspect(changeset.errors)}")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Trade not found")}
+    end
+  end
+
+  @impl true
   def handle_event("change_global_version", %{"version" => version_str}, socket) do
     {version, _} = Integer.parse(version_str)
 
@@ -1021,6 +1049,7 @@ defmodule JournalexWeb.TradesDumpLive do
         show_inconsistency_column?={true}
         show_metadata_column?={true}
         on_save_metadata_event="save_metadata"
+        on_reset_metadata_event="reset_metadata"
         global_metadata_version={@global_metadata_version}
       />
     </div>

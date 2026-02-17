@@ -120,6 +120,10 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: nil,
     doc: "Event name to emit when metadata form is saved"
 
+  attr :on_reset_metadata_event, :string,
+    default: nil,
+    doc: "Event name to emit when metadata form reset is requested"
+
   attr :global_metadata_version, :integer,
     default: 2,
     doc: "Global version for metadata forms (all rows use same version)"
@@ -556,6 +560,7 @@ defmodule JournalexWeb.AggregatedTradeList do
                       item={item}
                       idx={idx}
                       on_save_event={@on_save_metadata_event}
+                      on_reset_event={@on_reset_metadata_event}
                     />
                   <% end %>
 
@@ -1237,6 +1242,12 @@ defmodule JournalexWeb.AggregatedTradeList do
   end
 
   # Render appropriate metadata form based on version
+  attr :version, :integer, required: true
+  attr :item, :map, required: true
+  attr :idx, :integer, required: true
+  attr :on_save_event, :string, default: nil
+  attr :on_reset_event, :string, default: nil
+
   defp render_metadata_form(assigns) do
     ~H"""
     <%= case @version do %>
@@ -1245,12 +1256,14 @@ defmodule JournalexWeb.AggregatedTradeList do
           item={@item}
           idx={@idx}
           on_save_event={@on_save_event}
+          on_reset_event={@on_reset_event}
         />
       <% 2 -> %>
         <JournalexWeb.MetadataForm.v2
           item={@item}
           idx={@idx}
           on_save_event={@on_save_event}
+          on_reset_event={@on_reset_event}
         />
       <% _ -> %>
         <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center text-sm text-gray-500">

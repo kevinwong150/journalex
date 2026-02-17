@@ -11,6 +11,7 @@ defmodule JournalexWeb.MetadataForm do
   attr :item, :map, required: true
   attr :idx, :integer, required: true
   attr :on_save_event, :string, required: true
+  attr :on_reset_event, :string, default: nil
 
   def v1(assigns) do
     ~H"""
@@ -187,6 +188,16 @@ defmodule JournalexWeb.MetadataForm do
         <!-- Action buttons -->
         <div class="flex justify-end space-x-2 pt-2 border-t border-indigo-200">
           <button
+            :if={not is_nil(@on_reset_event)}
+            type="button"
+            phx-click={@on_reset_event}
+            phx-value-index={@idx}
+            class="inline-flex items-center px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded border border-gray-300 hover:bg-gray-50 transition"
+            data-confirm="Clear all metadata for this trade?"
+          >
+            Reset
+          </button>
+          <button
             type="submit"
             class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded hover:bg-indigo-700 transition"
           >
@@ -204,6 +215,7 @@ defmodule JournalexWeb.MetadataForm do
   attr :item, :map, required: true
   attr :idx, :integer, required: true
   attr :on_save_event, :string, required: true
+  attr :on_reset_event, :string, default: nil
 
   def v2(assigns) do
     ~H"""
@@ -384,6 +396,16 @@ defmodule JournalexWeb.MetadataForm do
 
         <!-- Action buttons -->
         <div class="flex justify-end space-x-2 pt-2 border-t border-blue-200">
+          <button
+            :if={not is_nil(@on_reset_event)}
+            type="button"
+            phx-click={@on_reset_event}
+            phx-value-index={@idx}
+            class="inline-flex items-center px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded border border-gray-300 hover:bg-gray-50 transition"
+            data-confirm="Clear all metadata for this trade?"
+          >
+            Reset
+          </button>
           <button
             type="submit"
             class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition"
