@@ -358,23 +358,22 @@ defmodule Journalex.Notion do
   def sync_metadata_from_notion(trade_id, page_id) when is_binary(page_id) do
     alias Journalex.Repo
     alias Journalex.Trades.Trade
-    alias Journalex.Trades.TradeMetadata
     alias Journalex.Notion.DataSources
 
     with {:ok, trade} <- Repo.get(Trade, trade_id) |> validate_trade(),
          {:ok, page} <- Client.retrieve_page(page_id),
-         properties <- Map.get(page, "properties", %{}),
+         properties <- Map.get(page |> IO.inspect(label: :page, limit: :infinity), "properties", %{}),
          parent <- Map.get(page, "parent", %{}),
          data_source_id <- Map.get(parent, "data_source_id"),
          version <- DataSources.get_version(data_source_id) || 2,
-         metadata_attrs <- extract_metadata_from_properties(properties),
-         {:ok, metadata} <- TradeMetadata.new(metadata_attrs) do
-      # Update trade with synced metadata
+         metadata_attrs <- extract_metadata_from_properties(properties, version) do
+      # Convert atom keys from extractor to strings to match the JSONB string-keyed format from DB,
+      # then merge to preserve existing fields like notion_page_id
+      metadata_attrs_str = Map.new(metadata_attrs |> IO.inspect(label: :metadata_attrs, limit: :infinity), fn {k, v} -> {Atom.to_string(k), v} end)
+      merged_meta = Map.merge(trade.metadata || %{}, metadata_attrs_str)
+
       trade
-      |> Trade.changeset(%{
-        metadata: metadata,
-        metadata_version: version
-      })
+      |> Trade.changeset(%{metadata: merged_meta, metadata_version: version})
       |> Repo.update()
     end
   end
@@ -382,9 +381,42 @@ defmodule Journalex.Notion do
   defp validate_trade(nil), do: {:error, :trade_not_found}
   defp validate_trade(trade), do: {:ok, trade}
 
-  # Extract metadata attributes from Notion page properties.
-  # Converts Notion property format back to TradeMetadata struct attributes.
-  defp extract_metadata_from_properties(properties) when is_map(properties) do
+  # Route metadata extraction by version
+  defp extract_metadata_from_properties(properties, 1),
+    do: extract_v1_metadata_from_properties(properties)
+
+  defp extract_metadata_from_properties(properties, _),
+    do: extract_v2_metadata_from_properties(properties)
+
+  # Extract V1 metadata attributes from Notion page properties (original Notion structure).
+  # Property names use CamelCase (no spaces) as found in the actual V1 Notion database.
+  defp extract_v1_metadata_from_properties(properties) when is_map(properties) do
+    %{}
+    # Status & control
+    |> put_if_present(:done?, get_checkbox(properties, "Done?"))
+    |> put_if_present(:lost_data?, get_checkbox(properties, "LostData?"))
+    # Trade classification
+    |> put_if_present(:rank, get_select(properties, "Rank"))
+    |> put_if_present(:setup, get_select(properties, "Setup"))
+    |> put_if_present(:close_trigger, get_select(properties, "CloseTrigger"))
+    |> put_if_present(:sector, get_rollup_first_select(properties, "Sector"))
+    |> put_if_present(:cap_size, get_rollup_first_select(properties, "CapSize"))
+    |> put_if_present(:entry_timeslot, get_select(properties, "Entry Timeslot"))
+    # Boolean flags (V1-specific)
+    |> put_if_present(:operation_mistake?, get_checkbox(properties, "OperationMistake?"))
+    |> put_if_present(:follow_setup?, get_checkbox(properties, "FollowSetup?"))
+    |> put_if_present(:follow_stop_loss_management?, get_checkbox(properties, "FollowStopLossManagement?"))
+    |> put_if_present(:revenge_trade?, get_checkbox(properties, "RevengeTrade?"))
+    |> put_if_present(:fomo?, get_checkbox(properties, "FOMO?"))
+    |> put_if_present(:unnecessary_trade?, get_checkbox(properties, "UnnecessaryTrade?"))
+    # Comments (multi_select joined as comma-separated text)
+    |> put_if_present(:close_time_comment, get_multi_select_text(properties, "CloseTimeComment"))
+  end
+
+  defp extract_v1_metadata_from_properties(_), do: %{}
+
+  # Extract V2 metadata attributes from Notion page properties (enhanced Notion structure).
+  defp extract_v2_metadata_from_properties(properties) when is_map(properties) do
     %{}
     # Status & control
     |> put_if_present(:done?, get_checkbox(properties, "Done?"))
@@ -424,7 +456,7 @@ defmodule Journalex.Notion do
     |> put_if_present(:close_time_comment, get_rich_text(properties, "Close Time Comment"))
   end
 
-  defp extract_metadata_from_properties(_), do: %{}
+  defp extract_v2_metadata_from_properties(_), do: %{}
 
   defp put_if_present(map, _key, nil), do: map
   defp put_if_present(map, key, value), do: Map.put(map, key, value)
@@ -520,6 +552,48 @@ defmodule Journalex.Notion do
 
   defp maybe_put_rich_text(map, _key, _), do: map
 
+  # Extract the first select name from a rollup array property (read-only in Notion).
+  # Shape: %{"rollup" => %{"array" => [%{"select" => %{"name" => "Value"}}]}}
+  defp get_rollup_first_select(properties, key) do
+    case Map.get(properties, key) do
+      %{"rollup" => %{"array" => [%{"select" => %{"name" => name}} | _]}} when is_binary(name) ->
+        name
+
+      _ ->
+        nil
+    end
+  end
+
+  # Join all multi_select option names into a comma-separated string.
+  # Shape: %{"multi_select" => [%{"name" => "A"}, %{"name" => "B"}]}
+  defp get_multi_select_text(properties, key) do
+    case Map.get(properties, key) do
+      %{"multi_select" => options} when is_list(options) and options != [] ->
+        options
+        |> Enum.map(&Map.get(&1, "name"))
+        |> Enum.reject(&is_nil/1)
+        |> Enum.join(", ")
+
+      _ ->
+        nil
+    end
+  end
+
+  # Build a multi_select property from a comma-separated string.
+  defp maybe_put_multi_select(map, _key, nil), do: map
+  defp maybe_put_multi_select(map, _key, ""), do: map
+
+  defp maybe_put_multi_select(map, key, value) when is_binary(value) do
+    options =
+      value
+      |> String.split(",", trim: true)
+      |> Enum.map(fn name -> %{name: String.trim(name)} end)
+
+    Map.put(map, key, %{multi_select: options})
+  end
+
+  defp maybe_put_multi_select(map, _key, _), do: map
+
   # Build Notion properties from trade metadata.
   # Extracts metadata from the trade row and converts it to Notion property format.
   # Only includes non-nil fields to support partial metadata.
@@ -544,24 +618,23 @@ defmodule Journalex.Notion do
     %{}
     # Status & control
     |> maybe_put_checkbox("Done?", get_meta_field(meta, :done?))
-    |> maybe_put_checkbox("Lost Data?", get_meta_field(meta, :lost_data?))
+    |> maybe_put_checkbox("LostData?", get_meta_field(meta, :lost_data?))
     # Trade classification
     |> maybe_put_select("Rank", get_meta_field(meta, :rank))
-    |> maybe_put_rich_text("Setup", get_meta_field(meta, :setup))
-    |> maybe_put_rich_text("Close Trigger", get_meta_field(meta, :close_trigger))
-    |> maybe_put_select("Sector", get_meta_field(meta, :sector))
-    |> maybe_put_select("Cap Size", get_meta_field(meta, :cap_size))
+    |> maybe_put_select("Setup", get_meta_field(meta, :setup))
+    |> maybe_put_select("CloseTrigger", get_meta_field(meta, :close_trigger))
+    # Sector and CapSize are rollups (read-only in Notion) — cannot be written back
     # Time
-    |> maybe_put_rich_text("Entry Timeslot", get_meta_field(meta, :entry_timeslot))
+    |> maybe_put_select("Entry Timeslot", get_meta_field(meta, :entry_timeslot))
     # Boolean flags
-    |> maybe_put_checkbox("Operation Mistake?", get_meta_field(meta, :operation_mistake?))
-    |> maybe_put_checkbox("Follow Setup?", get_meta_field(meta, :follow_setup?))
-    |> maybe_put_checkbox("Follow Stop Loss Management?", get_meta_field(meta, :follow_stop_loss_management?))
-    |> maybe_put_checkbox("Revenge Trade?", get_meta_field(meta, :revenge_trade?))
+    |> maybe_put_checkbox("OperationMistake?", get_meta_field(meta, :operation_mistake?))
+    |> maybe_put_checkbox("FollowSetup?", get_meta_field(meta, :follow_setup?))
+    |> maybe_put_checkbox("FollowStopLossManagement?", get_meta_field(meta, :follow_stop_loss_management?))
+    |> maybe_put_checkbox("RevengeTrade?", get_meta_field(meta, :revenge_trade?))
     |> maybe_put_checkbox("FOMO?", get_meta_field(meta, :fomo?))
-    |> maybe_put_checkbox("Unnecessary Trade?", get_meta_field(meta, :unnecessary_trade?))
-    # Comments
-    |> maybe_put_rich_text("Close Time Comment", get_meta_field(meta, :close_time_comment))
+    |> maybe_put_checkbox("UnnecessaryTrade?", get_meta_field(meta, :unnecessary_trade?))
+    # Comments (multi_select in Notion)
+    |> maybe_put_multi_select("CloseTimeComment", get_meta_field(meta, :close_time_comment))
   end
 
   defp build_v2_metadata_properties(meta) when is_map(meta) do

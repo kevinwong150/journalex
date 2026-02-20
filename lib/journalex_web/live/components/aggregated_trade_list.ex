@@ -124,6 +124,10 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: nil,
     doc: "Event name to emit when metadata form reset is requested"
 
+  attr :on_sync_metadata_event, :string,
+    default: nil,
+    doc: "Event name to emit when sync from Notion is requested for a trade"
+
   attr :global_metadata_version, :integer,
     default: 2,
     doc: "Global version for metadata forms (all rows use same version)"
@@ -555,6 +559,21 @@ defmodule JournalexWeb.AggregatedTradeList do
                   <% end %>
 
                   <%= if @show_metadata_column? do %>
+                    <%# Sync from Notion button — only shown when the trade has a known Notion page %>
+                    <% trade_title = item_ticker(item) <> "@" <> item_datetime_value(item) %>
+                    <% notion_page_id_for_row = Map.get(@page_ids_map || %{}, trade_title) %>
+                    <%= if is_binary(notion_page_id_for_row) and not is_nil(@on_sync_metadata_event) do %>
+                      <div class="flex justify-end mb-2">
+                        <button
+                          type="button"
+                          phx-click={@on_sync_metadata_event}
+                          phx-value-index={idx}
+                          class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded hover:bg-emerald-100 transition"
+                        >
+                          ↙ Sync from Notion
+                        </button>
+                      </div>
+                    <% end %>
                     <.render_metadata_form
                       version={@global_metadata_version}
                       item={item}

@@ -74,7 +74,8 @@ defmodule Journalex.Trades.Metadata.V1 do
       :close_time_comment
     ])
     |> validate_inclusion(:rank, @rank_values)
-    |> validate_inclusion(:cap_size, @cap_size_values)
+    # cap_size is free-text in V1 (no fixed enum)
+    # |> validate_inclusion(:cap_size, @cap_size_values)
   end
 
   @doc """

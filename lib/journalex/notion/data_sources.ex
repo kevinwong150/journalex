@@ -19,6 +19,8 @@ defmodule Journalex.Notion.DataSources do
       iex> DataSources.get_version("xyz789...")
       3
   """
+  def get_version(nil), do: nil
+
   def get_version(data_source_id) when is_binary(data_source_id) do
     all_sources()
     |> Enum.find_value(fn {id, version} ->
@@ -64,6 +66,7 @@ defmodule Journalex.Notion.DataSources do
     config = Application.get_env(:journalex, Journalex.Notion, [])
 
     [
+      {Keyword.get(config, :trades_v1_data_source_id), 1},
       {Keyword.get(config, :trades_v2_data_source_id), 2},
       {Keyword.get(config, :trades_v3_data_source_id), 3}
       # Add more versions here as they're created

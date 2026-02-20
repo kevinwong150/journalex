@@ -1,6 +1,7 @@
 defmodule Journalex.Trades.Trade do
   use Ecto.Schema
   import Ecto.Changeset
+  require Logger
 
   alias Journalex.Trades.Metadata.V1, as: MetadataV1
   alias Journalex.Trades.Metadata.V2, as: MetadataV2
@@ -52,7 +53,8 @@ defmodule Journalex.Trades.Trade do
           case MetadataV1.changeset(%MetadataV1{}, metadata_attrs) |> apply_action(:insert) do
             {:ok, metadata_struct} ->
               put_change(changeset, :metadata, Map.from_struct(metadata_struct))
-            {:error, _} ->
+            {:error, meta_changeset} ->
+              Logger.warning("V1 metadata validation failed: #{inspect(meta_changeset.errors)}")
               changeset
           end
 
@@ -60,7 +62,8 @@ defmodule Journalex.Trades.Trade do
           case MetadataV2.changeset(%MetadataV2{}, metadata_attrs) |> apply_action(:insert) do
             {:ok, metadata_struct} ->
               put_change(changeset, :metadata, Map.from_struct(metadata_struct))
-            {:error, _} ->
+            {:error, meta_changeset} ->
+              Logger.warning("V2 metadata validation failed: #{inspect(meta_changeset.errors)}")
               changeset
           end
 

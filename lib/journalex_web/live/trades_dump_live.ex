@@ -446,6 +446,42 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   @impl true
+  def handle_event("sync_metadata_from_notion", %{"index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    trade = Enum.at(socket.assigns.trades, idx)
+    page_ids = socket.assigns.notion_page_ids || %{}
+
+    title = if trade, do: row_title(trade), else: nil
+    page_id = if title, do: Map.get(page_ids, title), else: nil
+
+    cond do
+      is_nil(trade) ->
+        {:noreply, put_flash(socket, :error, "Trade not found")}
+
+      is_nil(page_id) ->
+        {:noreply,
+         put_flash(socket, :error, "No Notion page found for this trade. Run 'Check Notion' first.")}
+
+      true ->
+        case Notion.sync_metadata_from_notion(trade.id, page_id) do
+          {:ok, updated_trade} ->
+            trades =
+              socket.assigns.trades
+              |> Enum.with_index()
+              |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+            {:noreply,
+             socket
+             |> assign(:trades, trades)
+             |> put_flash(:info, "Metadata synced from Notion")}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Sync failed: #{inspect(reason)}")}
+        end
+    end
+  end
+
+  @impl true
   def handle_event("change_global_version", %{"version" => version_str}, socket) do
     {version, _} = Integer.parse(version_str)
 
@@ -1050,6 +1086,7 @@ defmodule JournalexWeb.TradesDumpLive do
         show_metadata_column?={true}
         on_save_metadata_event="save_metadata"
         on_reset_metadata_event="reset_metadata"
+        on_sync_metadata_event="sync_metadata_from_notion"
         global_metadata_version={@global_metadata_version}
       />
     </div>
