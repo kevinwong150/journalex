@@ -210,13 +210,21 @@ defmodule Journalex.Notion do
           tk_prop => %{rich_text: [%{text: %{content: to_string(ticker)}}]}
         }
 
+        # Entry/Close Timeslot property names differ between V1 and V2
+        version = Map.get(row, :metadata_version) || 2
+        entry_timeslot_prop = if version == 1, do: "Entry Timeslot", else: "EntryTimeslot"
+        close_slot_label = close_timeslot_bucket(row)
+
         extra_props =
           %{}
           |> maybe_put_select("Side", agg_side)
           |> maybe_put_select("Result", result)
           |> maybe_put_number("Realized P/L", realized)
           |> maybe_put_number("Duration", duration_secs)
-          |> maybe_put_select("Entry Timeslot", entry_slot_label)
+          |> maybe_put_select(entry_timeslot_prop, entry_slot_label)
+          |> then(fn props ->
+            if version == 2, do: maybe_put_select(props, "CloseTimeslot", close_slot_label), else: props
+          end)
 
         # Add relation links (TickerLink, DateLink) if page IDs provided via opts
         ticker_page_id = Keyword.get(opts, :ticker_page_id)
@@ -340,12 +348,18 @@ defmodule Journalex.Notion do
         do: Map.put(base_props, tk_prop, %{rich_text: [%{text: %{content: to_string(ticker)}}]}),
         else: base_props
 
+    # Entry/Close Timeslot property names differ between V1 and V2
+    version = Map.get(row, :metadata_version) || 2
+    entry_timeslot_prop = if version == 1, do: "Entry Timeslot", else: "EntryTimeslot"
+    close_slot_label = close_timeslot_bucket(row)
+
     extra_props = %{}
     extra_props = maybe_put_select(extra_props, "Side", normalize_string(agg_side))
     extra_props = maybe_put_select(extra_props, "Result", normalize_string(result))
     extra_props = maybe_put_number(extra_props, "Realized P/L", realized)
     extra_props = maybe_put_number(extra_props, "Duration", duration_secs)
-    extra_props = maybe_put_select(extra_props, "Entry Timeslot", entry_slot_label)
+    extra_props = maybe_put_select(extra_props, entry_timeslot_prop, entry_slot_label)
+    extra_props = if version == 2, do: maybe_put_select(extra_props, "CloseTimeslot", close_slot_label), else: extra_props
 
     # Add metadata fields if present
     metadata_props = build_metadata_properties(row)
@@ -429,44 +443,48 @@ defmodule Journalex.Notion do
   defp extract_v1_metadata_from_properties(_), do: %{}
 
   # Extract V2 metadata attributes from Notion page properties (enhanced Notion structure).
+  # Property names use CamelCase (no spaces) as found in the actual V2 Notion database.
   defp extract_v2_metadata_from_properties(properties) when is_map(properties) do
     %{}
     # Status & control
     |> put_if_present(:done?, get_checkbox(properties, "Done?"))
-    |> put_if_present(:lost_data?, get_checkbox(properties, "Lost Data?"))
+    |> put_if_present(:lost_data?, get_checkbox(properties, "LostData?"))
     # Trade classification
     |> put_if_present(:rank, get_select(properties, "Rank"))
-    |> put_if_present(:setup, get_rich_text(properties, "Setup"))
-    |> put_if_present(:close_trigger, get_rich_text(properties, "Close Trigger"))
-    |> put_if_present(:sector, get_select(properties, "Sector"))
-    |> put_if_present(:cap_size, get_select(properties, "Cap Size"))
+    |> put_if_present(:setup, get_select(properties, "Setup"))
+    |> put_if_present(:close_trigger, get_select(properties, "CloseTrigger"))
+    |> put_if_present(:sector, get_rollup_first_select(properties, "Sector"))
+    |> put_if_present(:cap_size, get_rollup_first_select(properties, "CapSize"))
     # Risk/reward metrics
-    |> put_if_present(:initial_risk_reward_ratio, get_number(properties, "Initial R:R"))
-    |> put_if_present(:best_risk_reward_ratio, get_number(properties, "Best R:R"))
+    |> put_if_present(:initial_risk_reward_ratio, get_number(properties, "InitialRiskRewardRatio"))
+    |> put_if_present(:best_risk_reward_ratio, get_number(properties, "BestRiskRewardRatio"))
     # Position sizing
     |> put_if_present(:size, get_number(properties, "Size"))
-    |> put_if_present(:order_type, get_select(properties, "Order Type"))
+    |> put_if_present(:order_type, get_select(properties, "OrderType"))
+    # Time
+    |> put_if_present(:entry_timeslot, get_select(properties, "EntryTimeslot"))
+    |> put_if_present(:close_timeslot, get_select(properties, "CloseTimeslot"))
     # Boolean flags
-    |> put_if_present(:revenge_trade?, get_checkbox(properties, "Revenge Trade?"))
+    |> put_if_present(:revenge_trade?, get_checkbox(properties, "RevengeTrade?"))
     |> put_if_present(:fomo?, get_checkbox(properties, "FOMO?"))
-    |> put_if_present(:add_size?, get_checkbox(properties, "Add Size?"))
-    |> put_if_present(:adjusted_risk_reward?, get_checkbox(properties, "Adjusted R:R?"))
-    |> put_if_present(:align_with_trend?, get_checkbox(properties, "Align with Trend?"))
-    |> put_if_present(:better_risk_reward_ratio?, get_checkbox(properties, "Better R:R?"))
-    |> put_if_present(:big_picture?, get_checkbox(properties, "Big Picture?"))
-    |> put_if_present(:earning_report?, get_checkbox(properties, "Earning Report?"))
-    |> put_if_present(:follow_up_trial?, get_checkbox(properties, "Follow Up Trial?"))
-    |> put_if_present(:good_lesson?, get_checkbox(properties, "Good Lesson?"))
-    |> put_if_present(:hot_sector?, get_checkbox(properties, "Hot Sector?"))
+    |> put_if_present(:add_size?, get_checkbox(properties, "AddSize?"))
+    |> put_if_present(:adjusted_risk_reward?, get_checkbox(properties, "AdjustedRiskReward?"))
+    |> put_if_present(:align_with_trend?, get_checkbox(properties, "AlignWithTrend?"))
+    |> put_if_present(:better_risk_reward_ratio?, get_checkbox(properties, "BetterRiskRewardRatio?"))
+    |> put_if_present(:big_picture?, get_checkbox(properties, "BigPicture?"))
+    |> put_if_present(:earning_report?, get_checkbox(properties, "EarningReport?"))
+    |> put_if_present(:follow_up_trial?, get_checkbox(properties, "FollowUpTrial?"))
+    |> put_if_present(:good_lesson?, get_checkbox(properties, "GoodLesson?"))
+    |> put_if_present(:hot_sector?, get_checkbox(properties, "HotSector?"))
     |> put_if_present(:momentum?, get_checkbox(properties, "Momentum?"))
     |> put_if_present(:news?, get_checkbox(properties, "News?"))
-    |> put_if_present(:normal_emotion?, get_checkbox(properties, "Normal Emotion?"))
-    |> put_if_present(:operation_mistake?, get_checkbox(properties, "Operation Mistake?"))
+    |> put_if_present(:normal_emotion?, get_checkbox(properties, "NormalEmotion?"))
+    |> put_if_present(:operation_mistake?, get_checkbox(properties, "OperationMistake?"))
     |> put_if_present(:overnight?, get_checkbox(properties, "Overnight?"))
-    |> put_if_present(:overnight_in_purpose?, get_checkbox(properties, "Overnight in Purpose?"))
-    |> put_if_present(:skipped_position?, get_checkbox(properties, "Skipped Position?"))
-    # Comments
-    |> put_if_present(:close_time_comment, get_rich_text(properties, "Close Time Comment"))
+    |> put_if_present(:overnight_in_purpose?, get_checkbox(properties, "OvernightInPurpose?"))
+    |> put_if_present(:skipped_position?, get_checkbox(properties, "SlippedPosition?"))
+    # Comments (multi_select joined as comma-separated text)
+    |> put_if_present(:close_time_comment, get_multi_select_text(properties, "CloseTimeComment"))
   end
 
   defp extract_v2_metadata_from_properties(_), do: %{}
@@ -663,40 +681,42 @@ defmodule Journalex.Notion do
     %{}
     # Status & control
     |> maybe_put_checkbox("Done?", get_meta_field(meta, :done?))
-    |> maybe_put_checkbox("Lost Data?", get_meta_field(meta, :lost_data?))
+    |> maybe_put_checkbox("LostData?", get_meta_field(meta, :lost_data?))
     # Trade classification
     |> maybe_put_select("Rank", get_meta_field(meta, :rank))
-    |> maybe_put_rich_text("Setup", get_meta_field(meta, :setup))
-    |> maybe_put_rich_text("Close Trigger", get_meta_field(meta, :close_trigger))
-    |> maybe_put_select("Sector", get_meta_field(meta, :sector))
-    |> maybe_put_select("Cap Size", get_meta_field(meta, :cap_size))
+    |> maybe_put_select("Setup", get_meta_field(meta, :setup))
+    |> maybe_put_select("CloseTrigger", get_meta_field(meta, :close_trigger))
+    # Sector and CapSize are rollups (read-only in Notion) — cannot be written back
     # Risk/reward metrics
-    |> maybe_put_number("Initial R:R", to_number(get_meta_field(meta, :initial_risk_reward_ratio)))
-    |> maybe_put_number("Best R:R", to_number(get_meta_field(meta, :best_risk_reward_ratio)))
+    |> maybe_put_number("InitialRiskRewardRatio", to_number(get_meta_field(meta, :initial_risk_reward_ratio)))
+    |> maybe_put_number("BestRiskRewardRatio", to_number(get_meta_field(meta, :best_risk_reward_ratio)))
     # Position sizing
     |> maybe_put_number("Size", to_number(get_meta_field(meta, :size)))
-    |> maybe_put_select("Order Type", get_meta_field(meta, :order_type))
+    |> maybe_put_select("OrderType", get_meta_field(meta, :order_type))
+    # Time
+    |> maybe_put_select("EntryTimeslot", get_meta_field(meta, :entry_timeslot))
+    |> maybe_put_select("CloseTimeslot", get_meta_field(meta, :close_timeslot))
     # Boolean flags
-    |> maybe_put_checkbox("Revenge Trade?", get_meta_field(meta, :revenge_trade?))
+    |> maybe_put_checkbox("RevengeTrade?", get_meta_field(meta, :revenge_trade?))
     |> maybe_put_checkbox("FOMO?", get_meta_field(meta, :fomo?))
-    |> maybe_put_checkbox("Add Size?", get_meta_field(meta, :add_size?))
-    |> maybe_put_checkbox("Adjusted R:R?", get_meta_field(meta, :adjusted_risk_reward?))
-    |> maybe_put_checkbox("Align with Trend?", get_meta_field(meta, :align_with_trend?))
-    |> maybe_put_checkbox("Better R:R?", get_meta_field(meta, :better_risk_reward_ratio?))
-    |> maybe_put_checkbox("Big Picture?", get_meta_field(meta, :big_picture?))
-    |> maybe_put_checkbox("Earning Report?", get_meta_field(meta, :earning_report?))
-    |> maybe_put_checkbox("Follow Up Trial?", get_meta_field(meta, :follow_up_trial?))
-    |> maybe_put_checkbox("Good Lesson?", get_meta_field(meta, :good_lesson?))
-    |> maybe_put_checkbox("Hot Sector?", get_meta_field(meta, :hot_sector?))
+    |> maybe_put_checkbox("AddSize?", get_meta_field(meta, :add_size?))
+    |> maybe_put_checkbox("AdjustedRiskReward?", get_meta_field(meta, :adjusted_risk_reward?))
+    |> maybe_put_checkbox("AlignWithTrend?", get_meta_field(meta, :align_with_trend?))
+    |> maybe_put_checkbox("BetterRiskRewardRatio?", get_meta_field(meta, :better_risk_reward_ratio?))
+    |> maybe_put_checkbox("BigPicture?", get_meta_field(meta, :big_picture?))
+    |> maybe_put_checkbox("EarningReport?", get_meta_field(meta, :earning_report?))
+    |> maybe_put_checkbox("FollowUpTrial?", get_meta_field(meta, :follow_up_trial?))
+    |> maybe_put_checkbox("GoodLesson?", get_meta_field(meta, :good_lesson?))
+    |> maybe_put_checkbox("HotSector?", get_meta_field(meta, :hot_sector?))
     |> maybe_put_checkbox("Momentum?", get_meta_field(meta, :momentum?))
     |> maybe_put_checkbox("News?", get_meta_field(meta, :news?))
-    |> maybe_put_checkbox("Normal Emotion?", get_meta_field(meta, :normal_emotion?))
-    |> maybe_put_checkbox("Operation Mistake?", get_meta_field(meta, :operation_mistake?))
+    |> maybe_put_checkbox("NormalEmotion?", get_meta_field(meta, :normal_emotion?))
+    |> maybe_put_checkbox("OperationMistake?", get_meta_field(meta, :operation_mistake?))
     |> maybe_put_checkbox("Overnight?", get_meta_field(meta, :overnight?))
-    |> maybe_put_checkbox("Overnight in Purpose?", get_meta_field(meta, :overnight_in_purpose?))
-    |> maybe_put_checkbox("Skipped Position?", get_meta_field(meta, :skipped_position?))
-    # Comments
-    |> maybe_put_rich_text("Close Time Comment", get_meta_field(meta, :close_time_comment))
+    |> maybe_put_checkbox("OvernightInPurpose?", get_meta_field(meta, :overnight_in_purpose?))
+    |> maybe_put_checkbox("SlippedPosition?", get_meta_field(meta, :skipped_position?))
+    # Comments (multi_select in Notion)
+    |> maybe_put_multi_select("CloseTimeComment", get_meta_field(meta, :close_time_comment))
   end
 
   # Helper to get field from metadata map (supports both atom and string keys)
@@ -715,6 +735,24 @@ defmodule Journalex.Notion do
              dt when is_binary(dt) <- Map.get(open, "datetime"),
              {:ok, entry_dt, _} <- DateTime.from_iso8601(dt) do
           bucket_for_datetime(entry_dt)
+        else
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  # Map the close position datetime from the action chain to a half-hour bucket label.
+  defp close_timeslot_bucket(row) when is_map(row) do
+    case Map.get(row, :action_chain) || Map.get(row, "action_chain") do
+      chain when is_map(chain) ->
+        with close_key when is_binary(close_key) <- find_close_position_key(chain),
+             %{} = close <- Map.get(chain, close_key),
+             dt when is_binary(dt) <- Map.get(close, "datetime"),
+             {:ok, close_dt, _} <- DateTime.from_iso8601(dt) do
+          bucket_for_datetime(close_dt)
         else
           _ -> nil
         end

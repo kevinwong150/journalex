@@ -9,6 +9,7 @@ defmodule JournalexWeb.TradesDumpLive do
   alias JournalexWeb.DumpProgress
   alias Journalex.Notion
   alias Journalex.Notion.Client, as: NotionClient
+  alias Journalex.Notion.DataSources
 
   @dump_max_retries 3
   @supported_versions [1, 2]
@@ -214,7 +215,7 @@ defmodule JournalexWeb.TradesDumpLive do
         msgs -> "Relation caches not loaded — " <> Enum.join(msgs, "; ")
       end
 
-    case list_all_trade_trademarks_with_ids() do
+    case list_all_trade_trademarks_with_ids(socket.assigns.global_metadata_version) do
       {:ok, {trademark_set, id_map}} ->
         now = System.monotonic_time(:millisecond)
 
@@ -549,7 +550,7 @@ defmodule JournalexWeb.TradesDumpLive do
         msgs -> "Relation caches not loaded — " <> Enum.join(msgs, "; ")
       end
 
-    case list_all_trade_trademarks_with_ids() do
+    case list_all_trade_trademarks_with_ids(socket.assigns.global_metadata_version) do
       {:ok, {trademark_set, id_map}} ->
         pairs = Enum.with_index(rows)
 
@@ -754,6 +755,10 @@ defmodule JournalexWeb.TradesDumpLive do
           ticker_page_id = Map.get(socket.assigns.ticker_id_cache, ticker)
           date_page_id = Map.get(socket.assigns.date_id_cache, date_key)
 
+          # Determine which Notion database to use for this row based on its metadata version
+          row_version = Map.get(row, :metadata_version) || socket.assigns.global_metadata_version
+          row_data_source_id = trades_data_source_id_for_version(row_version)
+
           # Fail immediately (no retry) if relation pages are missing
           missing_relations = build_missing_relations_message(ticker, ticker_page_id, date_key, date_page_id)
 
@@ -766,7 +771,7 @@ defmodule JournalexWeb.TradesDumpLive do
                nil, missing_relations}
             else
               case Notion.exists_by_timestamp_and_ticker?(row.datetime, ticker,
-                     data_source_id: trades_data_source_id()
+                     data_source_id: row_data_source_id
                    ) do
                 {:ok, true} ->
                   {Map.put(socket.assigns.row_statuses, idx, :exists), :skipped_exists, rest,
@@ -774,7 +779,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
                 {:ok, false} ->
                   case Notion.create_from_trade(row,
-                         data_source_id: trades_data_source_id(),
+                         data_source_id: row_data_source_id,
                          ticker_page_id: ticker_page_id,
                          date_page_id: date_page_id
                        ) do
@@ -1230,8 +1235,10 @@ defmodule JournalexWeb.TradesDumpLive do
 
   defp dump_metrics(_, _), do: %{}
 
-  defp list_all_trade_trademarks_with_ids do
-    case trades_data_source_id() do
+  defp list_all_trade_trademarks_with_ids(version \\ nil) do
+    id = trades_data_source_id_for_version(version)
+
+    case id do
       nil ->
         {:error, :missing_data_source_id}
 
@@ -1242,11 +1249,18 @@ defmodule JournalexWeb.TradesDumpLive do
     end
   end
 
-  defp trades_data_source_id do
+  # Returns the Notion data source ID for the given metadata version.
+  # Uses DataSources.get_data_source_id/1 when a version is provided,
+  # falling back to the legacy :trades_data_source_id config key.
+  defp trades_data_source_id_for_version(nil) do
     conf = Application.get_env(:journalex, Journalex.Notion, [])
 
     Keyword.get(conf, :trades_data_source_id) ||
       Keyword.get(conf, :activity_statements_data_source_id) || Keyword.get(conf, :data_source_id)
+  end
+
+  defp trades_data_source_id_for_version(version) when is_integer(version) do
+    DataSources.get_data_source_id(version) || trades_data_source_id_for_version(nil)
   end
 
   # --- Helpers for Notion checks ---
@@ -1327,6 +1341,7 @@ defmodule JournalexWeb.TradesDumpLive do
       rank: parse_string(params["rank"]),
       setup: parse_string(params["setup"]),
       close_trigger: parse_string(params["close_trigger"]),
+      order_type: parse_string(params["order_type"]),
       revenge_trade?: params["revenge_trade"] == "true",
       fomo?: params["fomo"] == "true",
       add_size?: params["add_size"] == "true",
@@ -1345,7 +1360,7 @@ defmodule JournalexWeb.TradesDumpLive do
       overnight?: params["overnight"] == "true",
       overnight_in_purpose?: params["overnight_in_purpose"] == "true",
       skipped_position?: params["skipped_position"] == "true",
-      close_time_comment: parse_string(params["close_time_comment"])
+      close_time_comment: join_close_time_comments(params["close_time_comment"])
     }
   end
 
@@ -1358,10 +1373,10 @@ defmodule JournalexWeb.TradesDumpLive do
   end
   defp join_close_time_comments(str) when is_binary(str), do: parse_string(str)
 
-  # Preserve read-only rollup fields (sector, cap_size) from existing metadata
+  # Preserve read-only rollup fields (sector, cap_size) and auto-calculated timeslots from existing metadata
   defp preserve_readonly_fields(attrs, existing) when is_map(attrs) do
     existing = existing || %{}
-    Enum.reduce([:sector, :cap_size, :entry_timeslot], attrs, fn field, acc ->
+    Enum.reduce([:sector, :cap_size, :entry_timeslot, :close_timeslot], attrs, fn field, acc ->
       val = Map.get(existing, field) || Map.get(existing, Atom.to_string(field))
       if val, do: Map.put(acc, field, val), else: acc
     end)

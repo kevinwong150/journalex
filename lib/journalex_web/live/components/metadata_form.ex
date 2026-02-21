@@ -368,6 +368,25 @@ defmodule JournalexWeb.MetadataForm do
             />
           </div>
 
+          <!-- Order Type select -->
+          <div>
+            <label for={"order_type_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
+              Order Type
+            </label>
+            <select
+              name="order_type"
+              id={"order_type_#{@idx}"}
+              class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Select order type...</option>
+              <%= for opt <- order_type_options() do %>
+                <option value={opt} selected={Map.get(metadata, :order_type) == opt || Map.get(metadata, "order_type") == opt}>
+                  {opt}
+                </option>
+              <% end %>
+            </select>
+          </div>
+
           <!-- Entry Timeslot (read-only, auto-calculated from action chain) -->
           <div>
             <label for={"entry_timeslot_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
@@ -377,6 +396,21 @@ defmodule JournalexWeb.MetadataForm do
               type="text"
               id={"entry_timeslot_#{@idx}"}
               value={Map.get(metadata, :entry_timeslot) || Map.get(metadata, "entry_timeslot")}
+              placeholder="Auto-calculated from trade data"
+              disabled
+              class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
+            />
+          </div>
+
+          <!-- Close Timeslot (read-only, auto-calculated from action chain) -->
+          <div>
+            <label for={"close_timeslot_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
+              Close Timeslot <span class="text-xs text-gray-400">(auto)</span>
+            </label>
+            <input
+              type="text"
+              id={"close_timeslot_#{@idx}"}
+              value={Map.get(metadata, :close_timeslot) || Map.get(metadata, "close_timeslot")}
               placeholder="Auto-calculated from trade data"
               disabled
               class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
@@ -406,18 +440,28 @@ defmodule JournalexWeb.MetadataForm do
           </div>
         </div>
 
-        <!-- Close Time Comment -->
+        <!-- Close Time Comment (multi-select) -->
         <div>
-          <label for={"close_time_comment_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
             Close Time Comment
           </label>
-          <textarea
-            name="close_time_comment"
-            id={"close_time_comment_#{@idx}"}
-            rows="3"
-            placeholder="Add notes about the trade close..."
-            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-          >{Map.get(metadata, :close_time_comment) || Map.get(metadata, "close_time_comment")}</textarea>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <%= for option <- close_time_comment_options() do %>
+              <div class="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="close_time_comment[]"
+                  id={"ctc_#{option_id(option)}_#{@idx}"}
+                  value={option}
+                  checked={option in parse_close_time_comments(metadata)}
+                  class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label for={"ctc_#{option_id(option)}_#{@idx}"} class="text-xs text-gray-600">
+                  {option}
+                </label>
+              </div>
+            <% end %>
+          </div>
         </div>
 
         <!-- Action buttons -->
@@ -471,6 +515,14 @@ defmodule JournalexWeb.MetadataForm do
       "Manually - Take Profit",
       "Manually - Stop Loss",
       "Manually - Reverse"
+    ]
+  end
+
+  defp order_type_options do
+    [
+      "Limit Order",
+      "Stop Order",
+      "Market Order"
     ]
   end
 
