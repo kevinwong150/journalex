@@ -133,4 +133,33 @@ defmodule Journalex.Settings do
   def set_auto_check_on_load(value) when is_boolean(value) do
     put(@auto_check_on_load_key, to_string(value))
   end
+
+  # ---------------------------------------------------------------------------
+  # Typed helpers — r_size
+  # ---------------------------------------------------------------------------
+
+  @r_size_key "r_size"
+
+  @doc """
+  Returns the R size (dollar risk per trade).
+  Used to auto-compute position size on losing trades: size = |realized_pl| / r_size.
+  Default: 8.
+  """
+  def get_r_size do
+    case get(@r_size_key) do
+      nil -> 8.0
+      raw ->
+        case Float.parse(raw) do
+          {n, _} -> n
+          :error  -> 8.0
+        end
+    end
+  end
+
+  @doc """
+  Persists the R size setting to the DB.
+  """
+  def set_r_size(value) when is_number(value) do
+    put(@r_size_key, to_string(value))
+  end
 end

@@ -134,7 +134,7 @@ defmodule JournalexWeb.MetadataForm do
             <input
               type="text"
               id={"entry_timeslot_#{@idx}"}
-              value={Map.get(metadata, :entry_timeslot) || Map.get(metadata, "entry_timeslot")}
+              value={Map.get(metadata, :entry_timeslot) || Map.get(metadata, "entry_timeslot") || Journalex.Notion.compute_entry_timeslot(@item)}
               placeholder="Auto-calculated from trade data"
               disabled
               class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
@@ -341,6 +341,65 @@ defmodule JournalexWeb.MetadataForm do
             </div>
           </div>
 
+          <!-- R:R Ratios & Size sliders -->
+          <div class="col-span-full">
+            <span class="block text-sm font-medium text-gray-700 mb-2">R:R &amp; Size</span>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+
+              <!-- Initial R:R -->
+              <div id={"rr_initial_#{@idx}"} phx-hook="RangeNumberSync">
+                <label class="block text-xs text-gray-600 mb-1">Initial R:R</label>
+                <div class="flex items-center gap-2">
+                  <input type="range" min="0" max="20" step="0.01"
+                    value={format_decimal(Map.get(metadata, :initial_risk_reward_ratio) || Map.get(metadata, "initial_risk_reward_ratio"))}
+                    class="flex-1 accent-blue-600 cursor-pointer" />
+                  <input type="number" name="initial_risk_reward_ratio" min="0" step="0.01"
+                    value={format_decimal(Map.get(metadata, :initial_risk_reward_ratio) || Map.get(metadata, "initial_risk_reward_ratio"))}
+                    class="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500" />
+                </div>
+              </div>
+
+              <!-- Best R:R -->
+              <div id={"rr_best_#{@idx}"} phx-hook="RangeNumberSync">
+                <label class="block text-xs text-gray-600 mb-1">Best R:R</label>
+                <div class="flex items-center gap-2">
+                  <input type="range" min="0" max="20" step="0.01"
+                    value={format_decimal(Map.get(metadata, :best_risk_reward_ratio) || Map.get(metadata, "best_risk_reward_ratio"))}
+                    class="flex-1 accent-blue-600 cursor-pointer" />
+                  <input type="number" name="best_risk_reward_ratio" min="0" step="0.01"
+                    value={format_decimal(Map.get(metadata, :best_risk_reward_ratio) || Map.get(metadata, "best_risk_reward_ratio"))}
+                    class="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500" />
+                </div>
+              </div>
+
+              <!-- Size (plain number; auto-fills for losing trades) -->
+              <% r_size = Journalex.Settings.get_r_size() %>
+              <% size_val = compute_size_value(@item, metadata, r_size) %>
+              <% size_auto? = is_auto_size?(@item, metadata) %>
+              <div>
+                <label class="block text-xs text-gray-600 mb-1">Size</label>
+                <input
+                  type="number"
+                  name="size"
+                  min="0"
+                  step="0.01"
+                  value={format_decimal(size_val, "")}
+                  placeholder={if size_auto?, do: "", else: "Enter size..."}
+                  class={[
+                    "w-full px-3 py-1 text-sm border rounded-md text-left focus:ring-blue-500 focus:border-blue-500",
+                    if(size_auto?, do: "border-blue-300 bg-blue-50 text-blue-800", else: "border-gray-300")
+                  ]}
+                />
+                <div :if={size_auto?} class="mt-1 flex items-center gap-1.5 rounded-md bg-blue-100 border border-blue-200 px-2 py-1">
+                  <span class="text-blue-500 text-xs">&#9889;</span>
+                  <span class="text-xs text-blue-700 font-medium">Auto-filled:</span>
+                  <span class="text-xs text-blue-600 font-mono">{auto_size_hint(@item, r_size, size_val)}</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
           <!-- Entry Timeslot (read-only, auto-calculated from action chain) -->
           <div>
             <label for={"entry_timeslot_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
@@ -349,7 +408,7 @@ defmodule JournalexWeb.MetadataForm do
             <input
               type="text"
               id={"entry_timeslot_#{@idx}"}
-              value={Map.get(metadata, :entry_timeslot) || Map.get(metadata, "entry_timeslot")}
+              value={Map.get(metadata, :entry_timeslot) || Map.get(metadata, "entry_timeslot") || Journalex.Notion.compute_entry_timeslot(@item)}
               placeholder="Auto-calculated from trade data"
               disabled
               class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
@@ -364,7 +423,7 @@ defmodule JournalexWeb.MetadataForm do
             <input
               type="text"
               id={"close_timeslot_#{@idx}"}
-              value={Map.get(metadata, :close_timeslot) || Map.get(metadata, "close_timeslot")}
+              value={Map.get(metadata, :close_timeslot) || Map.get(metadata, "close_timeslot") || Journalex.Notion.compute_close_timeslot(@item)}
               placeholder="Auto-calculated from trade data"
               disabled
               class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
@@ -518,7 +577,76 @@ defmodule JournalexWeb.MetadataForm do
       ]}
     ]
   end
+  # Format a Decimal / float / binary field to a 2-decimal string for number inputs.
+  # Defaults to "1.00" when the value is nil.
+  defp format_decimal(nil), do: "1.00"
+  defp format_decimal(%Decimal{} = d) do
+    f = Decimal.to_float(d)
+    :erlang.float_to_binary(f, [{:decimals, 2}])
+  end
+  defp format_decimal(val) do
+    case Float.parse(to_string(val)) do
+      {f, _} -> :erlang.float_to_binary(f, [{:decimals, 2}])
+      :error  -> "1.00"
+    end
+  end
 
+  # 2-arity variant — pass a custom fallback for nil (e.g. "" for optional fields).
+  defp format_decimal(nil, default), do: default
+  defp format_decimal(val, _default), do: format_decimal(val)
+
+  # Display r_size without unnecessary ".0" suffix.
+  defp format_r_size(r) when is_float(r) do
+    if r == trunc(r), do: Integer.to_string(trunc(r)), else: Float.to_string(r)
+  end
+  defp format_r_size(r), do: to_string(r)
+
+  # Auto-compute size for losing trades: |realized_pl| / r_size.
+  # Returns existing size if already set, computed Decimal for losses, nil otherwise.
+  defp compute_size_value(item, metadata, r_size) do
+    existing = Map.get(metadata, :size) || Map.get(metadata, "size")
+    if not is_nil(existing) do
+      existing
+    else
+      result = Map.get(item, :result) || Map.get(item, "result")
+      realized = Map.get(item, :realized_pl) || Map.get(item, "realized_pl")
+      if result == "LOSE" and not is_nil(realized) and r_size > 0 do
+        pl = to_pl_float(realized)
+        computed = Float.round(abs(pl) / r_size, 2)
+        if computed > 0, do: Decimal.from_float(computed), else: nil
+      else
+        nil
+      end
+    end
+  end
+
+  # Returns true when size will be auto-computed (no existing value, trade is a loss).
+  defp is_auto_size?(item, metadata) do
+    is_nil(Map.get(metadata, :size)) and
+      is_nil(Map.get(metadata, "size")) and
+      (Map.get(item, :result) || Map.get(item, "result")) == "LOSE"
+  end
+
+  defp to_pl_float(%Decimal{} = d), do: Decimal.to_float(d)
+  defp to_pl_float(n) when is_number(n), do: n * 1.0
+  defp to_pl_float(s) when is_binary(s) do
+    case Float.parse(s) do
+      {f, _} -> f
+      :error  -> 0.0
+    end
+  end
+  defp to_pl_float(_), do: 0.0
+
+  # Builds a human-readable auto-fill formula for the Size hint strip.
+  # Example output: "|$80.00| ÷ 8 = 10.00"
+  defp auto_size_hint(item, r_size, size_val) do
+    realized = Map.get(item, :realized_pl) || Map.get(item, "realized_pl")
+    pl = abs(to_pl_float(realized))
+    pl_str   = :erlang.float_to_binary(pl, [{:decimals, 2}])
+    r_str    = format_r_size(r_size)
+    size_str = format_decimal(size_val, "?")
+    "|$#{pl_str}| ÷ #{r_str} = #{size_str}"
+  end
   # V2 metadata analysis flags — grouped by theme
   defp v2_flag_groups do
     [
@@ -534,7 +662,7 @@ defmodule JournalexWeb.MetadataForm do
         {"adjusted_risk_reward", "Adjusted R:R"},
         {"add_size", "Add Size"},
         {"follow_up_trial", "Follow Up Trial"},
-        {"skipped_position", "Slipped Position"},
+        {"slipped_position", "Slipped Position"},
         {"operation_mistake", "Operation Mistake"}
       ]},
       {"Reflection", [

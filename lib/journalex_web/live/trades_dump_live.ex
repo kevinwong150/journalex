@@ -1315,6 +1315,15 @@ defmodule JournalexWeb.TradesDumpLive do
   defp parse_string(""), do: nil
   defp parse_string(str) when is_binary(str), do: String.trim(str)
 
+  defp parse_decimal(nil), do: nil
+  defp parse_decimal(""), do: nil
+  defp parse_decimal(str) when is_binary(str) do
+    case Decimal.parse(str) do
+      {d, ""} -> d
+      _       -> nil
+    end
+  end
+
   # Build V1 metadata attributes from form params
   defp build_v1_metadata_attrs(params) do
     %{
@@ -1360,6 +1369,9 @@ defmodule JournalexWeb.TradesDumpLive do
       overnight?: params["overnight"] == "true",
       overnight_in_purpose?: params["overnight_in_purpose"] == "true",
       slipped_position?: params["slipped_position"] == "true",
+      initial_risk_reward_ratio: parse_decimal(params["initial_risk_reward_ratio"]),
+      best_risk_reward_ratio: parse_decimal(params["best_risk_reward_ratio"]),
+      size: parse_decimal(params["size"]),
       close_time_comment: join_close_time_comments(params["close_time_comment"])
     }
   end

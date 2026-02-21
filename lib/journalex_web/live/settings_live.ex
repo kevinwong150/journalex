@@ -9,6 +9,7 @@ defmodule JournalexWeb.SettingsLive do
   def mount(_params, _session, socket) do
     current_version = Settings.get_default_metadata_version()
     auto_check_on_load = Settings.get_auto_check_on_load()
+    r_size = Settings.get_r_size()
 
     socket =
       socket
@@ -16,6 +17,7 @@ defmodule JournalexWeb.SettingsLive do
       |> assign(:supported_versions, @supported_versions)
       |> assign(:default_metadata_version, current_version)
       |> assign(:auto_check_on_load, auto_check_on_load)
+      |> assign(:r_size, r_size)
       |> assign(:save_status, nil)
 
     {:ok, socket}
@@ -31,12 +33,20 @@ defmodule JournalexWeb.SettingsLive do
     # checkbox is only present in params when checked
     auto_check = Map.has_key?(params, "auto_check_on_load")
 
+    r_size =
+      case Float.parse(Map.get(params, "r_size", "8")) do
+        {n, _} -> n
+        :error  -> 8.0
+      end
+
     with {:ok, _} <- Settings.set_default_metadata_version(version),
-         {:ok, _} <- Settings.set_auto_check_on_load(auto_check) do
+         {:ok, _} <- Settings.set_auto_check_on_load(auto_check),
+         {:ok, _} <- Settings.set_r_size(r_size) do
       {:noreply,
        socket
        |> assign(:default_metadata_version, version)
        |> assign(:auto_check_on_load, auto_check)
+       |> assign(:r_size, r_size)
        |> assign(:save_status, :ok)}
     else
       {:error, _changeset} ->

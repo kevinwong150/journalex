@@ -843,6 +843,18 @@ defmodule Journalex.Notion do
   # (no date helper needed for Entry Timeslot; it's a select field now)
 
   # Map a datetime from the first action in the chain to a half-hour bucket label like "0930-1000".
+  @doc """
+  Computes the entry timeslot bucket label from a trade row's action_chain.
+  Returns a string like \"09:30-10:00\" or nil.
+  """
+  def compute_entry_timeslot(row), do: entry_timeslot_bucket(row)
+
+  @doc """
+  Computes the close timeslot bucket label from a trade row's action_chain.
+  Returns a string like \"14:30-15:00\" or nil.
+  """
+  def compute_close_timeslot(row), do: close_timeslot_bucket(row)
+
   defp entry_timeslot_bucket(row) when is_map(row) do
     case Map.get(row, :action_chain) || Map.get(row, "action_chain") do
       chain when is_map(chain) ->

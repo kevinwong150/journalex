@@ -49,6 +49,25 @@
           </p>
         </div>
 
+        <!-- R Size -->
+        <div class="flex flex-col gap-1">
+          <label for="settings_r_size" class="text-sm font-medium text-zinc-700">
+            R Size <span class="text-xs text-zinc-400 font-normal">($ risk per trade)</span>
+          </label>
+          <input
+            type="number"
+            id="settings_r_size"
+            name="settings[r_size]"
+            value={@r_size}
+            min="0.01"
+            step="0.01"
+            class="w-32 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
+          />
+          <p class="text-xs text-zinc-500 mt-1">
+            Auto-fills position size on losing trades: Size = |Realized P/L| &divide; R Size.
+          </p>
+        </div>
+
         <!-- Actions -->
         <div class="flex items-center gap-4 mt-2">
           <button

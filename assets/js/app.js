@@ -181,6 +181,38 @@ Hooks.AggregatedTradeList = {
   }
 }
 
+// Keeps an <input type="range"> and <input type="number"> inside the same container in sync.
+// The number input holds the form value (has a name attribute); the range is for dragging.
+Hooks.RangeNumberSync = {
+  mounted()  { this._setup() },
+  updated()  { this._setup() },
+  _setup() {
+    const range  = this.el.querySelector('input[type="range"]')
+    const number = this.el.querySelector('input[type="number"]')
+    if (!range || !number) return
+
+    const round2 = (v) => {
+      const n = parseFloat(v)
+      return isNaN(n) ? 1 : Math.round(n * 100) / 100
+    }
+
+    const syncFromRange  = () => { number.value = round2(range.value).toFixed(2) }
+    const syncFromNumber = () => {
+      const v = round2(number.value)
+      range.value  = v
+      number.value = v.toFixed(2)
+    }
+
+    // Remove old listeners before re-attaching (safe on updated())
+    if (this._range === range) return
+    this._range  = range
+    this._number = number
+    range.addEventListener('input',  syncFromRange)
+    number.addEventListener('input',  syncFromNumber)
+    number.addEventListener('change', syncFromNumber)
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
