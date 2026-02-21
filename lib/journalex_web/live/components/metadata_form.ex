@@ -54,23 +54,25 @@ defmodule JournalexWeb.MetadataForm do
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <!-- Rank select -->
-          <div>
-            <label for={"rank_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
-              Rank
-            </label>
-            <select
-              name="rank"
-              id={"rank_#{@idx}"}
-              class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-            >
-              <option value="">Select rank...</option>
+          <!-- Rank radio -->
+          <div class="col-span-full">
+            <span class="block text-sm font-medium text-gray-700 mb-1">Rank</span>
+            <div class="flex flex-wrap gap-1.5">
+              <label class="cursor-pointer">
+                <input type="radio" name="rank" value="" checked={(Map.get(metadata, :rank) || Map.get(metadata, "rank")) in [nil, ""]} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">
+                  None
+                </span>
+              </label>
               <%= for rank_val <- v1_rank_options() do %>
-                <option value={rank_val} selected={Map.get(metadata, :rank) == rank_val || Map.get(metadata, "rank") == rank_val}>
-                  {rank_val}
-                </option>
+                <label class="cursor-pointer">
+                  <input type="radio" name="rank" value={rank_val} checked={Map.get(metadata, :rank) == rank_val || Map.get(metadata, "rank") == rank_val} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600 transition">
+                    {rank_val}
+                  </span>
+                </label>
               <% end %>
-            </select>
+            </div>
           </div>
 
           <!-- Setup select -->
@@ -92,23 +94,25 @@ defmodule JournalexWeb.MetadataForm do
             </select>
           </div>
 
-          <!-- Close Trigger select -->
-          <div>
-            <label for={"close_trigger_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
-              Close Trigger
-            </label>
-            <select
-              name="close_trigger"
-              id={"close_trigger_#{@idx}"}
-              class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-            >
-              <option value="">Select close trigger...</option>
+          <!-- Close Trigger radio -->
+          <div class="col-span-full">
+            <span class="block text-sm font-medium text-gray-700 mb-1">Close Trigger</span>
+            <div class="flex flex-wrap gap-1.5">
+              <label class="cursor-pointer">
+                <input type="radio" name="close_trigger" value="" checked={(Map.get(metadata, :close_trigger) || Map.get(metadata, "close_trigger")) in [nil, ""]} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">
+                  None
+                </span>
+              </label>
               <%= for opt <- close_trigger_options() do %>
-                <option value={opt} selected={Map.get(metadata, :close_trigger) == opt || Map.get(metadata, "close_trigger") == opt}>
-                  {opt}
-                </option>
+                <label class="cursor-pointer">
+                  <input type="radio" name="close_trigger" value={opt} checked={Map.get(metadata, :close_trigger) == opt || Map.get(metadata, "close_trigger") == opt} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600 transition">
+                    {opt}
+                  </span>
+                </label>
               <% end %>
-            </select>
+            </div>
           </div>
 
           <!-- Sector (read-only rollup from TickerLink) -->
@@ -276,28 +280,25 @@ defmodule JournalexWeb.MetadataForm do
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <!-- Rank select -->
-          <div>
-            <label for={"rank_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
-              Rank
-            </label>
-            <select
-              name="rank"
-              id={"rank_#{@idx}"}
-              class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Select rank...</option>
+          <!-- Rank radio -->
+          <div class="col-span-full">
+            <span class="block text-sm font-medium text-gray-700 mb-1">Rank</span>
+            <div class="flex flex-wrap gap-1.5">
+              <label class="cursor-pointer">
+                <input type="radio" name="rank" value="" checked={(Map.get(metadata, :rank) || Map.get(metadata, "rank")) in [nil, ""]} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">
+                  None
+                </span>
+              </label>
               <%= for rank_val <- v2_rank_options() do %>
-                <option
-                  value={rank_val}
-                  selected={
-                    Map.get(metadata, :rank) == rank_val || Map.get(metadata, "rank") == rank_val
-                  }
-                >
-                  {rank_val}
-                </option>
+                <label class="cursor-pointer">
+                  <input type="radio" name="rank" value={rank_val} checked={Map.get(metadata, :rank) == rank_val || Map.get(metadata, "rank") == rank_val} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition">
+                    {rank_val}
+                  </span>
+                </label>
               <% end %>
-            </select>
+            </div>
           </div>
 
           <!-- Setup select -->
@@ -319,23 +320,25 @@ defmodule JournalexWeb.MetadataForm do
             </select>
           </div>
 
-          <!-- Close Trigger select -->
-          <div>
-            <label for={"close_trigger_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
-              Close Trigger
-            </label>
-            <select
-              name="close_trigger"
-              id={"close_trigger_#{@idx}"}
-              class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Select close trigger...</option>
+          <!-- Close Trigger radio -->
+          <div class="col-span-full">
+            <span class="block text-sm font-medium text-gray-700 mb-1">Close Trigger</span>
+            <div class="flex flex-wrap gap-1.5">
+              <label class="cursor-pointer">
+                <input type="radio" name="close_trigger" value="" checked={(Map.get(metadata, :close_trigger) || Map.get(metadata, "close_trigger")) in [nil, ""]} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">
+                  None
+                </span>
+              </label>
               <%= for opt <- close_trigger_options() do %>
-                <option value={opt} selected={Map.get(metadata, :close_trigger) == opt || Map.get(metadata, "close_trigger") == opt}>
-                  {opt}
-                </option>
+                <label class="cursor-pointer">
+                  <input type="radio" name="close_trigger" value={opt} checked={Map.get(metadata, :close_trigger) == opt || Map.get(metadata, "close_trigger") == opt} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition">
+                    {opt}
+                  </span>
+                </label>
               <% end %>
-            </select>
+            </div>
           </div>
 
           <!-- Sector (read-only rollup from TickerLink) -->
@@ -368,23 +371,25 @@ defmodule JournalexWeb.MetadataForm do
             />
           </div>
 
-          <!-- Order Type select -->
-          <div>
-            <label for={"order_type_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
-              Order Type
-            </label>
-            <select
-              name="order_type"
-              id={"order_type_#{@idx}"}
-              class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Select order type...</option>
+          <!-- Order Type radio -->
+          <div class="col-span-full">
+            <span class="block text-sm font-medium text-gray-700 mb-1">Order Type</span>
+            <div class="flex flex-wrap gap-1.5">
+              <label class="cursor-pointer">
+                <input type="radio" name="order_type" value="" checked={(Map.get(metadata, :order_type) || Map.get(metadata, "order_type")) in [nil, ""]} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">
+                  None
+                </span>
+              </label>
               <%= for opt <- order_type_options() do %>
-                <option value={opt} selected={Map.get(metadata, :order_type) == opt || Map.get(metadata, "order_type") == opt}>
-                  {opt}
-                </option>
+                <label class="cursor-pointer">
+                  <input type="radio" name="order_type" value={opt} checked={Map.get(metadata, :order_type) == opt || Map.get(metadata, "order_type") == opt} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition">
+                    {opt}
+                  </span>
+                </label>
               <% end %>
-            </select>
+            </div>
           </div>
 
           <!-- Entry Timeslot (read-only, auto-calculated from action chain) -->

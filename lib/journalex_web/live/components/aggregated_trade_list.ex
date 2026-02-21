@@ -1101,6 +1101,9 @@ defmodule JournalexWeb.AggregatedTradeList do
     |> String.trim()
   end
 
+  defp present_string(true), do: "Yes"
+  defp present_string(false), do: "No"
+
   defp present_string(value) when is_atom(value) do
     value
     |> Atom.to_string()
@@ -1166,7 +1169,12 @@ defmodule JournalexWeb.AggregatedTradeList do
 
 
   defp ordered_diff_list(diffs) when is_map(diffs) do
-    order = [:title, :ticker, :side, :result, :realized_pl]
+    order = [
+      :title, :ticker, :side, :result, :realized_pl, :duration,
+      :entry_timeslot, :close_timeslot,
+      :rank, :setup, :close_trigger, :order_type,
+      :done?, :lost_data?, :close_time_comment
+    ]
 
     ordered =
       order
@@ -1190,6 +1198,16 @@ defmodule JournalexWeb.AggregatedTradeList do
   defp diff_field_label(:side), do: "Side"
   defp diff_field_label(:result), do: "Result"
   defp diff_field_label(:realized_pl), do: "Realized P/L"
+  defp diff_field_label(:duration), do: "Duration"
+  defp diff_field_label(:entry_timeslot), do: "Entry timeslot"
+  defp diff_field_label(:close_timeslot), do: "Close timeslot"
+  defp diff_field_label(:close_time_comment), do: "Close time comment"
+  defp diff_field_label(:close_trigger), do: "Close trigger"
+  defp diff_field_label(:order_type), do: "Order type"
+  defp diff_field_label(:fomo?), do: "FOMO?"
+  defp diff_field_label(:initial_risk_reward_ratio), do: "Initial R:R"
+  defp diff_field_label(:best_risk_reward_ratio), do: "Best R:R"
+  defp diff_field_label(:skipped_position?), do: "Slipped position?"
 
   defp diff_field_label(other) when is_atom(other) do
     other

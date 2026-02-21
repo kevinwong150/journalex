@@ -257,7 +257,13 @@ defmodule Journalex.Notion do
   @doc """
   Compare a trade row with a Notion page map and return a map of mismatched fields.
 
-  Compares Title/Datetime/Ticker plus optional Side, Result, Realized P/L when present.
+  Compares base trade fields (Title, Ticker, Side, Result, Realized P/L, Duration,
+  Entry Timeslot) plus all metadata form fields for the trade's version (V1 or V2).
+
+  Entry/Close Timeslot property names are version-aware:
+  - V1: "Entry Timeslot" (with space)
+  - V2: "EntryTimeslot" / "CloseTimeslot" (CamelCase)
+
   Returns a map like `%{field => %{expected: v1, actual: v2}}` or `%{}` if no diffs.
   """
   def diff_trade_vs_page(row, page, opts \\ []) when is_map(row) and is_map(page) do
@@ -277,6 +283,10 @@ defmodule Journalex.Notion do
     realized = to_number(Map.get(row, :realized_pl) || Map.get(row, "realized_pl"))
     duration_secs = row_duration_seconds(row)
     entry_slot_label = entry_timeslot_bucket(row)
+    version = Map.get(row, :metadata_version) || 2
+
+    # Version-aware property names
+    entry_timeslot_prop = if version == 1, do: "Entry Timeslot", else: "EntryTimeslot"
 
     iso = if dt, do: DateTime.to_iso8601(dt), else: nil
     title = if ticker && iso, do: ticker <> "@" <> iso, else: nil
@@ -288,18 +298,56 @@ defmodule Journalex.Notion do
     actual_result = page |> get_in(["properties", "Result", "select", "name"]) || nil
     actual_realized = page |> get_in(["properties", "Realized P/L", "number"]) || nil
     actual_duration = page |> get_in(["properties", "Duration", "number"]) || nil
-    actual_entry_slot = page |> get_in(["properties", "Entry Timeslot", "select", "name"]) || nil
+    actual_entry_slot = page |> get_in(["properties", entry_timeslot_prop, "select", "name"]) || nil
 
-    %{}
-    |> maybe_put_diff(:title, title, actual_title)
-    # Skip datetime mismatches per requirement
-    # |> maybe_put_diff(:datetime, iso, actual_date)
-    |> maybe_put_diff(:ticker, to_string(ticker || ""), actual_ticker)
-    |> maybe_put_diff(:side, normalize_string(agg_side), normalize_string(actual_side))
-    |> maybe_put_diff(:result, normalize_string(result), normalize_string(actual_result))
-    |> maybe_put_diff(:realized_pl, realized, to_number(actual_realized))
-    |> maybe_put_diff(:duration, to_number(duration_secs), to_number(actual_duration))
-    |> maybe_put_diff(:entry_timeslot, entry_slot_label, normalize_string(actual_entry_slot))
+    # Base trade field comparison
+    base_diffs =
+      %{}
+      |> maybe_put_diff(:title, title, actual_title)
+      # Skip datetime mismatches per requirement
+      # |> maybe_put_diff(:datetime, iso, actual_date)
+      |> maybe_put_diff(:ticker, to_string(ticker || ""), actual_ticker)
+      |> maybe_put_diff(:side, normalize_string(agg_side), normalize_string(actual_side))
+      |> maybe_put_diff(:result, normalize_string(result), normalize_string(actual_result))
+      |> maybe_put_diff(:realized_pl, realized, to_number(actual_realized))
+      |> maybe_put_diff(:duration, to_number(duration_secs), to_number(actual_duration))
+      |> maybe_put_diff(:entry_timeslot, entry_slot_label, normalize_string(actual_entry_slot))
+
+    # Add close_timeslot comparison for V2 (computed from action_chain)
+    base_diffs =
+      if version == 2 do
+        close_slot_label = close_timeslot_bucket(row)
+        actual_close_slot = page |> get_in(["properties", "CloseTimeslot", "select", "name"]) || nil
+        maybe_put_diff(base_diffs, :close_timeslot, close_slot_label, normalize_string(actual_close_slot))
+      else
+        base_diffs
+      end
+
+    # Metadata field comparison — compare DB metadata against Notion page properties
+    properties = Map.get(page, "properties", %{})
+    notion_meta = extract_metadata_from_properties(properties, version)
+    db_meta = Map.get(row, :metadata) || %{}
+
+    metadata_diff_fields(version)
+    |> Enum.reduce(base_diffs, fn {field, type}, acc ->
+      db_val = get_meta_field(db_meta, field)
+      notion_val = Map.get(notion_meta, field)
+
+      case type do
+        :boolean ->
+          # Normalize nil to false for checkbox comparison (Notion checkboxes always have a value)
+          maybe_put_diff(acc, field, db_val == true, notion_val == true)
+
+        :select ->
+          maybe_put_diff(acc, field, normalize_string(db_val), normalize_string(notion_val))
+
+        :number ->
+          maybe_put_diff(acc, field, to_number(db_val), to_number(notion_val))
+
+        :multi_select ->
+          maybe_put_diff(acc, field, normalize_multi_select(db_val), normalize_multi_select(notion_val))
+      end
+    end)
   end
 
   @spec update_trade_page(binary(), map()) ::
@@ -550,6 +598,73 @@ defmodule Journalex.Notion do
   end
 
   defp normalize_string(other), do: other
+
+  # Metadata fields to compare per version in diff_trade_vs_page.
+  # Excludes: entry_timeslot/close_timeslot (in base comparison),
+  # sector/cap_size (rollups, read-only), notion_page_id (internal), trademark (title in base).
+  defp metadata_diff_fields(1) do
+    [
+      {:done?, :boolean},
+      {:lost_data?, :boolean},
+      {:rank, :select},
+      {:setup, :select},
+      {:close_trigger, :select},
+      {:operation_mistake?, :boolean},
+      {:follow_setup?, :boolean},
+      {:follow_stop_loss_management?, :boolean},
+      {:revenge_trade?, :boolean},
+      {:fomo?, :boolean},
+      {:unnecessary_trade?, :boolean},
+      {:close_time_comment, :multi_select}
+    ]
+  end
+
+  defp metadata_diff_fields(_version) do
+    [
+      {:done?, :boolean},
+      {:lost_data?, :boolean},
+      {:rank, :select},
+      {:setup, :select},
+      {:close_trigger, :select},
+      {:initial_risk_reward_ratio, :number},
+      {:best_risk_reward_ratio, :number},
+      {:size, :number},
+      {:order_type, :select},
+      {:revenge_trade?, :boolean},
+      {:fomo?, :boolean},
+      {:add_size?, :boolean},
+      {:adjusted_risk_reward?, :boolean},
+      {:align_with_trend?, :boolean},
+      {:better_risk_reward_ratio?, :boolean},
+      {:big_picture?, :boolean},
+      {:earning_report?, :boolean},
+      {:follow_up_trial?, :boolean},
+      {:good_lesson?, :boolean},
+      {:hot_sector?, :boolean},
+      {:momentum?, :boolean},
+      {:news?, :boolean},
+      {:normal_emotion?, :boolean},
+      {:operation_mistake?, :boolean},
+      {:overnight?, :boolean},
+      {:overnight_in_purpose?, :boolean},
+      {:skipped_position?, :boolean},
+      {:close_time_comment, :multi_select}
+    ]
+  end
+
+  # Normalize multi_select strings for order-independent comparison
+  defp normalize_multi_select(nil), do: nil
+  defp normalize_multi_select(""), do: nil
+
+  defp normalize_multi_select(s) when is_binary(s) do
+    s
+    |> String.split(",", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.sort()
+    |> Enum.join(", ")
+  end
+
+  defp normalize_multi_select(_), do: nil
 
   # Helpers to build optional Notion properties safely
   defp maybe_put_select(map, _key, nil), do: map
