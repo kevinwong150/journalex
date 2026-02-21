@@ -40,7 +40,7 @@ defmodule Journalex.Trades.Metadata.V1 do
     field :close_time_comment, :string
   end
 
-  @rank_values ["Not Setup", "C Trade", "B Trade", "A Trade"]
+  @rank_values ["BAD Trade", "C Trade", "B Trade", "A Trade"]
 
   @doc """
   Changeset for V1 metadata.

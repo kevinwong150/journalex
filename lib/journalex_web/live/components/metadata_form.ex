@@ -65,7 +65,7 @@ defmodule JournalexWeb.MetadataForm do
               class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
             >
               <option value="">Select rank...</option>
-              <%= for rank_val <- ["Not Setup", "C Trade", "B Trade", "A Trade"] do %>
+              <%= for rank_val <- v1_rank_options() do %>
                 <option value={rank_val} selected={Map.get(metadata, :rank) == rank_val || Map.get(metadata, "rank") == rank_val}>
                   {rank_val}
                 </option>
@@ -73,78 +73,86 @@ defmodule JournalexWeb.MetadataForm do
             </select>
           </div>
 
-          <!-- Setup input -->
+          <!-- Setup select -->
           <div>
             <label for={"setup_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
               Setup
             </label>
-            <input
-              type="text"
+            <select
               name="setup"
               id={"setup_#{@idx}"}
-              value={Map.get(metadata, :setup) || Map.get(metadata, "setup")}
-              placeholder="e.g., Breakout - Day High/Low"
               class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-            />
+            >
+              <option value="">Select setup...</option>
+              <%= for opt <- setup_options() do %>
+                <option value={opt} selected={Map.get(metadata, :setup) == opt || Map.get(metadata, "setup") == opt}>
+                  {opt}
+                </option>
+              <% end %>
+            </select>
           </div>
 
-          <!-- Close Trigger input -->
+          <!-- Close Trigger select -->
           <div>
             <label for={"close_trigger_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
               Close Trigger
             </label>
-            <input
-              type="text"
+            <select
               name="close_trigger"
               id={"close_trigger_#{@idx}"}
-              value={Map.get(metadata, :close_trigger) || Map.get(metadata, "close_trigger")}
-              placeholder="e.g., Automatically - Take Profit"
               class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-            />
+            >
+              <option value="">Select close trigger...</option>
+              <%= for opt <- close_trigger_options() do %>
+                <option value={opt} selected={Map.get(metadata, :close_trigger) == opt || Map.get(metadata, "close_trigger") == opt}>
+                  {opt}
+                </option>
+              <% end %>
+            </select>
           </div>
 
-          <!-- Sector input -->
+          <!-- Sector (read-only rollup from TickerLink) -->
           <div>
-            <label for={"sector_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
-              Sector
+            <label for={"sector_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
+              Sector <span class="text-xs text-gray-400">(rollup)</span>
             </label>
             <input
               type="text"
-              name="sector"
               id={"sector_#{@idx}"}
               value={Map.get(metadata, :sector) || Map.get(metadata, "sector")}
-              placeholder="e.g., Finance - Bank"
-              class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="Populated via TickerLink"
+              disabled
+              class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
             />
           </div>
 
-          <!-- Cap Size input -->
+          <!-- Cap Size (read-only rollup from TickerLink) -->
           <div>
-            <label for={"cap_size_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
-              Cap Size
+            <label for={"cap_size_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
+              Cap Size <span class="text-xs text-gray-400">(rollup)</span>
             </label>
             <input
               type="text"
-              name="cap_size"
               id={"cap_size_#{@idx}"}
               value={Map.get(metadata, :cap_size) || Map.get(metadata, "cap_size")}
-              placeholder="e.g., > 100B"
-              class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="Populated via TickerLink"
+              disabled
+              class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
             />
           </div>
 
-          <!-- Entry Timeslot input -->
+          <!-- Entry Timeslot (read-only, auto-calculated from action chain) -->
           <div>
-            <label for={"entry_timeslot_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
-              Entry Timeslot
+            <label for={"entry_timeslot_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
+              Entry Timeslot <span class="text-xs text-gray-400">(auto)</span>
             </label>
             <input
               type="text"
-              name="entry_timeslot"
               id={"entry_timeslot_#{@idx}"}
               value={Map.get(metadata, :entry_timeslot) || Map.get(metadata, "entry_timeslot")}
-              placeholder="e.g., 1300-1330"
-              class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="Auto-calculated from trade data"
+              disabled
+              class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
             />
           </div>
         </div>
@@ -171,18 +179,28 @@ defmodule JournalexWeb.MetadataForm do
           </div>
         </div>
 
-        <!-- Close Time Comment -->
+        <!-- Close Time Comment (multi-select) -->
         <div>
-          <label for={"close_time_comment_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
             Close Time Comment
           </label>
-          <textarea
-            name="close_time_comment"
-            id={"close_time_comment_#{@idx}"}
-            rows="3"
-            placeholder="Add notes about the trade close..."
-            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-          >{Map.get(metadata, :close_time_comment) || Map.get(metadata, "close_time_comment")}</textarea>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <%= for option <- close_time_comment_options() do %>
+              <div class="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="close_time_comment[]"
+                  id={"ctc_#{option_id(option)}_#{@idx}"}
+                  value={option}
+                  checked={option in parse_close_time_comments(metadata)}
+                  class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <label for={"ctc_#{option_id(option)}_#{@idx}"} class="text-xs text-gray-600">
+                  {option}
+                </label>
+              </div>
+            <% end %>
+          </div>
         </div>
 
         <!-- Action buttons -->
@@ -269,7 +287,7 @@ defmodule JournalexWeb.MetadataForm do
               class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="">Select rank...</option>
-              <%= for rank_val <- ["Not Setup", "C Trade", "B Trade", "A Trade"] do %>
+              <%= for rank_val <- v2_rank_options() do %>
                 <option
                   value={rank_val}
                   selected={
@@ -282,78 +300,86 @@ defmodule JournalexWeb.MetadataForm do
             </select>
           </div>
 
-          <!-- Setup input -->
+          <!-- Setup select -->
           <div>
             <label for={"setup_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
               Setup
             </label>
-            <input
-              type="text"
+            <select
               name="setup"
               id={"setup_#{@idx}"}
-              value={Map.get(metadata, :setup) || Map.get(metadata, "setup")}
-              placeholder="e.g., Breakout - Day High/Low"
               class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-            />
+            >
+              <option value="">Select setup...</option>
+              <%= for opt <- setup_options() do %>
+                <option value={opt} selected={Map.get(metadata, :setup) == opt || Map.get(metadata, "setup") == opt}>
+                  {opt}
+                </option>
+              <% end %>
+            </select>
           </div>
 
-          <!-- Close Trigger input -->
+          <!-- Close Trigger select -->
           <div>
             <label for={"close_trigger_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
               Close Trigger
             </label>
-            <input
-              type="text"
+            <select
               name="close_trigger"
               id={"close_trigger_#{@idx}"}
-              value={Map.get(metadata, :close_trigger) || Map.get(metadata, "close_trigger")}
-              placeholder="e.g., Automatically - Take Profit"
               class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-            />
+            >
+              <option value="">Select close trigger...</option>
+              <%= for opt <- close_trigger_options() do %>
+                <option value={opt} selected={Map.get(metadata, :close_trigger) == opt || Map.get(metadata, "close_trigger") == opt}>
+                  {opt}
+                </option>
+              <% end %>
+            </select>
           </div>
 
-          <!-- Sector input -->
+          <!-- Sector (read-only rollup from TickerLink) -->
           <div>
-            <label for={"sector_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
-              Sector
+            <label for={"sector_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
+              Sector <span class="text-xs text-gray-400">(rollup)</span>
             </label>
             <input
               type="text"
-              name="sector"
               id={"sector_#{@idx}"}
               value={Map.get(metadata, :sector) || Map.get(metadata, "sector")}
-              placeholder="e.g., Technology"
-              class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Populated via TickerLink"
+              disabled
+              class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
             />
           </div>
 
-          <!-- Cap Size input -->
+          <!-- Cap Size (read-only rollup from TickerLink) -->
           <div>
-            <label for={"cap_size_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
-              Cap Size
+            <label for={"cap_size_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
+              Cap Size <span class="text-xs text-gray-400">(rollup)</span>
             </label>
             <input
               type="text"
-              name="cap_size"
               id={"cap_size_#{@idx}"}
               value={Map.get(metadata, :cap_size) || Map.get(metadata, "cap_size")}
-              placeholder="e.g., Large"
-              class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Populated via TickerLink"
+              disabled
+              class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
             />
           </div>
 
-          <!-- Entry Timeslot input -->
+          <!-- Entry Timeslot (read-only, auto-calculated from action chain) -->
           <div>
-            <label for={"entry_timeslot_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">
-              Entry Timeslot
+            <label for={"entry_timeslot_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
+              Entry Timeslot <span class="text-xs text-gray-400">(auto)</span>
             </label>
             <input
               type="text"
-              name="entry_timeslot"
               id={"entry_timeslot_#{@idx}"}
               value={Map.get(metadata, :entry_timeslot) || Map.get(metadata, "entry_timeslot")}
-              placeholder="e.g., 1300-1330"
-              class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Auto-calculated from trade data"
+              disabled
+              class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
             />
           </div>
         </div>
@@ -416,6 +442,70 @@ defmodule JournalexWeb.MetadataForm do
       </form>
     </div>
     """
+  end
+
+  # --- Option lists matching Notion select/multi_select fields ---
+
+  defp v1_rank_options, do: ["BAD Trade", "C Trade", "B Trade", "A Trade"]
+  defp v2_rank_options, do: ["Not Setup", "C Trade", "B Trade", "A Trade"]
+
+  defp setup_options do
+    [
+      "Trend Continuation - MACD",
+      "Reversal - Double Top/Bottom",
+      "Reversal - Double Top/Bottom - Pullback Reversal",
+      "Reversal - Gravestone Doji",
+      "Reversal - Exhausted Pressure",
+      "Reversal - Three inside down",
+      "Reversal - Day High/Low",
+      "Breakout - Day High/Low",
+      "Bouncy Ball - Big Seller/Buyer",
+      "Not Setup"
+    ]
+  end
+
+  defp close_trigger_options do
+    [
+      "Automatically - Take Profit",
+      "Automatically - Stop Loss",
+      "Manually - Take Profit",
+      "Manually - Stop Loss",
+      "Manually - Reverse"
+    ]
+  end
+
+  defp entry_timeslot_options do
+    [
+      "0930-1000", "1000-1030", "1030-1100", "1100-1130", "1130-1200",
+      "1200-1230", "1230-1300", "1300-1330", "1330-1400", "1400-1430",
+      "1430-1500", "1500-1530", "1530-1600", "1600-1630", "1630-1700"
+    ]
+  end
+
+  defp close_time_comment_options do
+    [
+      "Will hit take profit if not close",
+      "Will hit stop loss if not close",
+      "Good close",
+      "Should manually close earlier",
+      "Too late",
+      "Too early",
+      "Admit failure",
+      "Good close to lock profit",
+      "Dangerous play",
+      "Adjusted stop loss"
+    ]
+  end
+
+  # Parse comma-separated close_time_comment string into a list for checkbox matching
+  defp parse_close_time_comments(metadata) do
+    raw = Map.get(metadata, :close_time_comment) || Map.get(metadata, "close_time_comment") || ""
+    raw |> String.split(",", trim: true) |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+  end
+
+  # Convert option string to a safe HTML id fragment
+  defp option_id(str) when is_binary(str) do
+    str |> String.downcase() |> String.replace(~r/[^a-z0-9]+/, "_") |> String.trim("_")
   end
 
   # V1 metadata characteristic flags

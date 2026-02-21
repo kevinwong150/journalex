@@ -417,6 +417,9 @@ defmodule JournalexWeb.TradesDumpLive do
         _ -> %{}
       end
 
+      # Preserve read-only rollup fields from existing metadata
+      metadata_attrs = preserve_readonly_fields(metadata_attrs, trade.metadata)
+
       # Update trade in database with global version
       case Journalex.Trades.update_trade(trade, %{
         metadata: metadata_attrs,
@@ -1305,16 +1308,13 @@ defmodule JournalexWeb.TradesDumpLive do
       rank: parse_string(params["rank"]),
       setup: parse_string(params["setup"]),
       close_trigger: parse_string(params["close_trigger"]),
-      sector: parse_string(params["sector"]),
-      cap_size: parse_string(params["cap_size"]),
-      entry_timeslot: parse_string(params["entry_timeslot"]),
       operation_mistake?: params["operation_mistake"] == "true",
       follow_setup?: params["follow_setup"] == "true",
       follow_stop_loss_management?: params["follow_stop_loss_management"] == "true",
       revenge_trade?: params["revenge_trade"] == "true",
       fomo?: params["fomo"] == "true",
       unnecessary_trade?: params["unnecessary_trade"] == "true",
-      close_time_comment: parse_string(params["close_time_comment"])
+      close_time_comment: join_close_time_comments(params["close_time_comment"])
     }
   end
 
@@ -1326,9 +1326,6 @@ defmodule JournalexWeb.TradesDumpLive do
       rank: parse_string(params["rank"]),
       setup: parse_string(params["setup"]),
       close_trigger: parse_string(params["close_trigger"]),
-      sector: parse_string(params["sector"]),
-      cap_size: parse_string(params["cap_size"]),
-      entry_timeslot: parse_string(params["entry_timeslot"]),
       revenge_trade?: params["revenge_trade"] == "true",
       fomo?: params["fomo"] == "true",
       add_size?: params["add_size"] == "true",
@@ -1350,4 +1347,23 @@ defmodule JournalexWeb.TradesDumpLive do
       close_time_comment: parse_string(params["close_time_comment"])
     }
   end
+
+  # Join multi-checkbox close_time_comment values into comma-separated string
+  defp join_close_time_comments(nil), do: nil
+  defp join_close_time_comments([]), do: nil
+  defp join_close_time_comments(list) when is_list(list) do
+    joined = list |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == "")) |> Enum.join(", ")
+    if joined == "", do: nil, else: joined
+  end
+  defp join_close_time_comments(str) when is_binary(str), do: parse_string(str)
+
+  # Preserve read-only rollup fields (sector, cap_size) from existing metadata
+  defp preserve_readonly_fields(attrs, existing) when is_map(attrs) do
+    existing = existing || %{}
+    Enum.reduce([:sector, :cap_size, :entry_timeslot], attrs, fn field, acc ->
+      val = Map.get(existing, field) || Map.get(existing, Atom.to_string(field))
+      if val, do: Map.put(acc, field, val), else: acc
+    end)
+  end
+  defp preserve_readonly_fields(attrs, _), do: attrs
 end
