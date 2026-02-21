@@ -1359,7 +1359,7 @@ defmodule JournalexWeb.TradesDumpLive do
       operation_mistake?: params["operation_mistake"] == "true",
       overnight?: params["overnight"] == "true",
       overnight_in_purpose?: params["overnight_in_purpose"] == "true",
-      skipped_position?: params["skipped_position"] == "true",
+      slipped_position?: params["slipped_position"] == "true",
       close_time_comment: join_close_time_comments(params["close_time_comment"])
     }
   end

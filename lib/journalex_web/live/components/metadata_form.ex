@@ -21,36 +21,17 @@ defmodule JournalexWeb.MetadataForm do
       <form phx-submit={@on_save_event} phx-value-index={@idx} class="space-y-4">
         <% metadata = Map.get(@item, :metadata) || %{} %>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <!-- Done checkbox -->
-          <div class="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              name="done"
-              id={"done_#{@idx}"}
-              value="true"
-              checked={Map.get(metadata, :done?) || Map.get(metadata, "done?")}
-              class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-            />
-            <label for={"done_#{@idx}"} class="text-sm font-medium text-gray-700">
-              Done
-            </label>
-          </div>
-
-          <!-- Lost Data checkbox -->
-          <div class="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              name="lost_data"
-              id={"lost_data_#{@idx}"}
-              value="true"
-              checked={Map.get(metadata, :lost_data?) || Map.get(metadata, "lost_data?")}
-              class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-            />
-            <label for={"lost_data_#{@idx}"} class="text-sm font-medium text-gray-700">
-              Lost Data
-            </label>
-          </div>
+        <div class="flex flex-wrap gap-1.5">
+          <!-- Done pill -->
+          <label class="cursor-pointer">
+            <input type="checkbox" name="done" value="true" checked={Map.get(metadata, :done?) || Map.get(metadata, "done?")} class="sr-only peer" />
+            <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600 transition">Done</span>
+          </label>
+          <!-- Lost Data pill -->
+          <label class="cursor-pointer">
+            <input type="checkbox" name="lost_data" value="true" checked={Map.get(metadata, :lost_data?) || Map.get(metadata, "lost_data?")} class="sr-only peer" />
+            <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600 transition">Lost Data</span>
+          </label>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -164,20 +145,18 @@ defmodule JournalexWeb.MetadataForm do
         <!-- Trade Characteristics -->
         <div>
           <h5 class="text-sm font-medium text-gray-700 mb-2">Trade Characteristics</h5>
-          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-            <%= for {flag_name, label} <- v1_flags() do %>
-              <div class="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  name={flag_name}
-                  id={"#{flag_name}_#{@idx}"}
-                  value="true"
-                  checked={Map.get(metadata, String.to_atom(flag_name <> "?")) || Map.get(metadata, flag_name <> "?")}
-                  class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                />
-                <label for={"#{flag_name}_#{@idx}"} class="text-xs text-gray-600">
-                  {label}
-                </label>
+          <div class="space-y-2">
+            <%= for {group_label, flags} <- v1_flag_groups() do %>
+              <div class="rounded border border-indigo-100 bg-white px-3 py-2">
+                <span class="block text-xs font-semibold uppercase tracking-wide text-indigo-400 mb-1.5">{group_label}</span>
+                <div class="flex flex-wrap gap-1.5">
+                  <%= for {flag_name, label} <- flags do %>
+                    <label class="cursor-pointer">
+                      <input type="checkbox" name={flag_name} value="true" checked={Map.get(metadata, String.to_atom(flag_name <> "?")) || Map.get(metadata, flag_name <> "?")} class="sr-only peer" />
+                      <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600 transition">{label}</span>
+                    </label>
+                  <% end %>
+                </div>
               </div>
             <% end %>
           </div>
@@ -185,24 +164,13 @@ defmodule JournalexWeb.MetadataForm do
 
         <!-- Close Time Comment (multi-select) -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">
-            Close Time Comment
-          </label>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Close Time Comment</label>
+          <div class="flex flex-wrap gap-1.5">
             <%= for option <- close_time_comment_options() do %>
-              <div class="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  name="close_time_comment[]"
-                  id={"ctc_#{option_id(option)}_#{@idx}"}
-                  value={option}
-                  checked={option in parse_close_time_comments(metadata)}
-                  class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                />
-                <label for={"ctc_#{option_id(option)}_#{@idx}"} class="text-xs text-gray-600">
-                  {option}
-                </label>
-              </div>
+              <label class="cursor-pointer">
+                <input type="checkbox" name="close_time_comment[]" value={option} checked={option in parse_close_time_comments(metadata)} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600 transition">{option}</span>
+              </label>
             <% end %>
           </div>
         </div>
@@ -247,36 +215,17 @@ defmodule JournalexWeb.MetadataForm do
       <form phx-submit={@on_save_event} phx-value-index={@idx} class="space-y-4">
         <% metadata = Map.get(@item, :metadata) || %{} %>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <!-- Done checkbox -->
-          <div class="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              name="done"
-              id={"done_#{@idx}"}
-              value="true"
-              checked={Map.get(metadata, :done?) || Map.get(metadata, "done?")}
-              class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-            />
-            <label for={"done_#{@idx}"} class="text-sm font-medium text-gray-700">
-              Done
-            </label>
-          </div>
-
-          <!-- Lost Data checkbox -->
-          <div class="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              name="lost_data"
-              id={"lost_data_#{@idx}"}
-              value="true"
-              checked={Map.get(metadata, :lost_data?) || Map.get(metadata, "lost_data?")}
-              class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-            />
-            <label for={"lost_data_#{@idx}"} class="text-sm font-medium text-gray-700">
-              Lost Data
-            </label>
-          </div>
+        <div class="flex flex-wrap gap-1.5">
+          <!-- Done pill -->
+          <label class="cursor-pointer">
+            <input type="checkbox" name="done" value="true" checked={Map.get(metadata, :done?) || Map.get(metadata, "done?")} class="sr-only peer" />
+            <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition">Done</span>
+          </label>
+          <!-- Lost Data pill -->
+          <label class="cursor-pointer">
+            <input type="checkbox" name="lost_data" value="true" checked={Map.get(metadata, :lost_data?) || Map.get(metadata, "lost_data?")} class="sr-only peer" />
+            <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition">Lost Data</span>
+          </label>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -426,20 +375,18 @@ defmodule JournalexWeb.MetadataForm do
         <!-- Trade Analysis Flags -->
         <div>
           <h5 class="text-sm font-medium text-gray-700 mb-2">Trade Analysis</h5>
-          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-            <%= for {flag_name, label} <- v2_flags() do %>
-              <div class="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  name={flag_name}
-                  id={"#{flag_name}_#{@idx}"}
-                  value="true"
-                  checked={Map.get(metadata, String.to_atom(flag_name <> "?")) || Map.get(metadata, flag_name <> "?")}
-                  class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label for={"#{flag_name}_#{@idx}"} class="text-xs text-gray-600">
-                  {label}
-                </label>
+          <div class="space-y-2">
+            <%= for {group_label, flags} <- v2_flag_groups() do %>
+              <div class="rounded border border-blue-100 bg-white px-3 py-2">
+                <span class="block text-xs font-semibold uppercase tracking-wide text-blue-400 mb-1.5">{group_label}</span>
+                <div class="flex flex-wrap gap-1.5">
+                  <%= for {flag_name, label} <- flags do %>
+                    <label class="cursor-pointer">
+                      <input type="checkbox" name={flag_name} value="true" checked={Map.get(metadata, String.to_atom(flag_name <> "?")) || Map.get(metadata, flag_name <> "?")} class="sr-only peer" />
+                      <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition">{label}</span>
+                    </label>
+                  <% end %>
+                </div>
               </div>
             <% end %>
           </div>
@@ -447,24 +394,13 @@ defmodule JournalexWeb.MetadataForm do
 
         <!-- Close Time Comment (multi-select) -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">
-            Close Time Comment
-          </label>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Close Time Comment</label>
+          <div class="flex flex-wrap gap-1.5">
             <%= for option <- close_time_comment_options() do %>
-              <div class="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  name="close_time_comment[]"
-                  id={"ctc_#{option_id(option)}_#{@idx}"}
-                  value={option}
-                  checked={option in parse_close_time_comments(metadata)}
-                  class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label for={"ctc_#{option_id(option)}_#{@idx}"} class="text-xs text-gray-600">
-                  {option}
-                </label>
-              </div>
+              <label class="cursor-pointer">
+                <input type="checkbox" name="close_time_comment[]" value={option} checked={option in parse_close_time_comments(metadata)} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition">{option}</span>
+              </label>
             <% end %>
           </div>
         </div>
@@ -496,7 +432,7 @@ defmodule JournalexWeb.MetadataForm do
   # --- Option lists matching Notion select/multi_select fields ---
 
   defp v1_rank_options, do: ["BAD Trade", "C Trade", "B Trade", "A Trade"]
-  defp v2_rank_options, do: ["Not Setup", "C Trade", "B Trade", "A Trade"]
+  defp v2_rank_options, do: ["Bad Setup", "Not Setup", "C Trade", "B Trade", "A Trade"]
 
   defp setup_options do
     [
@@ -565,39 +501,53 @@ defmodule JournalexWeb.MetadataForm do
     str |> String.downcase() |> String.replace(~r/[^a-z0-9]+/, "_") |> String.trim("_")
   end
 
-  # V1 metadata characteristic flags
-  defp v1_flags do
+  # V1 metadata characteristic flags — grouped by theme
+  defp v1_flag_groups do
     [
-      {"operation_mistake", "Operation Mistake"},
-      {"follow_setup", "Follow Setup"},
-      {"follow_stop_loss_management", "Follow Stop Loss Mgmt"},
-      {"revenge_trade", "Revenge Trade"},
-      {"fomo", "FOMO"},
-      {"unnecessary_trade", "Unnecessary Trade"}
+      {"Discipline", [
+        {"follow_setup", "Follow Setup"},
+        {"follow_stop_loss_management", "Follow SL Management"}
+      ]},
+      {"Psychology", [
+        {"revenge_trade", "Revenge Trade"},
+        {"fomo", "FOMO"},
+        {"unnecessary_trade", "Unnecessary Trade"}
+      ]},
+      {"Execution", [
+        {"operation_mistake", "Operation Mistake"}
+      ]}
     ]
   end
 
-  # V2 metadata analysis flags
-  defp v2_flags do
+  # V2 metadata analysis flags — grouped by theme
+  defp v2_flag_groups do
     [
-      {"revenge_trade", "Revenge Trade"},
-      {"fomo", "FOMO"},
-      {"add_size", "Add Size"},
-      {"adjusted_risk_reward", "Adjusted R:R"},
-      {"align_with_trend", "Align w/ Trend"},
-      {"better_risk_reward_ratio", "Better R:R"},
-      {"big_picture", "Big Picture"},
-      {"earning_report", "Earning Report"},
-      {"follow_up_trial", "Follow Up Trial"},
-      {"good_lesson", "Good Lesson"},
-      {"hot_sector", "Hot Sector"},
-      {"momentum", "Momentum"},
-      {"news", "News"},
-      {"normal_emotion", "Normal Emotion"},
-      {"operation_mistake", "Operation Mistake"},
-      {"overnight", "Overnight"},
-      {"overnight_in_purpose", "Overnight in Purpose"},
-      {"skipped_position", "Skipped Position"}
+      {"Setup Context", [
+        {"align_with_trend", "Align w/ Trend"},
+        {"big_picture", "Big Picture"},
+        {"hot_sector", "Hot Sector"},
+        {"momentum", "Momentum"},
+        {"news", "News"},
+        {"earning_report", "Earning Report"}
+      ]},
+      {"Execution", [
+        {"adjusted_risk_reward", "Adjusted R:R"},
+        {"add_size", "Add Size"},
+        {"follow_up_trial", "Follow Up Trial"},
+        {"skipped_position", "Slipped Position"},
+        {"operation_mistake", "Operation Mistake"}
+      ]},
+      {"Reflection", [
+        {"normal_emotion", "Normal Emotion"},
+        {"good_lesson", "Good Lesson"},
+        {"better_risk_reward_ratio", "Better R:R"}
+      ]},
+      {"Discipline", [
+        {"revenge_trade", "Revenge Trade"},
+        {"fomo", "FOMO"},
+        {"overnight", "Overnight"},
+        {"overnight_in_purpose", "Overnight in Purpose"}
+      ]}
     ]
   end
 end

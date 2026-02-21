@@ -1207,7 +1207,7 @@ defmodule JournalexWeb.AggregatedTradeList do
   defp diff_field_label(:fomo?), do: "FOMO?"
   defp diff_field_label(:initial_risk_reward_ratio), do: "Initial R:R"
   defp diff_field_label(:best_risk_reward_ratio), do: "Best R:R"
-  defp diff_field_label(:skipped_position?), do: "Slipped position?"
+  defp diff_field_label(:slipped_position?), do: "Slipped position?"
 
   defp diff_field_label(other) when is_atom(other) do
     other

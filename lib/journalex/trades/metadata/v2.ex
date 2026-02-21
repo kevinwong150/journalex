@@ -59,7 +59,7 @@ defmodule Journalex.Trades.Metadata.V2 do
     field :operation_mistake?, :boolean, default: false
     field :overnight?, :boolean, default: false
     field :overnight_in_purpose?, :boolean, default: false
-    field :skipped_position?, :boolean, default: false
+    field :slipped_position?, :boolean, default: false
 
     # Comments & notes
     field :close_time_comment, :string
@@ -69,7 +69,7 @@ defmodule Journalex.Trades.Metadata.V2 do
     # field :ticker_link, :string
   end
 
-  @rank_values ["Not Setup", "C Trade", "B Trade", "A Trade"]
+  @rank_values ["Bad Setup", "Not Setup", "C Trade", "B Trade", "A Trade"]
   # @cap_size_values ["Large", "Mid", "Small"]
 
   @doc """
@@ -115,7 +115,7 @@ defmodule Journalex.Trades.Metadata.V2 do
       :operation_mistake?,
       :overnight?,
       :overnight_in_purpose?,
-      :skipped_position?,
+      :slipped_position?,
       :close_time_comment,
       # :date_link,
       # :ticker_link
