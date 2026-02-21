@@ -33,6 +33,9 @@ defmodule JournalexWeb.Router do
     # Trades dump page
     live "/trade/dump", TradesDumpLive
 
+    # Settings page
+    live "/settings", SettingsLive
+
     # Saved statements pages
     get "/activity_statement/all", ActivityStatementController, :index
     get "/activity_statement/:id", ActivityStatementController, :show

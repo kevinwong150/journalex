@@ -70,11 +70,12 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:update_finished_at_mono, nil)
       |> assign(:update_elapsed_ms, 0)
       |> assign(:update_timer_ref, nil)
-      # Global metadata version for all forms
-      |> assign(:global_metadata_version, Application.get_env(:journalex, :default_metadata_version, 2))
+      # Global metadata version for all forms — DB wins, app config is fallback
+      |> assign(:global_metadata_version, Journalex.Settings.get_default_metadata_version())
       |> assign(:supported_versions, @supported_versions)
 
-    if connected?(socket), do: send(self(), :auto_check_notion)
+    if connected?(socket) && Journalex.Settings.get_auto_check_on_load(),
+      do: send(self(), :auto_check_notion)
 
     {:ok, socket}
   end
