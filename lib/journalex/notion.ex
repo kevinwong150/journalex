@@ -218,12 +218,25 @@ defmodule Journalex.Notion do
           |> maybe_put_number("Duration", duration_secs)
           |> maybe_put_select("Entry Timeslot", entry_slot_label)
 
+        # Add relation links (TickerLink, DateLink) if page IDs provided via opts
+        ticker_page_id = Keyword.get(opts, :ticker_page_id)
+        date_page_id = Keyword.get(opts, :date_page_id)
+
+        relation_props =
+          %{}
+          |> maybe_put_relation("TickerLink", ticker_page_id)
+          |> maybe_put_relation("DateLink", date_page_id)
+
         # Add metadata fields if present
         metadata_props = build_metadata_properties(row)
 
         payload = %{
           "parent" => %{"data_source_id" => data_source_id},
-          "properties" => base_props |> Map.merge(extra_props) |> Map.merge(metadata_props)
+          "properties" =>
+            base_props
+            |> Map.merge(extra_props)
+            |> Map.merge(relation_props)
+            |> Map.merge(metadata_props)
         }
 
         case Client.create_page(payload) do
@@ -551,6 +564,15 @@ defmodule Journalex.Notion do
   end
 
   defp maybe_put_rich_text(map, _key, _), do: map
+
+  defp maybe_put_relation(map, _key, nil), do: map
+  defp maybe_put_relation(map, _key, ""), do: map
+
+  defp maybe_put_relation(map, key, page_id) when is_binary(page_id) do
+    Map.put(map, key, %{relation: [%{id: page_id}]})
+  end
+
+  defp maybe_put_relation(map, _key, _), do: map
 
   # Extract the first select name from a rollup array property (read-only in Notion).
   # Shape: %{"rollup" => %{"array" => [%{"select" => %{"name" => "Value"}}]}}
@@ -911,6 +933,44 @@ defmodule Journalex.Notion do
           with {:ok, pages} <- paginate_all_pages(data_source_id, page_size) do
             {:ok, build_title_id_map(pages, title_prop)}
           end
+      end
+    end
+  end
+
+  @doc """
+  List all pages in the Ticker Details data source and return a map of
+  ticker symbol (title) => page id.
+
+  Returns `{:ok, %{"AAPL" => page_id, ...}}` or `{:error, reason}`.
+  """
+  def list_all_ticker_ids(opts \\ []) do
+    conf = Application.get_env(:journalex, __MODULE__, [])
+    data_source_id = Keyword.get(opts, :data_source_id, conf[:ticker_details_data_source_id])
+
+    if is_nil(data_source_id) do
+      {:error, :missing_ticker_details_data_source_id}
+    else
+      with {:ok, pages} <- paginate_all_pages(data_source_id, 10000) do
+        {:ok, build_title_id_map(pages, "Ticker")}
+      end
+    end
+  end
+
+  @doc """
+  List all pages in the Market Daily data source and return a map of
+  date string (title) => page id.
+
+  Returns `{:ok, %{"2026-02-21" => page_id, ...}}` or `{:error, reason}`.
+  """
+  def list_all_date_ids(opts \\ []) do
+    conf = Application.get_env(:journalex, __MODULE__, [])
+    data_source_id = Keyword.get(opts, :data_source_id, conf[:market_daily_data_source_id])
+
+    if is_nil(data_source_id) do
+      {:error, :missing_market_daily_data_source_id}
+    else
+      with {:ok, pages} <- paginate_all_pages(data_source_id, 10000) do
+        {:ok, build_title_id_map(pages, "Date")}
       end
     end
   end

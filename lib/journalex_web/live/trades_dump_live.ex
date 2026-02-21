@@ -57,6 +57,9 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:hide_exists?, false)
       # Notion page ids per row title ("TICKER@ISO")
       |> assign(:notion_page_ids, %{})
+      # Relation caches for TickerLink / DateLink
+      |> assign(:ticker_id_cache, %{})
+      |> assign(:date_id_cache, %{})
       # Update (bulk) progress state
       |> assign(:update_queue, [])
       |> assign(:update_total, 0)
@@ -189,6 +192,27 @@ defmodule JournalexWeb.TradesDumpLive do
       |> Enum.with_index()
       |> Enum.filter(fn {_r, i} -> MapSet.member?(selected_idx, i) end)
 
+    # Refresh relation caches for TickerLink / DateLink
+    {ticker_id_cache, ticker_cache_error} =
+      case Notion.list_all_ticker_ids() do
+        {:ok, map} -> {map, nil}
+        {:error, reason} -> {socket.assigns.ticker_id_cache, "Ticker Details cache failed: #{inspect(reason)}"}
+      end
+
+    {date_id_cache, date_cache_error} =
+      case Notion.list_all_date_ids() do
+        {:ok, map} -> {map, nil}
+        {:error, reason} -> {socket.assigns.date_id_cache, "Market Daily cache failed: #{inspect(reason)}"}
+      end
+
+    cache_warning =
+      [ticker_cache_error, date_cache_error]
+      |> Enum.reject(&is_nil/1)
+      |> case do
+        [] -> nil
+        msgs -> "Relation caches not loaded — " <> Enum.join(msgs, "; ")
+      end
+
     case list_all_trade_trademarks_with_ids() do
       {:ok, {trademark_set, id_map}} ->
         now = System.monotonic_time(:millisecond)
@@ -208,9 +232,13 @@ defmodule JournalexWeb.TradesDumpLive do
           |> assign(:notion_conn_status, :ok)
           |> assign(:notion_conn_message, nil)
           |> assign(:notion_page_ids, id_map)
+          |> assign(:ticker_id_cache, ticker_id_cache)
+          |> assign(:date_id_cache, date_id_cache)
           # reset counters for this run
           |> assign(:notion_exists_count, 0)
           |> assign(:notion_missing_count, 0)
+
+        socket = if cache_warning, do: put_flash(socket, :error, cache_warning), else: socket
 
         timer_ref = Process.send_after(self(), :process_next_check, 0)
         {:noreply, assign(socket, :check_timer_ref, timer_ref)}
@@ -496,6 +524,27 @@ defmodule JournalexWeb.TradesDumpLive do
   def handle_info(:auto_check_notion, socket) do
     rows = socket.assigns.trades || []
 
+    # Prefetch relation caches for TickerLink / DateLink
+    {ticker_id_cache, ticker_cache_error} =
+      case Notion.list_all_ticker_ids() do
+        {:ok, map} -> {map, nil}
+        {:error, reason} -> {%{}, "Ticker Details cache failed: #{inspect(reason)}"}
+      end
+
+    {date_id_cache, date_cache_error} =
+      case Notion.list_all_date_ids() do
+        {:ok, map} -> {map, nil}
+        {:error, reason} -> {%{}, "Market Daily cache failed: #{inspect(reason)}"}
+      end
+
+    cache_warning =
+      [ticker_cache_error, date_cache_error]
+      |> Enum.reject(&is_nil/1)
+      |> case do
+        [] -> nil
+        msgs -> "Relation caches not loaded — " <> Enum.join(msgs, "; ")
+      end
+
     case list_all_trade_trademarks_with_ids() do
       {:ok, {trademark_set, id_map}} ->
         pairs = Enum.with_index(rows)
@@ -517,9 +566,13 @@ defmodule JournalexWeb.TradesDumpLive do
           |> assign(:notion_conn_status, :ok)
           |> assign(:notion_conn_message, nil)
           |> assign(:notion_page_ids, id_map)
+          |> assign(:ticker_id_cache, ticker_id_cache)
+          |> assign(:date_id_cache, date_id_cache)
           # reset counters for this run
           |> assign(:notion_exists_count, 0)
           |> assign(:notion_missing_count, 0)
+
+        socket = if cache_warning, do: put_flash(socket, :error, cache_warning), else: socket
 
         timer_ref = Process.send_after(self(), :process_next_check, 0)
         {:noreply, assign(socket, :check_timer_ref, timer_ref)}
@@ -692,48 +745,66 @@ defmodule JournalexWeb.TradesDumpLive do
         [{row, idx} | rest] ->
           socket = assign(socket, dump_current: row)
 
+          ticker = row.ticker || row.symbol
+          date_key = trade_date_key(row)
+          ticker_page_id = Map.get(socket.assigns.ticker_id_cache, ticker)
+          date_page_id = Map.get(socket.assigns.date_id_cache, date_key)
+
+          # Fail immediately (no retry) if relation pages are missing
+          missing_relations = build_missing_relations_message(ticker, ticker_page_id, date_key, date_page_id)
+
           {row_statuses, result_tag, next_queue, next_retry_counts, increment_processed?,
            next_delay_ms,
-           new_id_map} =
-            case Notion.exists_by_timestamp_and_ticker?(row.datetime, row.ticker || row.symbol,
-                   data_source_id: trades_data_source_id()
-                 ) do
-              {:ok, true} ->
-                {Map.put(socket.assigns.row_statuses, idx, :exists), :skipped_exists, rest,
-                 socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000), nil}
+           new_id_map, flash_msg} =
+            if missing_relations != nil do
+              {Map.put(socket.assigns.row_statuses, idx, :error), :error, rest,
+               socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000),
+               nil, missing_relations}
+            else
+              case Notion.exists_by_timestamp_and_ticker?(row.datetime, ticker,
+                     data_source_id: trades_data_source_id()
+                   ) do
+                {:ok, true} ->
+                  {Map.put(socket.assigns.row_statuses, idx, :exists), :skipped_exists, rest,
+                   socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000), nil, nil}
 
-              {:ok, false} ->
-                case Notion.create_from_trade(row, data_source_id: trades_data_source_id()) do
-                  {:ok, page} ->
-                    # Capture created page id
-                    iso = DateTime.to_iso8601(row.datetime)
-                    title = (row.ticker || row.symbol) <> "@" <> iso
-                    page_id = Map.get(page, "id")
-                    id_map_delta = if is_binary(page_id), do: %{title => page_id}, else: nil
+                {:ok, false} ->
+                  case Notion.create_from_trade(row,
+                         data_source_id: trades_data_source_id(),
+                         ticker_page_id: ticker_page_id,
+                         date_page_id: date_page_id
+                       ) do
+                    {:ok, page} ->
+                      # Capture created page id
+                      iso = DateTime.to_iso8601(row.datetime)
+                      title = ticker <> "@" <> iso
+                      page_id = Map.get(page, "id")
+                      id_map_delta = if is_binary(page_id), do: %{title => page_id}, else: nil
 
-                    {Map.put(socket.assigns.row_statuses, idx, :exists), :created, rest,
-                     socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000),
-                     id_map_delta}
-
-                  {:error, _reason} ->
-                    retries = Map.get(socket.assigns.dump_retry_counts, idx, 0)
-
-                    if retries < @dump_max_retries do
-                      next_retries = Map.put(socket.assigns.dump_retry_counts, idx, retries + 1)
-                      backoff_ms = 1000 * (retries + 1)
-
-                      {Map.put(socket.assigns.row_statuses, idx, :retrying), :retrying,
-                       [{row, idx} | rest], next_retries, false, backoff_ms, nil}
-                    else
-                      {Map.put(socket.assigns.row_statuses, idx, :error), :error, rest,
+                      {Map.put(socket.assigns.row_statuses, idx, :exists), :created, rest,
                        socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000),
-                       nil}
-                    end
-                end
+                       id_map_delta, nil}
 
-              {:error, _reason} ->
-                {Map.put(socket.assigns.row_statuses, idx, :error), :error, rest,
-                 socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000), nil}
+                    {:error, _reason} ->
+                      retries = Map.get(socket.assigns.dump_retry_counts, idx, 0)
+
+                      if retries < @dump_max_retries do
+                        next_retries = Map.put(socket.assigns.dump_retry_counts, idx, retries + 1)
+                        backoff_ms = 1000 * (retries + 1)
+
+                        {Map.put(socket.assigns.row_statuses, idx, :retrying), :retrying,
+                         [{row, idx} | rest], next_retries, false, backoff_ms, nil, nil}
+                      else
+                        {Map.put(socket.assigns.row_statuses, idx, :error), :error, rest,
+                         socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000),
+                         nil, nil}
+                      end
+                  end
+
+                {:error, _reason} ->
+                  {Map.put(socket.assigns.row_statuses, idx, :error), :error, rest,
+                   socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000), nil, nil}
+              end
             end
 
           # Merge new page id into map if we just created a page
@@ -764,6 +835,14 @@ defmodule JournalexWeb.TradesDumpLive do
             |> assign(:dump_retry_counts, next_retry_counts)
             |> assign(:dump_elapsed_ms, elapsed_ms)
             |> assign(:notion_page_ids, notion_page_ids)
+
+          # Show flash for missing relation pages
+          socket =
+            if flash_msg do
+              put_flash(socket, :error, flash_msg)
+            else
+              socket
+            end
 
           timer_ref = Process.send_after(self(), :process_next_dump, next_delay_ms)
           {:noreply, assign(socket, :dump_timer_ref, timer_ref)}
@@ -1171,6 +1250,36 @@ defmodule JournalexWeb.TradesDumpLive do
     ticker = Map.get(row, :ticker) || Map.get(row, :symbol)
     iso = if is_struct(dt, DateTime), do: DateTime.to_iso8601(dt), else: nil
     if is_binary(ticker) and is_binary(iso), do: ticker <> "@" <> iso, else: nil
+  end
+
+  # Extract date key from trade row's datetime, matching Market Daily page title format ("2026-02-10")
+  defp trade_date_key(%{datetime: %DateTime{} = dt}) do
+    dt |> DateTime.to_date() |> Date.to_iso8601()
+  end
+
+  defp trade_date_key(_), do: nil
+
+  # Build a human-readable error message when TickerLink or DateLink relation pages are missing.
+  # Returns nil if both are present.
+  defp build_missing_relations_message(ticker, ticker_page_id, date_key, date_page_id) do
+    missing =
+      []
+      |> then(fn acc ->
+        if is_nil(ticker_page_id),
+          do: ["Ticker page \"#{ticker}\" not found in Ticker Details database" | acc],
+          else: acc
+      end)
+      |> then(fn acc ->
+        if is_nil(date_page_id),
+          do: ["Date page \"#{date_key}\" not found in Market Daily database" | acc],
+          else: acc
+      end)
+      |> Enum.reverse()
+
+    case missing do
+      [] -> nil
+      parts -> "Cannot insert: " <> Enum.join(parts, "; ")
+    end
   end
 
   # --- Helpers for metadata form ---
