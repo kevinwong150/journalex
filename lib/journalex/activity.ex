@@ -123,6 +123,7 @@ defmodule Journalex.Activity do
     with {:ok, start_dt} <- normalize_date_start(start_date),
          {:ok, end_dt} <- normalize_date_end(end_date) do
       order = Keyword.get(opts, :order, :asc)
+      symbol = Keyword.get(opts, :symbol)
 
       order_by_expr =
         case order do
@@ -130,11 +131,15 @@ defmodule Journalex.Activity do
           _ -> [asc: :datetime]
         end
 
-      from(s in ActivityStatement,
-        where: s.datetime >= ^start_dt and s.datetime <= ^end_dt,
-        order_by: ^order_by_expr
-      )
-      |> Repo.all()
+      query =
+        from(s in ActivityStatement,
+          where: s.datetime >= ^start_dt and s.datetime <= ^end_dt,
+          order_by: ^order_by_expr
+        )
+
+      query = if symbol, do: from(s in query, where: s.symbol == ^symbol), else: query
+
+      Repo.all(query)
     else
       {:error, reason} -> {:error, reason}
     end

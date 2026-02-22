@@ -3,6 +3,7 @@ defmodule Journalex.Trades do
   Context for working with trades data.
   """
   import Ecto.Query, warn: false
+  import Journalex.TradeValueHelpers, only: [to_number: 1, round2: 1]
   alias Journalex.{Repo, Trades.Trade, Trades.ActionChainBuilder}
 
   @doc """
@@ -65,6 +66,40 @@ defmodule Journalex.Trades do
     trade
     |> Trade.changeset(attrs)
     |> Repo.update()
+  end
+
+  @doc """
+  Insert trade rows with conflict handling (upsert, skip duplicates).
+  Returns `{count, nil}` where count is the number of rows inserted.
+  """
+  def upsert_trade_rows(rows) when is_list(rows) do
+    Repo.insert_all(
+      "trades",
+      rows,
+      on_conflict: :nothing,
+      conflict_target: [:datetime, :ticker, :aggregated_side, :realized_pl]
+    )
+  end
+
+  @doc """
+  Query the trades table for matching keys in a date/ticker range.
+  Returns a MapSet of `{iso_date, ticker, aggregated_side, rounded_pl}` tuples.
+  """
+  def persisted_trade_keys(%Date{} = min_date, %Date{} = max_date, tickers)
+      when is_list(tickers) do
+    start_dt = DateTime.new!(min_date, ~T[00:00:00], "Etc/UTC")
+    end_dt = DateTime.new!(max_date, ~T[23:59:59], "Etc/UTC")
+
+    from(t in "trades",
+      where: t.datetime >= ^start_dt and t.datetime <= ^end_dt,
+      where: t.ticker in ^tickers,
+      select: {fragment("date(?)", t.datetime), t.ticker, t.aggregated_side, t.realized_pl}
+    )
+    |> Repo.all()
+    |> Enum.map(fn {date, ticker, side, pl} ->
+      {Date.to_iso8601(date), ticker, side, round2(to_number(pl))}
+    end)
+    |> MapSet.new()
   end
 
   # Normalize inputs like %Date{} or "yyyymmdd" to DateTime bounds
