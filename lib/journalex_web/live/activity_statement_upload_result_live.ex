@@ -57,7 +57,9 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:selected_days, selected_days_count)
      |> assign(:statement_period, period)
      |> assign(:summary_expanded, false)
-     |> assign(:activity_expanded, true)}
+     |> assign(:activity_expanded, true)
+     |> assign(:activity_page, 1)
+     |> assign(:activity_page_size, Journalex.Settings.get_activity_page_size())}
   end
 
   @impl true
@@ -238,7 +240,13 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
           id="activity-table"
           title="Recent Activity"
           count={length(@activity_data)}
-          rows={@activity_data}
+          rows={
+            Enum.slice(
+              @activity_data,
+              (@activity_page - 1) * @activity_page_size,
+              @activity_page_size
+            )
+          }
           expanded={@activity_expanded}
           toggle_event="toggle_activity"
           show_save_controls?={true}
@@ -247,6 +255,39 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
           on_save_row_event="save_row"
           show_values?={true}
         />
+        <%
+          act_total = length(@activity_data)
+          act_pages = max(1, div(act_total + @activity_page_size - 1, @activity_page_size))
+          act_offset = (@activity_page - 1) * @activity_page_size
+          act_from = if act_total == 0, do: 0, else: act_offset + 1
+          act_to = min(act_offset + @activity_page_size, act_total)
+        %>
+        <%= if act_pages > 1 do %>
+          <div class="px-6 py-3 border-t border-gray-100 flex items-center justify-between">
+            <span class="text-xs text-gray-500">
+              Showing {act_from}–{act_to} of {act_total} rows
+            </span>
+            <div class="flex items-center gap-2">
+              <button
+                phx-click="activity_page"
+                phx-value-page={@activity_page - 1}
+                disabled={@activity_page <= 1}
+                class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ← Prev
+              </button>
+              <span class="text-xs text-gray-600">{@activity_page} / {act_pages}</span>
+              <button
+                phx-click="activity_page"
+                phx-value-page={@activity_page + 1}
+                disabled={@activity_page >= act_pages}
+                class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+        <% end %>
         <%= if Enum.empty?(@activity_data) do %>
           <div class="px-6 py-12 text-center">
             <div class="mx-auto w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -740,6 +781,8 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:day_selection, day_selection)
      |> assign(:selected_days, selected_days_count)
      |> assign(:statement_period, period)
+     |> assign(:weeks, [])
+     |> assign(:activity_page, 1)
      |> put_flash(:info, "Deleted #{removed} uploaded file(s)")}
   end
 
@@ -927,9 +970,14 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
 
   @impl true
   def handle_event("save_row", %{"index" => index_str}, socket) do
-    with {idx, _} <- Integer.parse(to_string(index_str)),
+    page_offset =
+      (Map.get(socket.assigns, :activity_page, 1) - 1) *
+        Map.get(socket.assigns, :activity_page_size, 50)
+
+    with {local_idx, _} <- Integer.parse(to_string(index_str)),
          rows when is_list(rows) <-
            Activity.dedupe_by_datetime_symbol(socket.assigns.activity_data),
+         idx = page_offset + local_idx,
          row when is_map(row) <- Enum.at(rows, idx) do
       case Activity.save_activity_row(row) do
         {:ok, _} ->
@@ -972,7 +1020,8 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:unsaved_count, unsaved_count)
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
-     |> assign(:selected_days, selected_days_count)}
+     |> assign(:selected_days, selected_days_count)
+     |> assign(:activity_page, 1)}
   end
 
   @impl true
@@ -1004,7 +1053,8 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:unsaved_count, unsaved_count)
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
-     |> assign(:selected_days, selected_days_count)}
+     |> assign(:selected_days, selected_days_count)
+     |> assign(:activity_page, 1)}
   end
 
   @impl true
@@ -1028,7 +1078,8 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:unsaved_count, unsaved_count)
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
-     |> assign(:selected_days, selected_days_count)}
+     |> assign(:selected_days, selected_days_count)
+     |> assign(:activity_page, 1)}
   end
 
   @impl true
@@ -1052,7 +1103,23 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:unsaved_count, unsaved_count)
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
-     |> assign(:selected_days, selected_days_count)}
+     |> assign(:selected_days, selected_days_count)
+     |> assign(:activity_page, 1)}
+  end
+
+  @impl true
+  def handle_event("activity_page", %{"page" => page_str}, socket) do
+    total = length(socket.assigns.activity_data)
+    page_size = socket.assigns.activity_page_size
+    total_pages = max(1, div(total + page_size - 1, page_size))
+
+    page =
+      case Integer.parse(to_string(page_str)) do
+        {n, _} -> n |> max(1) |> min(total_pages)
+        :error -> 1
+      end
+
+    {:noreply, assign(socket, :activity_page, page)}
   end
 
   # Friendly label like "Mon, Sep 30" for a YYYY-MM-DD string

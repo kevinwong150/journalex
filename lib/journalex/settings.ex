@@ -162,4 +162,32 @@ defmodule Journalex.Settings do
   def set_r_size(value) when is_number(value) do
     put(@r_size_key, to_string(value))
   end
+
+  # ---------------------------------------------------------------------------
+  # Typed helpers — activity_page_size
+  # ---------------------------------------------------------------------------
+
+  @activity_page_size_key "activity_page_size"
+
+  @doc """
+  Returns the number of rows per page for the Activity Statement Upload Result table.
+  Default: 20.
+  """
+  def get_activity_page_size do
+    case get(@activity_page_size_key) do
+      nil -> 20
+      raw ->
+        case Integer.parse(raw) do
+          {n, _} when n > 0 -> n
+          _ -> 20
+        end
+    end
+  end
+
+  @doc """
+  Persists the activity page size setting to the DB.
+  """
+  def set_activity_page_size(value) when is_integer(value) and value > 0 do
+    put(@activity_page_size_key, Integer.to_string(value))
+  end
 end

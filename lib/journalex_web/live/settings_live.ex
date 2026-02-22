@@ -10,6 +10,7 @@ defmodule JournalexWeb.SettingsLive do
     current_version = Settings.get_default_metadata_version()
     auto_check_on_load = Settings.get_auto_check_on_load()
     r_size = Settings.get_r_size()
+    activity_page_size = Settings.get_activity_page_size()
 
     socket =
       socket
@@ -18,6 +19,7 @@ defmodule JournalexWeb.SettingsLive do
       |> assign(:default_metadata_version, current_version)
       |> assign(:auto_check_on_load, auto_check_on_load)
       |> assign(:r_size, r_size)
+      |> assign(:activity_page_size, activity_page_size)
       |> assign(:save_status, nil)
 
     {:ok, socket}
@@ -39,14 +41,22 @@ defmodule JournalexWeb.SettingsLive do
         :error  -> 8.0
       end
 
+    activity_page_size =
+      case Integer.parse(Map.get(params, "activity_page_size", "20")) do
+        {n, _} when n > 0 -> n
+        _ -> 20
+      end
+
     with {:ok, _} <- Settings.set_default_metadata_version(version),
          {:ok, _} <- Settings.set_auto_check_on_load(auto_check),
-         {:ok, _} <- Settings.set_r_size(r_size) do
+         {:ok, _} <- Settings.set_r_size(r_size),
+         {:ok, _} <- Settings.set_activity_page_size(activity_page_size) do
       {:noreply,
        socket
        |> assign(:default_metadata_version, version)
        |> assign(:auto_check_on_load, auto_check)
        |> assign(:r_size, r_size)
+       |> assign(:activity_page_size, activity_page_size)
        |> assign(:save_status, :ok)}
     else
       {:error, _changeset} ->
