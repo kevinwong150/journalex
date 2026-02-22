@@ -1,18 +1,21 @@
-<div class="max-w-2xl mx-auto mt-8">
-  <h1 class="text-2xl font-bold text-zinc-900 mb-6">Settings</h1>
+<div class="max-w-2xl mx-auto mt-8 px-4">
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-zinc-900">Settings</h1>
+    <p class="text-sm text-zinc-500 mt-1">Configure application behaviour and defaults.</p>
+  </div>
 
-  <div class="bg-white border border-zinc-200 rounded-lg p-6 shadow-sm">
-    <h2 class="text-lg font-semibold text-zinc-700 mb-4">Trade Metadata</h2>
+  <form phx-submit="save_settings" class="flex flex-col gap-6">
 
-    <form phx-submit="save_settings">
-      <div class="flex flex-col gap-4">
+    <!-- ── Trades Dump ────────────────────────────────── -->
+    <div class="bg-white border border-zinc-200 rounded-lg shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-100 bg-zinc-50">
+        <h2 class="text-sm font-semibold text-zinc-700 uppercase tracking-wide">Trades Dump</h2>
+      </div>
+      <div class="px-6 py-5 flex flex-col gap-6">
 
         <!-- Default Metadata Version -->
-        <div class="flex flex-col gap-1">
-          <label
-            for="settings_default_metadata_version"
-            class="text-sm font-medium text-zinc-700"
-          >
+        <div class="flex flex-col gap-1.5">
+          <label for="settings_default_metadata_version" class="text-sm font-medium text-zinc-700">
             Default Metadata Version
           </label>
           <select
@@ -24,15 +27,15 @@
               <option value={v} selected={v == @default_metadata_version}>V<%= v %></option>
             <% end %>
           </select>
-          <p class="text-xs text-zinc-500 mt-1">
-            Controls which metadata form version is shown by default on the Trades Dump page.
+          <p class="text-xs text-zinc-500">
+            Which metadata form version is pre-selected on the Trades Dump page.
             DB value takes priority over the application config default.
           </p>
         </div>
 
         <!-- Auto Check Notion on Load -->
-        <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-zinc-700">Trades Dump — Auto Check Notion</label>
+        <div class="flex flex-col gap-1.5">
+          <span class="text-sm font-medium text-zinc-700">Auto Check Notion on Load</span>
           <label class="inline-flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -41,18 +44,19 @@
               checked={@auto_check_on_load}
               class="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500"
             />
-            <span class="text-sm text-zinc-700">Auto-check Notion on page load</span>
+            <span class="text-sm text-zinc-700">Enable automatic Notion check on page load</span>
           </label>
-          <p class="text-xs text-zinc-500 mt-1">
-            When enabled, the Trades Dump page automatically checks Notion for all trades
-            as soon as it loads. Disable to speed up initial page load.
+          <p class="text-xs text-zinc-500">
+            When enabled, the Trades Dump page checks Notion for all trades as soon as it loads.
+            Disable to speed up initial page load.
           </p>
         </div>
 
         <!-- R Size -->
-        <div class="flex flex-col gap-1">
+        <div class="flex flex-col gap-1.5">
           <label for="settings_r_size" class="text-sm font-medium text-zinc-700">
-            R Size <span class="text-xs text-zinc-400 font-normal">($ risk per trade)</span>
+            R Size
+            <span class="text-xs text-zinc-400 font-normal ml-1">$ risk per trade</span>
           </label>
           <input
             type="number"
@@ -63,15 +67,25 @@
             step="0.01"
             class="w-32 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
           />
-          <p class="text-xs text-zinc-500 mt-1">
-            Auto-fills position size on losing trades: Size = |Realized P/L| &divide; R Size.
+          <p class="text-xs text-zinc-500">
+            Auto-fills position size on losing trades: Size&nbsp;=&nbsp;|Realized&nbsp;P/L|&nbsp;&divide;&nbsp;R&nbsp;Size.
           </p>
         </div>
 
-        <!-- Activity Statement — Rows per page -->
-        <div class="flex flex-col gap-1">
+      </div>
+    </div>
+
+    <!-- ── Activity Statement ─────────────────────────── -->
+    <div class="bg-white border border-zinc-200 rounded-lg shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-100 bg-zinc-50">
+        <h2 class="text-sm font-semibold text-zinc-700 uppercase tracking-wide">Activity Statement</h2>
+      </div>
+      <div class="px-6 py-5 flex flex-col gap-6">
+
+        <!-- Rows per page -->
+        <div class="flex flex-col gap-1.5">
           <label for="settings_activity_page_size" class="text-sm font-medium text-zinc-700">
-            Activity Statement — Rows per page
+            Rows per Page
           </label>
           <input
             type="number"
@@ -83,28 +97,42 @@
             step="5"
             class="w-32 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
           />
-          <p class="text-xs text-zinc-500 mt-1">
-            Controls pagination on the Upload Result page. Default: 20.
+          <p class="text-xs text-zinc-500">
+            Controls pagination on the Upload Result page (Recent Activity table). Default: 20.
           </p>
         </div>
 
-        <!-- Actions -->
-        <div class="flex items-center gap-4 mt-2">
-          <button
-            type="submit"
-            class="inline-flex items-center gap-2 rounded-md bg-zinc-900 text-white px-4 py-2 text-sm font-semibold hover:bg-zinc-700"
-          >
-            Save
-          </button>
-          <%= if @save_status == :ok do %>
-            <span class="text-sm text-green-600 font-medium">Saved!</span>
-          <% end %>
-          <%= if @save_status == :error do %>
-            <span class="text-sm text-red-600 font-medium">Failed to save.</span>
-          <% end %>
-        </div>
-
       </div>
-    </form>
-  </div>
+    </div>
+
+    <!-- ── Save ───────────────────────────────────────── -->
+    <div class="flex items-center gap-4">
+      <button
+        type="submit"
+        class="inline-flex items-center gap-2 rounded-md bg-zinc-900 text-white px-5 py-2 text-sm font-semibold hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-500"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+        </svg>
+        Save Settings
+      </button>
+      <%= if @save_status == :ok do %>
+        <span class="inline-flex items-center gap-1 text-sm text-green-600 font-medium">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+          </svg>
+          Saved!
+        </span>
+      <% end %>
+      <%= if @save_status == :error do %>
+        <span class="inline-flex items-center gap-1 text-sm text-red-600 font-medium">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          Failed to save.
+        </span>
+      <% end %>
+    </div>
+
+  </form>
 </div>
