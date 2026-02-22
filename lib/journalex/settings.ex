@@ -190,4 +190,80 @@ defmodule Journalex.Settings do
   def set_activity_page_size(value) when is_integer(value) and value > 0 do
     put(@activity_page_size_key, Integer.to_string(value))
   end
+
+  # ---------------------------------------------------------------------------
+  # Typed helpers — filter_visible_weeks
+  # ---------------------------------------------------------------------------
+
+  @filter_visible_weeks_key "filter_visible_weeks"
+
+  @doc """
+  Returns the number of most-recent weeks to show expanded in the day filter.
+  Older weeks are collapsed behind a toggle. Default: 3.
+  """
+  def get_filter_visible_weeks do
+    case get(@filter_visible_weeks_key) do
+      nil -> 3
+      raw ->
+        case Integer.parse(raw) do
+          {n, _} when n > 0 -> n
+          _ -> 3
+        end
+    end
+  end
+
+  @doc """
+  Persists the filter visible weeks setting to the DB.
+  """
+  def set_filter_visible_weeks(value) when is_integer(value) and value > 0 do
+    put(@filter_visible_weeks_key, Integer.to_string(value))
+  end
+
+  # ---------------------------------------------------------------------------
+  # Typed helpers — summary_period
+  # ---------------------------------------------------------------------------
+
+  @summary_period_value_key "summary_period_value"
+  @summary_period_unit_key "summary_period_unit"
+
+  @doc """
+  Returns the number of periods (weeks or days) to include in the Summary table.
+  Default: 3.
+  """
+  def get_summary_period_value do
+    case get(@summary_period_value_key) do
+      nil -> 3
+      raw ->
+        case Integer.parse(raw) do
+          {n, _} when n > 0 -> n
+          _ -> 3
+        end
+    end
+  end
+
+  @doc """
+  Persists the summary period value to the DB.
+  """
+  def set_summary_period_value(value) when is_integer(value) and value > 0 do
+    put(@summary_period_value_key, Integer.to_string(value))
+  end
+
+  @doc """
+  Returns the period unit for the Summary table filter: "week" or "day".
+  Default: "week".
+  """
+  def get_summary_period_unit do
+    case get(@summary_period_unit_key) do
+      nil -> "week"
+      raw when raw in ["week", "day"] -> raw
+      _ -> "week"
+    end
+  end
+
+  @doc """
+  Persists the summary period unit to the DB.
+  """
+  def set_summary_period_unit(unit) when unit in ["week", "day"] do
+    put(@summary_period_unit_key, unit)
+  end
 end

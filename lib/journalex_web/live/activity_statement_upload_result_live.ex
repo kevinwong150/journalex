@@ -30,7 +30,10 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
     # Filtered trades based on selection
     filtered_trades = filter_trades_by_days(annotated_trades, day_selection)
 
-    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    summary_period_value = Journalex.Settings.get_summary_period_value()
+    summary_period_unit = Journalex.Settings.get_summary_period_unit()
+    summary_trades = filter_trades_by_period(filtered_trades, summary_period_value, summary_period_unit)
+    {summary_by_symbol, summary_total} = summarize_realized_pl(summary_trades)
     # Mark aggregated items that already exist in DB so Save/Status reflect reality
     summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
     period = compute_period_from_trades(annotated_trades)
@@ -59,6 +62,10 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:statement_period, period)
      |> assign(:summary_expanded, false)
      |> assign(:activity_expanded, true)
+     |> assign(:weeks_expanded, false)
+     |> assign(:filter_visible_weeks, Journalex.Settings.get_filter_visible_weeks())
+     |> assign(:summary_period_value, summary_period_value)
+     |> assign(:summary_period_unit, summary_period_unit)
      |> assign(:activity_page, 1)
      |> assign(:activity_page_size, Journalex.Settings.get_activity_page_size())}
   end
@@ -199,16 +206,87 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
               </button>
             </div>
           </div>
+          <%
+            total_weeks = length(@weeks)
+            visible_n = @filter_visible_weeks
+            split_at = max(0, total_weeks - visible_n)
+            older_weeks = Enum.take(@weeks, split_at)
+            recent_weeks = Enum.drop(@weeks, split_at)
+          %>
+          <!-- Older weeks (collapsible) -->
+          <%= if older_weeks != [] do %>
+            <button
+              type="button"
+              phx-click="toggle_older_weeks"
+              class="mb-2 inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50"
+            >
+              <svg
+                class={["w-3 h-3 transition-transform", if(@weeks_expanded, do: "rotate-90", else: "")]}
+                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+              <%= if @weeks_expanded do %>
+                Hide {length(older_weeks)} older week(s)
+              <% else %>
+                Show {length(older_weeks)} older week(s)
+              <% end %>
+            </button>
+          <% end %>
           <!-- One row per calendar week -->
           <div class="space-y-1.5">
-            <%= for week <- @weeks do %>
+            <%= if @weeks_expanded do %>
+              <%= for week <- older_weeks do %>
+                <%
+                  all_on?  = Enum.all?(week.days, &Map.get(@day_selection, &1, true))
+                  any_on?  = Enum.any?(week.days, &Map.get(@day_selection, &1, true))
+                  partial? = any_on? and not all_on?
+                %>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    phx-click="toggle_week"
+                    phx-value-days={Enum.join(week.days, ",")}
+                    title={if all_on?, do: "Deselect week", else: "Select week"}
+                    class={[
+                      "inline-flex items-center px-2.5 py-1.5 text-xs font-semibold rounded-md border min-w-[7rem] justify-center",
+                      cond do
+                        all_on?  -> "bg-blue-600 text-white border-blue-600 hover:bg-blue-700"
+                        partial? -> "bg-blue-100 text-blue-700 border-blue-400 hover:bg-blue-200"
+                        true     -> "bg-gray-100 text-gray-500 border-gray-300 hover:bg-gray-200"
+                      end
+                    ]}
+                  >
+                    {week.label}
+                  </button>
+                  <%= for day <- week.days do %>
+                    <% on? = Map.get(@day_selection, day, true) %>
+                    <button
+                      type="button"
+                      phx-click="toggle_day"
+                      phx-value-day={day}
+                      class={[
+                        "inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded-md border",
+                        if(on?,
+                          do: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100",
+                          else: "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
+                        )
+                      ]}
+                      aria-pressed={on?}
+                    >
+                      {friendly_day_label(day)}
+                    </button>
+                  <% end %>
+                </div>
+              <% end %>
+            <% end %>
+            <%= for week <- recent_weeks do %>
               <%
                 all_on?  = Enum.all?(week.days, &Map.get(@day_selection, &1, true))
                 any_on?  = Enum.any?(week.days, &Map.get(@day_selection, &1, true))
                 partial? = any_on? and not all_on?
               %>
               <div class="flex items-center gap-2 flex-wrap">
-                <!-- Week-range toggle chip -->
                 <button
                   type="button"
                   phx-click="toggle_week"
@@ -225,7 +303,6 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
                 >
                   {week.label}
                 </button>
-                <!-- Individual day buttons -->
                 <%= for day <- week.days do %>
                   <% on? = Map.get(@day_selection, day, true) %>
                   <button
@@ -549,6 +626,57 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
     end)
     |> Activity.dedupe_by_datetime_symbol()
   end
+
+  # Filter trades to only those belonging to the N most recent calendar weeks (unit="week")
+  # or the N most recent unique trading days (unit="day") in the dataset.
+  defp filter_trades_by_period([], _n, _unit), do: []
+
+  defp filter_trades_by_period(trades, n, "week") when is_integer(n) and n > 0 do
+    # Build the set of sunday-keyed calendar weeks to keep (same key as group_days_by_week)
+    keep_weeks =
+      trades
+      |> Enum.map(&date_only(Map.get(&1, :datetime)))
+      |> Enum.reject(&is_nil/1)
+      |> Enum.map(fn iso ->
+        d = parse_date!(iso)
+        monday = Date.beginning_of_week(d, :monday)
+        Date.add(monday, -1)
+      end)
+      |> Enum.uniq()
+      |> Enum.sort(Date)
+      |> Enum.take(-n)
+      |> MapSet.new()
+
+    Enum.filter(trades, fn row ->
+      case date_only(Map.get(row, :datetime)) do
+        nil -> false
+        iso ->
+          d = parse_date!(iso)
+          monday = Date.beginning_of_week(d, :monday)
+          MapSet.member?(keep_weeks, Date.add(monday, -1))
+      end
+    end)
+  end
+
+  defp filter_trades_by_period(trades, n, "day") when is_integer(n) and n > 0 do
+    keep_days =
+      trades
+      |> Enum.map(&date_only(Map.get(&1, :datetime)))
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+      |> Enum.sort()
+      |> Enum.take(-n)
+      |> MapSet.new()
+
+    Enum.filter(trades, fn row ->
+      case date_only(Map.get(row, :datetime)) do
+        nil -> false
+        d -> MapSet.member?(keep_days, d)
+      end
+    end)
+  end
+
+  defp filter_trades_by_period(trades, _n, _unit), do: trades
 
   defp date_only(nil), do: nil
   defp date_only(%DateTime{} = dt), do: Date.to_iso8601(DateTime.to_date(dt))
@@ -1049,6 +1177,11 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
   end
 
   @impl true
+  def handle_event("toggle_older_weeks", _params, socket) do
+    {:noreply, assign(socket, :weeks_expanded, !socket.assigns.weeks_expanded)}
+  end
+
+  @impl true
   def handle_event("save_row", %{"index" => index_str}, socket) do
     page_offset =
       (Map.get(socket.assigns, :activity_page, 1) - 1) *
@@ -1084,7 +1217,8 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
     day_selection = Map.update(socket.assigns.day_selection, day, true, &(!&1))
 
     filtered_trades = filter_trades_by_days(socket.assigns.all_trades, day_selection)
-    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    summary_trades = filter_trades_by_period(filtered_trades, socket.assigns.summary_period_value, socket.assigns.summary_period_unit)
+    {summary_by_symbol, summary_total} = summarize_realized_pl(summary_trades)
     summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
     unsaved_count = count_unsaved(filtered_trades)
 
@@ -1118,7 +1252,8 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
       Enum.reduce(week_days, day_selection, fn d, acc -> Map.put(acc, d, new_value) end)
 
     filtered_trades = filter_trades_by_days(socket.assigns.all_trades, day_selection)
-    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    summary_trades = filter_trades_by_period(filtered_trades, socket.assigns.summary_period_value, socket.assigns.summary_period_unit)
+    {summary_by_symbol, summary_total} = summarize_realized_pl(summary_trades)
     summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
     unsaved_count = count_unsaved(filtered_trades)
 
@@ -1144,7 +1279,8 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
     day_selection = socket.assigns.days |> Map.new(fn d -> {d, true} end)
 
     filtered_trades = filter_trades_by_days(socket.assigns.all_trades, day_selection)
-    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    summary_trades = filter_trades_by_period(filtered_trades, socket.assigns.summary_period_value, socket.assigns.summary_period_unit)
+    {summary_by_symbol, summary_total} = summarize_realized_pl(summary_trades)
     summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
     unsaved_count = count_unsaved(filtered_trades)
 
@@ -1170,7 +1306,8 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
     day_selection = socket.assigns.days |> Map.new(fn d -> {d, false} end)
 
     filtered_trades = filter_trades_by_days(socket.assigns.all_trades, day_selection)
-    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    summary_trades = filter_trades_by_period(filtered_trades, socket.assigns.summary_period_value, socket.assigns.summary_period_unit)
+    {summary_by_symbol, summary_total} = summarize_realized_pl(summary_trades)
     summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
     unsaved_count = count_unsaved(filtered_trades)
 
