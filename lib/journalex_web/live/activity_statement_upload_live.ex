@@ -24,6 +24,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
      socket
      |> assign(:uploaded_files, [])
      |> assign(:upload_status, nil)
+     |> assign(:socket_connected, connected?(socket))
      |> assign(:calendar_month, first)
      |> assign(:date_grid, date_grid)
      |> allow_upload(:csv_file,
@@ -215,8 +216,18 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                   CSV Files
                 </label>
 
+                <div class="relative">
+                <%= unless @socket_connected do %>
+                  <div class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-white/80 backdrop-blur-sm">
+                    <svg class="h-6 w-6 animate-spin text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    <span class="text-sm font-medium text-blue-700">Connecting to server… please wait before selecting files</span>
+                  </div>
+                <% end %>
                 <div
-                  class="mt-2 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-gray-400 transition-colors"
+                  class={["mt-2 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-lg transition-colors", if(@socket_connected, do: "border-gray-300 hover:border-gray-400", else: "border-gray-200 opacity-60 pointer-events-none")]}
                   phx-drop-target={@uploads.csv_file.ref}
                 >
                   <div class="space-y-2 text-center">
@@ -248,7 +259,8 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                     <p class="text-xs text-gray-500">CSV files up to 10MB each (max 10 files)</p>
                   </div>
                 </div>
-                
+                </div><!-- end relative wrapper -->
+
     <!-- Upload Progress -->
                 <%= for entry <- @uploads.csv_file.entries do %>
                   <div class="bg-gray-50 rounded-lg p-4">
@@ -286,7 +298,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         </svg>
                       </button>
                     </div>
-                    
+
     <!-- Progress Bar -->
                     <div class="w-full bg-gray-200 rounded-full h-2">
                       <div
@@ -302,7 +314,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                         {Float.round(entry.client_size / 1024, 1)}KB
                       </span>
                     </div>
-                    
+
     <!-- Upload Errors -->
                     <%= for err <- upload_errors(@uploads.csv_file, entry) do %>
                       <div class="mt-2 text-sm text-red-600">
@@ -311,7 +323,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                     <% end %>
                   </div>
                 <% end %>
-                
+
     <!-- General Upload Errors -->
                 <%= for err <- upload_errors(@uploads.csv_file) do %>
                   <div class="text-sm text-red-600">
@@ -319,7 +331,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                   </div>
                 <% end %>
               </div>
-              
+
     <!-- File Requirements -->
               <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div class="flex">
@@ -356,13 +368,14 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
                   </div>
                 </div>
               </div>
-              
+
     <!-- Submit Button -->
               <div class="flex justify-end">
                 <button
                   type="submit"
                   disabled={
-                    Enum.empty?(@uploads.csv_file.entries) || !upload_complete?(@uploads.csv_file)
+                    !@socket_connected ||
+                      Enum.empty?(@uploads.csv_file.entries) || !upload_complete?(@uploads.csv_file)
                   }
                   class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -379,7 +392,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
               </div>
             </div>
           </form>
-          
+
     <!-- Upload Results -->
           <%= if @upload_status == :success and not Enum.empty?(@uploaded_files) do %>
             <div class="mt-8 bg-green-50 border border-green-200 rounded-lg p-4">
