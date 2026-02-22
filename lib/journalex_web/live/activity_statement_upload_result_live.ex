@@ -51,6 +51,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:unsaved_count, unsaved_count)
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
+     |> assign(:summary_unsaved_count, count_summary_unsaved(summary_by_symbol))
      |> assign(:days, days)
      |> assign(:weeks, weeks)
      |> assign(:day_selection, day_selection)
@@ -65,7 +66,82 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="mx-auto max-w-6xl">
+    <div id="page-top" class="mx-auto max-w-6xl">
+      <!-- Fixed scroll-nav: only renders on large screens where there's space beside the content column -->
+      <nav class="fixed right-4 top-1/2 -translate-y-1/2 z-40 hidden lg:flex flex-col gap-2 bg-white shadow-lg rounded-xl p-2 border border-gray-200">
+        <!-- Page top -->
+        <a
+          href="#page-top"
+          title="Page top"
+          class="flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 11l7-7 7 7M5 19l7-7 7 7" />
+          </svg>
+        </a>
+        <div class="border-t border-gray-100 w-full"></div>
+        <!-- Summary section -->
+        <div class="flex items-center gap-1">
+          <a
+            href="#summary-anchor"
+            title="Summary (Realized P/L)"
+            class="flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </a>
+          <span
+            title={"#{@summary_unsaved_count} unsaved close-trade item(s) in Summary"}
+            class={[
+            "inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-xs font-semibold",
+            if(@summary_unsaved_count > 0, do: "bg-yellow-100 text-yellow-800", else: "bg-green-100 text-green-800")
+          ]}>
+            {@summary_unsaved_count}
+          </span>
+          <button
+            phx-click="save_all_aggregated"
+            disabled={@summary_unsaved_count == 0}
+            title="Save all summary trades to DB"
+            class="flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+          </button>
+        </div>
+        <div class="border-t border-gray-100 w-full"></div>
+        <!-- Activity section -->
+        <div class="flex items-center gap-1">
+          <a
+            href="#activity-anchor"
+            title="Recent Activity"
+            class="flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            </svg>
+          </a>
+          <span
+            title={"#{@unsaved_count} unsaved activity row(s) in Recent Activity"}
+            class={[
+            "inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-xs font-semibold",
+            if(@unsaved_count > 0, do: "bg-yellow-100 text-yellow-800", else: "bg-green-100 text-green-800")
+          ]}>
+            {@unsaved_count}
+          </span>
+          <button
+            phx-click="save_all"
+            disabled={@unsaved_count == 0}
+            title="Save all activity rows to DB"
+            class="flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+          </button>
+        </div>
+      </nav>
       <div class="mb-8">
         <div class="flex items-center justify-between">
           <h1 class="text-3xl font-bold text-gray-900">Activity Statement Upload Result</h1>
@@ -174,7 +250,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
         </div>
 
     <!-- Summary: Realized P/L by Symbol -->
-        <div class="px-6 py-4 border-b border-gray-200">
+        <div id="summary-anchor" class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
               <h2 class="text-lg font-semibold text-gray-900">Summary (Realized P/L by Symbol)</h2>
@@ -217,7 +293,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
         />
 
     <!-- Unsaved records indicator -->
-        <div class="px-6 py-3 border-b border-gray-200 flex items-center justify-between">
+        <div id="activity-anchor" class="px-6 py-3 border-b border-gray-200 flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span class="text-sm text-gray-600">Unsaved records:</span>
             <span class={[
@@ -742,6 +818,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
           {:noreply,
            socket
            |> assign(:summary_by_symbol, updated_summary)
+           |> assign(:summary_unsaved_count, count_summary_unsaved(updated_summary))
            |> put_flash(:info, msg)}
         rescue
           e ->
@@ -777,6 +854,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:unsaved_count, unsaved_count)
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
+     |> assign(:summary_unsaved_count, 0)
      |> assign(:days, days)
      |> assign(:day_selection, day_selection)
      |> assign(:selected_days, selected_days_count)
@@ -899,6 +977,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
           {:noreply,
            socket
            |> assign(:summary_by_symbol, updated_summary)
+           |> assign(:summary_unsaved_count, count_summary_unsaved(updated_summary))
            |> put_flash(
              :info,
              if(count > 0, do: "Saved with action chain", else: "Already exists")
@@ -947,6 +1026,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
           {:noreply,
            socket
            |> assign(:summary_by_symbol, updated_summary)
+           |> assign(:summary_unsaved_count, count_summary_unsaved(updated_summary))
            |> put_flash(:info, if(count > 0, do: "Saved without action chain", else: "Already exists"))}
         rescue
           e ->
@@ -1020,6 +1100,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:unsaved_count, unsaved_count)
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
+     |> assign(:summary_unsaved_count, count_summary_unsaved(summary_by_symbol))
      |> assign(:selected_days, selected_days_count)
      |> assign(:activity_page, 1)}
   end
@@ -1053,6 +1134,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:unsaved_count, unsaved_count)
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
+     |> assign(:summary_unsaved_count, count_summary_unsaved(summary_by_symbol))
      |> assign(:selected_days, selected_days_count)
      |> assign(:activity_page, 1)}
   end
@@ -1078,6 +1160,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:unsaved_count, unsaved_count)
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
+     |> assign(:summary_unsaved_count, count_summary_unsaved(summary_by_symbol))
      |> assign(:selected_days, selected_days_count)
      |> assign(:activity_page, 1)}
   end
@@ -1103,6 +1186,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:unsaved_count, unsaved_count)
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
+     |> assign(:summary_unsaved_count, count_summary_unsaved(summary_by_symbol))
      |> assign(:selected_days, selected_days_count)
      |> assign(:activity_page, 1)}
   end
@@ -1158,6 +1242,15 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
   # Count trades that are not yet saved (exists is not true)
   defp count_unsaved(trades) when is_list(trades) do
     Enum.count(trades, fn row -> Map.get(row, :exists, false) != true end)
+  end
+
+  # Count individual unsaved close-trade items across all summary rows
+  defp count_summary_unsaved(rows) when is_list(rows) do
+    rows
+    |> Enum.flat_map(fn row ->
+      Map.get(row, :close_trades) || Map.get(row, :aggregated_trades) || []
+    end)
+    |> Enum.count(fn item -> Map.get(item, :exists) != true end)
   end
 
   # Helper to mark an aggregated item as existing after a successful insert

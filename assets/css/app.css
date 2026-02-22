@@ -3,3 +3,9 @@
 @import "tailwindcss/utilities";
 
 /* This file is for your main application CSS */
+
+html {
+  scroll-behavior: smooth;
+  /* offset anchors below the sticky navbar (~44 px) + breathing room */
+  scroll-padding-top: 60px;
+}
