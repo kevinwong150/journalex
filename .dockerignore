@@ -1,0 +1,17 @@
+_build/
+deps/
+db/
+.git/
+.elixir_ls/
+.env
+assets/
+priv/static/
+priv/uploads/
+sample/
+node_modules/
+erl_crash.dump
+document.txt
+*.md
+docker-compose*.yml
+Dockerfile*
+.dockerignore

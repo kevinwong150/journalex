@@ -5,6 +5,7 @@ defmodule Journalex.ActivityStatementParser do
   It focuses on extracting Trades (DataDiscriminator == "Order") rows and
   normalizing fields we need to display in the UI table.
   """
+  @behaviour Journalex.ParserBehaviour
 
   alias NimbleCSV.RFC4180, as: CSV
 

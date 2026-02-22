@@ -2,6 +2,8 @@ defmodule Journalex.Activity do
   @moduledoc """
   Context for working with activity statements data.
   """
+  @behaviour Journalex.ActivityBehaviour
+
   import Ecto.Query, warn: false
   alias Journalex.{Repo, ActivityStatement}
 

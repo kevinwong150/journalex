@@ -1,0 +1,22 @@
+FROM elixir:latest
+
+WORKDIR /app
+
+ENV MIX_ENV=test
+
+# ── Layer 1: deps (cached unless mix.exs / mix.lock change) ──
+COPY mix.exs mix.lock ./
+RUN mix local.hex --force && \
+    mix local.rebar --force && \
+    mix deps.get && \
+    mix deps.compile
+
+# ── Layer 2: config ──
+COPY config/ config/
+
+# ── Layer 3: application source + tests + migrations ──
+COPY lib/ lib/
+COPY test/ test/
+COPY priv/repo/ priv/repo/
+
+CMD ["mix", "test", "--color"]

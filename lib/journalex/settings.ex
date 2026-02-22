@@ -2,6 +2,7 @@ defmodule Journalex.Settings do
   use Ecto.Schema
   import Ecto.Changeset
   alias Journalex.Repo
+  @behaviour Journalex.SettingsBehaviour
 
   @moduledoc """
   Key-value settings store backed by the `settings` database table.

@@ -60,6 +60,7 @@ defmodule Journalex.MixProject do
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.5"},
       {:nimble_csv, "~> 1.2"},
+      {:mox, "~> 1.2", only: :test},
       {:tidewave, "~> 0.5", only: :dev}
     ]
   end

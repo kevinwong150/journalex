@@ -8,7 +8,8 @@ import Config
 config :journalex, Journalex.Repo,
   username: "postgres",
   password: "postgres",
-  hostname: "localhost",
+  hostname: System.get_env("DB_HOST") || "localhost",
+  port: String.to_integer(System.get_env("DB_PORT") || "6544"),
   database: "journalex_test#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
@@ -35,3 +36,9 @@ config :phoenix, :plug_init_mode, :runtime
 # Enable helpful, but potentially expensive runtime checks
 config :phoenix_live_view,
   enable_expensive_runtime_checks: true
+
+# Module injection — default to real modules; tests can override via Mox
+config :journalex, :activity_module, Journalex.Activity
+config :journalex, :trades_module, Journalex.Trades
+config :journalex, :settings_module, Journalex.Settings
+config :journalex, :parser_module, Journalex.ActivityStatementParser

@@ -1,0 +1,62 @@
+# docker-compose.test.yml — Dockerized test runner
+#
+# Runs the full test suite inside a container against a disposable Postgres.
+# The test image is built from Dockerfile.test (COPY-based, no bind-mounts).
+#
+# ── Run all tests ────────────────────────────────────────────────────────
+#
+#   docker compose -f docker-compose.test.yml build --no-cache test
+#   docker compose -f docker-compose.test.yml up --abort-on-container-exit --exit-code-from test
+#
+#   Step 1 (build): compiles a fresh test image with --no-cache
+#   Step 2 (up):
+#     --abort-on-container-exit   Stop all services when the test container exits
+#     --exit-code-from test       Forward the test exit code to your terminal
+#
+# ── Clean up ───────────────────────────────────────────────────────────
+#
+#   docker compose -f docker-compose.test.yml down
+#
+# ── Host-side tests (DB only, tests run on host) ──────────────────────
+#
+#   docker compose -f docker-compose.test.yml up -d test_db
+#   mix test
+#   docker compose -f docker-compose.test.yml down
+#
+# ───────────────────────────────────────────────────────────────────────
+
+services:
+  test_db:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: journalex_test
+    ports:
+      - 6544:5432
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d journalex_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - test_net
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      MIX_ENV: test
+      DB_HOST: test_db
+      DB_PORT: "5432"
+    depends_on:
+      test_db:
+        condition: service_healthy
+    networks:
+      - test_net
+
+networks:
+  test_net:

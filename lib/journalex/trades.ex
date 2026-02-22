@@ -2,6 +2,8 @@ defmodule Journalex.Trades do
   @moduledoc """
   Context for working with trades data.
   """
+  @behaviour Journalex.TradesBehaviour
+
   import Ecto.Query, warn: false
   import Journalex.TradeValueHelpers, only: [to_number: 1, round2: 1]
   alias Journalex.{Repo, Trades.Trade, Trades.ActionChainBuilder}

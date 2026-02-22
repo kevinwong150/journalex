@@ -94,7 +94,7 @@ defmodule Journalex.TradeValueHelpers do
 
   def date_only(bin) when is_binary(bin) do
     case String.split(bin) do
-      [date | _] -> date_only(date)
+      [date | _] when date != bin -> date_only(date)
       _ -> nil
     end
   end
