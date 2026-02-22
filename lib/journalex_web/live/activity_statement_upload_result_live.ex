@@ -42,6 +42,8 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
       |> Enum.filter(fn {d, on?} -> on? and weekday?(parse_date!(d)) end)
       |> length()
 
+    weeks = group_days_by_week(days)
+
     {:ok,
      socket
      |> assign(:all_trades, annotated_trades)
@@ -50,6 +52,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:summary_by_symbol, summary_by_symbol)
      |> assign(:summary_total, summary_total)
      |> assign(:days, days)
+     |> assign(:weeks, weeks)
      |> assign(:day_selection, day_selection)
      |> assign(:selected_days, selected_days_count)
      |> assign(:statement_period, period)
@@ -99,30 +102,10 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
 
       <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg">
         <!-- Day toggles -->
-        <div class="px-6 pt-4 pb-2 border-b border-gray-200">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-sm text-gray-600 mr-2">Filter days:</span>
-              <%= for day <- @days do %>
-                <% on? = Map.get(@day_selection, day, true) %>
-                <button
-                  type="button"
-                  phx-click="toggle_day"
-                  phx-value-day={day}
-                  class={[
-                    "inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded-md border",
-                    if(on?,
-                      do: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100",
-                      else: "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
-                    )
-                  ]}
-                  aria-pressed={on?}
-                >
-                  {friendly_day_label(day)}
-                </button>
-              <% end %>
-            </div>
-
+        <div class="px-6 pt-4 pb-3 border-b border-gray-200">
+          <!-- Header row: label + All/None -->
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-medium text-gray-700">Filter days:</span>
             <div class="flex items-center gap-2">
               <button
                 phx-click="select_all_days"
@@ -130,7 +113,6 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
               >
                 All
               </button>
-
               <button
                 phx-click="deselect_all_days"
                 class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -138,6 +120,54 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
                 None
               </button>
             </div>
+          </div>
+          <!-- One row per calendar week -->
+          <div class="space-y-1.5">
+            <%= for week <- @weeks do %>
+              <%
+                all_on?  = Enum.all?(week.days, &Map.get(@day_selection, &1, true))
+                any_on?  = Enum.any?(week.days, &Map.get(@day_selection, &1, true))
+                partial? = any_on? and not all_on?
+              %>
+              <div class="flex items-center gap-2 flex-wrap">
+                <!-- Week-range toggle chip -->
+                <button
+                  type="button"
+                  phx-click="toggle_week"
+                  phx-value-days={Enum.join(week.days, ",")}
+                  title={if all_on?, do: "Deselect week", else: "Select week"}
+                  class={[
+                    "inline-flex items-center px-2.5 py-1.5 text-xs font-semibold rounded-md border min-w-[7rem] justify-center",
+                    cond do
+                      all_on?  -> "bg-blue-600 text-white border-blue-600 hover:bg-blue-700"
+                      partial? -> "bg-blue-100 text-blue-700 border-blue-400 hover:bg-blue-200"
+                      true     -> "bg-gray-100 text-gray-500 border-gray-300 hover:bg-gray-200"
+                    end
+                  ]}
+                >
+                  {week.label}
+                </button>
+                <!-- Individual day buttons -->
+                <%= for day <- week.days do %>
+                  <% on? = Map.get(@day_selection, day, true) %>
+                  <button
+                    type="button"
+                    phx-click="toggle_day"
+                    phx-value-day={day}
+                    class={[
+                      "inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded-md border",
+                      if(on?,
+                        do: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100",
+                        else: "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
+                      )
+                    ]}
+                    aria-pressed={on?}
+                  >
+                    {friendly_day_label(day)}
+                  </button>
+                <% end %>
+              </div>
+            <% end %>
           </div>
         </div>
 
@@ -946,6 +976,38 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
   end
 
   @impl true
+  def handle_event("toggle_week", %{"days" => days_str}, socket) do
+    week_days = String.split(days_str, ",", trim: true)
+    day_selection = socket.assigns.day_selection
+
+    # All on? → turn all off. Otherwise → turn all on.
+    all_on? = Enum.all?(week_days, &Map.get(day_selection, &1, true))
+    new_value = not all_on?
+
+    day_selection =
+      Enum.reduce(week_days, day_selection, fn d, acc -> Map.put(acc, d, new_value) end)
+
+    filtered_trades = filter_trades_by_days(socket.assigns.all_trades, day_selection)
+    {summary_by_symbol, summary_total} = summarize_realized_pl(filtered_trades)
+    summary_by_symbol = annotate_summary_with_exists(summary_by_symbol)
+    unsaved_count = count_unsaved(filtered_trades)
+
+    selected_days_count =
+      day_selection
+      |> Enum.filter(fn {d, on?} -> on? and weekday?(parse_date!(d)) end)
+      |> length()
+
+    {:noreply,
+     socket
+     |> assign(:day_selection, day_selection)
+     |> assign(:activity_data, filtered_trades)
+     |> assign(:unsaved_count, unsaved_count)
+     |> assign(:summary_by_symbol, summary_by_symbol)
+     |> assign(:summary_total, summary_total)
+     |> assign(:selected_days, selected_days_count)}
+  end
+
+  @impl true
   def handle_event("select_all_days", _params, socket) do
     day_selection = socket.assigns.days |> Map.new(fn d -> {d, true} end)
 
@@ -997,6 +1059,33 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
   defp friendly_day_label(<<_::binary>> = iso_date) do
     d = parse_date!(iso_date)
     Calendar.strftime(d, "%a, %b %-d")
+  end
+
+  # Group a sorted list of ISO date strings into calendar weeks (Sun-start).
+  # Returns a list of %{label: "Feb 17–21", days: [...]} maps.
+  defp group_days_by_week(days) when is_list(days) do
+    days
+    |> Enum.group_by(fn iso ->
+      d = parse_date!(iso)
+      # Use Monday as week anchor, then subtract to get Sunday-start week key
+      monday = Date.beginning_of_week(d, :monday)
+      Date.add(monday, -1)
+    end)
+    |> Enum.sort_by(fn {sunday_key, _} -> sunday_key end, Date)
+    |> Enum.map(fn {_sunday_key, week_days} ->
+      sorted = Enum.sort(week_days)
+      first_d = parse_date!(List.first(sorted))
+      last_d  = parse_date!(List.last(sorted))
+
+      label =
+        if first_d.month == last_d.month do
+          Calendar.strftime(first_d, "%b %-d") <> "–" <> Calendar.strftime(last_d, "%-d")
+        else
+          Calendar.strftime(first_d, "%b %-d") <> "–" <> Calendar.strftime(last_d, "%b %-d")
+        end
+
+      %{label: label, days: sorted}
+    end)
   end
 
   # Count trades that are not yet saved (exists is not true)
