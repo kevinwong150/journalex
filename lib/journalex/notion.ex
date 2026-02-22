@@ -561,12 +561,7 @@ defmodule Journalex.Notion do
     end
   end
 
-  defp get_rich_text(properties, key) do
-    case Map.get(properties, key) do
-      %{"rich_text" => list} when is_list(list) -> first_rich_text(list)
-      _ -> nil
-    end
-  end
+  # get_rich_text/2 removed — unused. Recoverable from git.
 
   # --- local compare helpers ---
   defp first_rich_text(list) when is_list(list) and list != [] do
@@ -689,14 +684,7 @@ defmodule Journalex.Notion do
 
   defp maybe_put_checkbox(map, _key, _), do: map
 
-  defp maybe_put_rich_text(map, _key, nil), do: map
-  defp maybe_put_rich_text(map, _key, ""), do: map
-
-  defp maybe_put_rich_text(map, key, value) when is_binary(value) do
-    Map.put(map, key, %{rich_text: [%{text: %{content: value}}]})
-  end
-
-  defp maybe_put_rich_text(map, _key, _), do: map
+  # maybe_put_rich_text/3 removed — unused. Recoverable from git.
 
   defp maybe_put_relation(map, _key, nil), do: map
   defp maybe_put_relation(map, _key, ""), do: map

@@ -23,9 +23,6 @@ defmodule Journalex.Trades.ActionChainBuilder do
   - Invalid input data (missing ticker, datetime, or quantity)
   """
 
-  @decimal_precision 2
-  @seconds_per_day 86_400
-
   import Ecto.Query, warn: false
   alias Journalex.{Repo, ActivityStatement}
 

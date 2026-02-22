@@ -37,6 +37,9 @@ config :phoenix, :plug_init_mode, :runtime
 config :phoenix_live_view,
   enable_expensive_runtime_checks: true
 
+# Isolated uploads directory so tests don't read real dev CSVs
+config :journalex, :uploads_dir, Path.join(System.tmp_dir!(), "journalex_test_uploads")
+
 # Module injection — default to real modules; tests can override via Mox
 config :journalex, :activity_module, Journalex.Activity
 config :journalex, :trades_module, Journalex.Trades

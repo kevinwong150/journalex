@@ -439,9 +439,13 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
     """
   end
 
-  # Centralized uploads directory path
+  # Centralized uploads directory path — configurable for test isolation
   defp uploads_dir do
-    Path.join([:code.priv_dir(:journalex), "uploads"]) |> to_string()
+    Application.get_env(
+      :journalex,
+      :uploads_dir,
+      Path.join([:code.priv_dir(:journalex), "uploads"]) |> to_string()
+    )
   end
 
   # Load and combine trades from all CSV files saved in priv/uploads

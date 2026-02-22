@@ -3,27 +3,32 @@
 # Runs the full test suite inside a container against a disposable Postgres.
 # The test image is built from Dockerfile.test (COPY-based, no bind-mounts).
 #
-# ── Run all tests ────────────────────────────────────────────────────────
+# ── Run all tests (quick, uses layer cache) ──────────────────────────────
 #
-#   docker compose -f docker-compose.test.yml build --no-cache test
-#   docker compose -f docker-compose.test.yml up --abort-on-container-exit --exit-code-from test
+#   docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test
 #
-#   Step 1 (build): compiles a fresh test image with --no-cache
-#   Step 2 (up):
-#     --abort-on-container-exit   Stop all services when the test container exits
-#     --exit-code-from test       Forward the test exit code to your terminal
+#   --build                     Rebuild the test image (uses cached layers — fast)
+#   --abort-on-container-exit   Stop all services when the test container exits
+#   --exit-code-from test       Forward the test exit code to your terminal
 #
-# ── Clean up ───────────────────────────────────────────────────────────
+# ── Run all tests (full clean rebuild, no cache) ─────────────────────────
+#
+#   docker compose -f docker-compose.test.yml build --no-cache test ; docker compose -f docker-compose.test.yml up --abort-on-container-exit --exit-code-from test
+#
+#   Two commands chained because --no-cache is a `build` flag, not an `up` flag.
+#   Use this when you suspect a stale cache issue. Day-to-day, --build is enough.
+#
+# ── Clean up ─────────────────────────────────────────────────────────────
 #
 #   docker compose -f docker-compose.test.yml down
 #
-# ── Host-side tests (DB only, tests run on host) ──────────────────────
+# ── Host-side tests (DB only, tests run on host) ─────────────────────────
 #
 #   docker compose -f docker-compose.test.yml up -d test_db
 #   mix test
 #   docker compose -f docker-compose.test.yml down
 #
-# ───────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
 
 services:
   test_db:

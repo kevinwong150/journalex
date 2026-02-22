@@ -345,8 +345,9 @@ defmodule JournalexWeb.AggregatedTradeList do
           </thead>
 
           <tbody class="bg-white divide-y divide-gray-200">
+            <% id_prefix = if(@id, do: @id <> "-", else: "") %>
             <%= for {item, idx} <- Enum.with_index(sorted_items) do %>
-              <% row_id = "row-" <> Integer.to_string(idx) %>
+              <% row_id = id_prefix <> "row-" <> Integer.to_string(idx) %>
               <% chain = action_chain(item, chain_key) %>
               <% chain_length = length(chain) %>
               <% has_chain = show_action_toggle? and chain_length > 0 %>
@@ -567,7 +568,7 @@ defmodule JournalexWeb.AggregatedTradeList do
                   <% end %>
 
                   <%= if @show_metadata_column? do %>
-                    <%# Sync from Notion button — only shown when the trade has a known Notion page %>
+                    <%!-- Sync from Notion button — only shown when the trade has a known Notion page --%>
                     <% trade_title = item_ticker(item) <> "@" <> item_datetime_value(item) %>
                     <% notion_page_id_for_row = Map.get(@page_ids_map || %{}, trade_title) %>
                     <%= if is_binary(notion_page_id_for_row) and not is_nil(@on_sync_metadata_event) do %>

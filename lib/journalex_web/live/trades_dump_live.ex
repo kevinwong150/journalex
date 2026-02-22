@@ -1299,7 +1299,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
   defp dump_metrics(_, _), do: %{}
 
-  defp list_all_trade_trademarks_with_ids(version \\ nil) do
+  defp list_all_trade_trademarks_with_ids(version) do
     id = trades_data_source_id_for_version(version)
 
     case id do
@@ -1365,15 +1365,7 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   # --- Helpers for metadata form ---
-  defp parse_integer(nil), do: nil
-  defp parse_integer(""), do: nil
-  defp parse_integer(str) when is_binary(str) do
-    case Integer.parse(str) do
-      {int, _} -> int
-      _ -> nil
-    end
-  end
-  defp parse_integer(int) when is_integer(int), do: int
+  # parse_integer/1 removed — unused. Recoverable from git.
 
   defp parse_string(nil), do: nil
   defp parse_string(""), do: nil

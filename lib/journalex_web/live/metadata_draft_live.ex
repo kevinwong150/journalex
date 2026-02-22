@@ -340,14 +340,12 @@ defmodule JournalexWeb.MetadataDraftLive do
                     item={synthetic_item}
                     idx={0}
                     on_save_event="save_draft"
-                    on_reset_event={nil}
                   />
                 <% 2 -> %>
                   <JournalexWeb.MetadataForm.v2
                     item={synthetic_item}
                     idx={0}
                     on_save_event="save_draft"
-                    on_reset_event={nil}
                   />
                 <% _ -> %>
                   <div class="text-center text-sm text-gray-500 py-4">

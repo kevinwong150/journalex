@@ -69,8 +69,8 @@ defmodule JournalexWeb.ActivityStatementDatesLive do
       <div class="flex items-center justify-between mb-6">
         <h1 class="text-2xl font-bold">Activity Statements by Date Range</h1>
 
-        <.link navigate={~p"/activity_statement"} class="text-blue-600 hover:underline">
-          Back to Latest
+        <.link navigate={~p"/activity_statement/all"} class="text-blue-600 hover:underline">
+          Back to All
         </.link>
       </div>
 

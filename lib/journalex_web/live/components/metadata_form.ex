@@ -562,13 +562,7 @@ defmodule JournalexWeb.MetadataForm do
     ]
   end
 
-  defp entry_timeslot_options do
-    [
-      "0930-1000", "1000-1030", "1030-1100", "1100-1130", "1130-1200",
-      "1200-1230", "1230-1300", "1300-1330", "1330-1400", "1400-1430",
-      "1430-1500", "1500-1530", "1530-1600", "1600-1630", "1630-1700"
-    ]
-  end
+  # entry_timeslot_options/0 removed — unused. Recoverable from git.
 
   defp close_time_comment_options do
     [
@@ -592,9 +586,7 @@ defmodule JournalexWeb.MetadataForm do
   end
 
   # Convert option string to a safe HTML id fragment
-  defp option_id(str) when is_binary(str) do
-    str |> String.downcase() |> String.replace(~r/[^a-z0-9]+/, "_") |> String.trim("_")
-  end
+  # option_id/1 removed — unused. Recoverable from git.
 
   # V1 metadata characteristic flags — grouped by theme
   defp v1_flag_groups do
