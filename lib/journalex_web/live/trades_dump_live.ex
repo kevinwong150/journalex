@@ -75,8 +75,10 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:global_metadata_version, Journalex.Settings.get_default_metadata_version())
       |> assign(:supported_versions, @supported_versions)
 
-    if connected?(socket) && Journalex.Settings.get_auto_check_on_load(),
-      do: send(self(), :auto_check_notion)
+    will_auto_check = connected?(socket) && Journalex.Settings.get_auto_check_on_load()
+    socket = assign(socket, :auto_check_pending?, will_auto_check)
+
+    if will_auto_check, do: send(self(), :auto_check_notion)
 
     {:ok, socket}
   end
@@ -527,6 +529,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
   @impl true
   def handle_info(:auto_check_notion, socket) do
+    socket = assign(socket, :auto_check_pending?, false)
     rows = socket.assigns.trades || []
 
     # Prefetch relation caches for TickerLink / DateLink
@@ -1037,6 +1040,13 @@ defmodule JournalexWeb.TradesDumpLive do
             >
               Notion: Failed
             </span>
+            <span
+              :if={@auto_check_pending?}
+              class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700"
+            >
+              <div class="animate-spin rounded-full h-3 w-3 border-2 border-blue-400 border-t-transparent"></div>
+              Notion: Checking…
+            </span>
           </div>
 
           <div class="flex items-center gap-2 flex-wrap">
@@ -1141,6 +1151,14 @@ defmodule JournalexWeb.TradesDumpLive do
           metrics={%{remaining: length(@update_queue || [])}}
           labels={%{remaining: "Remaining"}}
         />
+
+        <div
+          :if={@auto_check_pending?}
+          class="flex items-center gap-3 px-4 py-3 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-700"
+        >
+          <div class="animate-spin rounded-full h-4 w-4 shrink-0 border-2 border-blue-400 border-t-transparent"></div>
+          <span>Connecting to Notion and fetching trade statuses…</span>
+        </div>
       </div>
 
       <% hidden_idx =
