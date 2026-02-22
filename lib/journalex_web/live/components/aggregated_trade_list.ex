@@ -132,6 +132,14 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: 2,
     doc: "Global version for metadata forms (all rows use same version)"
 
+  attr :drafts, :list,
+    default: [],
+    doc: "List of metadata draft templates (pre-filtered by version)"
+
+  attr :on_apply_draft_event, :string,
+    default: nil,
+    doc: "Event name to emit when a draft is applied to a trade row"
+
   def aggregated_trade_list(assigns) do
     ~H"""
     <% chain_key = @action_chain_key %>
@@ -580,6 +588,8 @@ defmodule JournalexWeb.AggregatedTradeList do
                       idx={idx}
                       on_save_event={@on_save_metadata_event}
                       on_reset_event={@on_reset_metadata_event}
+                      drafts={@drafts}
+                      on_apply_draft_event={@on_apply_draft_event}
                     />
                   <% end %>
 
@@ -1248,7 +1258,7 @@ defmodule JournalexWeb.AggregatedTradeList do
           <span class="inline-flex items-center px-2 py-0.5 bg-blue-100 text-blue-700 font-medium rounded">
             V{@saved_version}
           </span>
-          <span class="text-[10px] text-gray-500">Draft</span>
+          <span class="text-[10px] text-gray-500">Pending</span>
         </div>
 
       <%!-- Case 3: No saved version - will save as global version --%>
@@ -1284,6 +1294,8 @@ defmodule JournalexWeb.AggregatedTradeList do
   attr :idx, :integer, required: true
   attr :on_save_event, :string, default: nil
   attr :on_reset_event, :string, default: nil
+  attr :drafts, :list, default: []
+  attr :on_apply_draft_event, :string, default: nil
 
   defp render_metadata_form(assigns) do
     ~H"""
@@ -1294,6 +1306,8 @@ defmodule JournalexWeb.AggregatedTradeList do
           idx={@idx}
           on_save_event={@on_save_event}
           on_reset_event={@on_reset_event}
+          drafts={@drafts}
+          on_apply_draft_event={@on_apply_draft_event}
         />
       <% 2 -> %>
         <JournalexWeb.MetadataForm.v2
@@ -1301,6 +1315,8 @@ defmodule JournalexWeb.AggregatedTradeList do
           idx={@idx}
           on_save_event={@on_save_event}
           on_reset_event={@on_reset_event}
+          drafts={@drafts}
+          on_apply_draft_event={@on_apply_draft_event}
         />
       <% _ -> %>
         <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center text-sm text-gray-500">

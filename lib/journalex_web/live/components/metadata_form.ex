@@ -12,11 +12,29 @@ defmodule JournalexWeb.MetadataForm do
   attr :idx, :integer, required: true
   attr :on_save_event, :string, required: true
   attr :on_reset_event, :string, default: nil
+  attr :drafts, :list, default: []
+  attr :on_apply_draft_event, :string, default: nil
 
   def v1(assigns) do
     ~H"""
     <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-4 shadow-sm mb-3">
-      <h4 class="text-sm font-semibold text-indigo-800 mb-3">Trade Metadata (V1)</h4>
+      <div class="flex items-start justify-between gap-2 mb-3">
+        <h4 class="text-sm font-semibold text-indigo-800">Trade Metadata (V1)</h4>
+        <div :if={@on_apply_draft_event && @drafts != []} class="flex flex-wrap justify-end gap-1.5">
+          <%= for draft <- @drafts do %>
+            <button
+              type="button"
+              phx-click={@on_apply_draft_event}
+              phx-value-draft-id={draft.id}
+              phx-value-index={@idx}
+              class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200 transition cursor-pointer"
+              title={"Apply draft: #{draft.name}"}
+            >
+              {draft.name}
+            </button>
+          <% end %>
+        </div>
+      </div>
 
       <form phx-submit={@on_save_event} phx-value-index={@idx} class="space-y-4">
         <% metadata = Map.get(@item, :metadata) || %{} %>
@@ -206,11 +224,29 @@ defmodule JournalexWeb.MetadataForm do
   attr :idx, :integer, required: true
   attr :on_save_event, :string, required: true
   attr :on_reset_event, :string, default: nil
+  attr :drafts, :list, default: []
+  attr :on_apply_draft_event, :string, default: nil
 
   def v2(assigns) do
     ~H"""
     <div class="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm mb-3">
-      <h4 class="text-sm font-semibold text-blue-800 mb-3">Trade Metadata (V2)</h4>
+      <div class="flex items-start justify-between gap-2 mb-3">
+        <h4 class="text-sm font-semibold text-blue-800">Trade Metadata (V2)</h4>
+        <div :if={@on_apply_draft_event && @drafts != []} class="flex flex-wrap justify-end gap-1.5">
+          <%= for draft <- @drafts do %>
+            <button
+              type="button"
+              phx-click={@on_apply_draft_event}
+              phx-value-draft-id={draft.id}
+              phx-value-index={@idx}
+              class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200 transition cursor-pointer"
+              title={"Apply draft: #{draft.name}"}
+            >
+              {draft.name}
+            </button>
+          <% end %>
+        </div>
+      </div>
 
       <form phx-submit={@on_save_event} phx-value-index={@idx} class="space-y-4">
         <% metadata = Map.get(@item, :metadata) || %{} %>

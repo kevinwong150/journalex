@@ -10,6 +10,7 @@ defmodule JournalexWeb.TradesDumpLive do
   alias Journalex.Notion
   alias Journalex.Notion.Client, as: NotionClient
   alias Journalex.Notion.DataSources
+  alias Journalex.MetadataDrafts
 
   @dump_max_retries 3
   @supported_versions [1, 2]
@@ -74,6 +75,8 @@ defmodule JournalexWeb.TradesDumpLive do
       # Global metadata version for all forms — DB wins, app config is fallback
       |> assign(:global_metadata_version, Journalex.Settings.get_default_metadata_version())
       |> assign(:supported_versions, @supported_versions)
+      # Metadata drafts for quick-apply
+      |> assign(:drafts, MetadataDrafts.list_drafts())
 
     will_auto_check = connected?(socket) && Journalex.Settings.get_auto_check_on_load()
     socket = assign(socket, :auto_check_pending?, will_auto_check)
@@ -449,6 +452,47 @@ defmodule JournalexWeb.TradesDumpLive do
       end
     else
       {:noreply, put_flash(socket, :error, "Trade not found")}
+    end
+  end
+
+  @impl true
+  def handle_event("apply_draft", %{"index" => idx_str, "draft-id" => draft_id_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    {draft_id, _} = Integer.parse(draft_id_str)
+
+    trade = Enum.at(socket.assigns.trades, idx)
+    draft = MetadataDrafts.get_draft(draft_id)
+
+    cond do
+      is_nil(trade) ->
+        {:noreply, put_flash(socket, :error, "Trade not found")}
+
+      is_nil(draft) ->
+        {:noreply, put_flash(socket, :error, "Draft not found")}
+
+      true ->
+        metadata_attrs = draft.metadata || %{}
+        # Preserve read-only rollup fields from existing trade metadata
+        metadata_attrs = preserve_readonly_fields(metadata_attrs, trade.metadata)
+
+        case Journalex.Trades.update_trade(trade, %{
+          metadata: metadata_attrs,
+          metadata_version: draft.metadata_version
+        }) do
+          {:ok, updated_trade} ->
+            trades =
+              socket.assigns.trades
+              |> Enum.with_index()
+              |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+            {:noreply,
+             socket
+             |> assign(:trades, trades)
+             |> put_flash(:info, "Applied draft \"#{draft.name}\" to trade")}
+
+          {:error, changeset} ->
+            {:noreply, put_flash(socket, :error, "Failed to apply draft: #{inspect(changeset.errors)}")}
+        end
     end
   end
 
@@ -1194,6 +1238,8 @@ defmodule JournalexWeb.TradesDumpLive do
         on_reset_metadata_event="reset_metadata"
         on_sync_metadata_event="sync_metadata_from_notion"
         global_metadata_version={@global_metadata_version}
+        drafts={Enum.filter(@drafts, & &1.metadata_version == @global_metadata_version)}
+        on_apply_draft_event="apply_draft"
       />
     </div>
     """
