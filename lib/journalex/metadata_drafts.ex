@@ -7,18 +7,18 @@ defmodule Journalex.MetadataDrafts do
   alias Journalex.MetadataDrafts.Draft
 
   @doc """
-  List all drafts, ordered by name ascending.
+  List all drafts, ordered by creation time ascending (oldest first).
   """
   def list_drafts do
-    from(d in Draft, order_by: [asc: d.name])
+    from(d in Draft, order_by: [asc: d.inserted_at])
     |> Repo.all()
   end
 
   @doc """
-  List drafts for a specific metadata version.
+  List drafts for a specific metadata version, ordered by creation time ascending.
   """
   def list_drafts_by_version(version) when is_integer(version) do
-    from(d in Draft, where: d.metadata_version == ^version, order_by: [asc: d.name])
+    from(d in Draft, where: d.metadata_version == ^version, order_by: [asc: d.inserted_at])
     |> Repo.all()
   end
 

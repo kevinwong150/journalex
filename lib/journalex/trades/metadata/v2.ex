@@ -60,6 +60,8 @@ defmodule Journalex.Trades.Metadata.V2 do
     field :overnight?, :boolean, default: false
     field :overnight_in_purpose?, :boolean, default: false
     field :slipped_position?, :boolean, default: false
+    field :choppychart?, :boolean, default: false
+    field :close_trade_remorse?, :boolean, default: false
 
     # Comments & notes
     field :close_time_comment, :string
@@ -116,6 +118,8 @@ defmodule Journalex.Trades.Metadata.V2 do
       :overnight?,
       :overnight_in_purpose?,
       :slipped_position?,
+      :choppychart?,
+      :close_trade_remorse?,
       :close_time_comment,
       # :date_link,
       # :ticker_link

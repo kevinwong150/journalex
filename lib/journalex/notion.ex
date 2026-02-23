@@ -531,6 +531,8 @@ defmodule Journalex.Notion do
     |> put_if_present(:overnight?, get_checkbox(properties, "Overnight?"))
     |> put_if_present(:overnight_in_purpose?, get_checkbox(properties, "OvernightInPurpose?"))
     |> put_if_present(:slipped_position?, get_checkbox(properties, "SlippedPosition?"))
+    |> put_if_present(:choppychart?, get_checkbox(properties, "ChoppyChart?"))
+    |> put_if_present(:close_trade_remorse?, get_checkbox(properties, "CloseTradeRemorse?"))
     # Comments (multi_select joined as comma-separated text)
     |> put_if_present(:close_time_comment, get_multi_select_text(properties, "CloseTimeComment"))
   end
@@ -818,6 +820,8 @@ defmodule Journalex.Notion do
     |> maybe_put_checkbox("Overnight?", get_meta_field(meta, :overnight?))
     |> maybe_put_checkbox("OvernightInPurpose?", get_meta_field(meta, :overnight_in_purpose?))
     |> maybe_put_checkbox("SlippedPosition?", get_meta_field(meta, :slipped_position?))
+    |> maybe_put_checkbox("ChoppyChart?", get_meta_field(meta, :choppychart?))
+    |> maybe_put_checkbox("CloseTradeRemorse?", get_meta_field(meta, :close_trade_remorse?))
     # Comments (multi_select in Notion)
     |> maybe_put_multi_select("CloseTimeComment", get_meta_field(meta, :close_time_comment))
   end

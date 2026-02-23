@@ -85,7 +85,7 @@ defmodule JournalexWeb.MetadataForm do
               class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
             >
               <option value="">Select setup...</option>
-              <%= for opt <- setup_options() do %>
+              <%= for opt <- v1_setup_options() do %>
                 <option value={opt} selected={Map.get(metadata, :setup) == opt || Map.get(metadata, "setup") == opt}>
                   {opt}
                 </option>
@@ -297,7 +297,7 @@ defmodule JournalexWeb.MetadataForm do
               class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="">Select setup...</option>
-              <%= for opt <- setup_options() do %>
+              <%= for opt <- v2_setup_options() do %>
                 <option value={opt} selected={Map.get(metadata, :setup) == opt || Map.get(metadata, "setup") == opt}>
                   {opt}
                 </option>
@@ -396,15 +396,34 @@ defmodule JournalexWeb.MetadataForm do
               </div>
 
               <!-- Best R:R -->
-              <div id={"rr_best_#{@idx}"} phx-hook="RangeNumberSync">
-                <label class="block text-xs text-gray-600 mb-1">Best R:R</label>
-                <div class="flex items-center gap-2">
-                  <input type="range" min="0" max="20" step="0.01"
-                    value={format_decimal(Map.get(metadata, :best_risk_reward_ratio) || Map.get(metadata, "best_risk_reward_ratio"))}
-                    class="flex-1 accent-blue-600 cursor-pointer" />
-                  <input type="number" name="best_risk_reward_ratio" min="0" step="0.01"
-                    value={format_decimal(Map.get(metadata, :best_risk_reward_ratio) || Map.get(metadata, "best_risk_reward_ratio"))}
-                    class="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500" />
+              <% best_rr_raw = Map.get(metadata, :best_risk_reward_ratio) || Map.get(metadata, "best_risk_reward_ratio") %>
+              <% best_rr_on = best_rr_enabled?(best_rr_raw) %>
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <label class="block text-xs text-gray-600">Best R:R</label>
+                  <label class="cursor-pointer" title="Only applies on win trades">
+                    <input
+                      type="checkbox"
+                      name="best_rr_enabled"
+                      value="true"
+                      checked={best_rr_on}
+                      class="sr-only peer"
+                      onchange={"document.getElementById('rr_best_#{@idx}').classList.toggle('hidden', !this.checked)"}
+                    />
+                    <span class="inline-block border rounded-full px-2 py-0.5 text-xs transition border-gray-300 text-gray-500 peer-checked:bg-green-600 peer-checked:text-white peer-checked:border-green-600">
+                      Win
+                    </span>
+                  </label>
+                </div>
+                <div id={"rr_best_#{@idx}"} phx-hook="RangeNumberSync" class={if best_rr_on, do: "", else: "hidden"}>
+                  <div class="flex items-center gap-2">
+                    <input type="range" min="0" max="20" step="0.01"
+                      value={format_decimal(best_rr_raw)}
+                      class="flex-1 accent-blue-600 cursor-pointer" />
+                    <input type="number" name="best_risk_reward_ratio" min="0" step="0.01"
+                      value={format_decimal(best_rr_raw)}
+                      class="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
                 </div>
               </div>
 
@@ -529,11 +548,41 @@ defmodule JournalexWeb.MetadataForm do
   defp v1_rank_options, do: ["BAD Trade", "C Trade", "B Trade", "A Trade"]
   defp v2_rank_options, do: ["Bad Setup", "Not Setup", "C Trade", "B Trade", "A Trade"]
 
-  defp setup_options do
+  defp v1_setup_options do
     [
       "Trend Continuation - MACD",
       "Reversal - Double Top/Bottom",
       "Reversal - Double Top/Bottom - Pullback Reversal",
+      "Reversal - Gravestone Doji",
+      "Reversal - Exhausted Pressure",
+      "Reversal - Three inside down",
+      "Reversal - Day High/Low",
+      "Breakout - Day High/Low",
+      "Bouncy Ball - Big Seller/Buyer",
+      "Not Setup"
+    ]
+  end
+
+  defp v2_setup_options do
+    [
+      "Reversal - Double Top/Bottom",
+      "Reversal - Double Top/Bottom - Pullback Reversal",
+      "Reversal - Double Top/Bottom - Sharp Top/Round Top",
+      "Reversal - Gravestone Doji",
+      "Reversal - Exhausted Pressure",
+      "Reversal - Three inside down",
+      "Reversal - Day High/Low",
+      "Breakout - Day High/Low",
+      "Bouncy Ball - Big Seller/Buyer",
+      "Not Setup"
+    ]
+  end
+
+  defp v2_setup_options do
+    [
+      "Reversal - Double Top/Bottom",
+      "Reversal - Double Top/Bottom - Pullback Reversal",
+      "Reversal - Double Top/Bottom - Sharp Top/Round Top",
       "Reversal - Gravestone Doji",
       "Reversal - Exhausted Pressure",
       "Reversal - Three inside down",
@@ -574,8 +623,7 @@ defmodule JournalexWeb.MetadataForm do
       "Too early",
       "Admit failure",
       "Good close to lock profit",
-      "Dangerous play",
-      "Adjusted stop loss"
+      "Dangerous play"
     ]
   end
 
@@ -607,6 +655,17 @@ defmodule JournalexWeb.MetadataForm do
   end
   # Format a Decimal / float / binary field to a 2-decimal string for number inputs.
   # Defaults to "1.00" when the value is nil.
+  defp best_rr_enabled?(nil), do: false
+  defp best_rr_enabled?(%Decimal{} = d), do: Decimal.compare(d, Decimal.new("0")) == :gt
+  defp best_rr_enabled?(n) when is_number(n), do: n > 0
+  defp best_rr_enabled?(s) when is_binary(s) do
+    case Float.parse(s) do
+      {f, _} -> f > 0
+      :error -> false
+    end
+  end
+  defp best_rr_enabled?(_), do: false
+
   defp format_decimal(nil), do: "1.00"
   defp format_decimal(%Decimal{} = d) do
     f = Decimal.to_float(d)
@@ -684,7 +743,8 @@ defmodule JournalexWeb.MetadataForm do
         {"hot_sector", "Hot Sector"},
         {"momentum", "Momentum"},
         {"news", "News"},
-        {"earning_report", "Earning Report"}
+        {"earning_report", "Earning Report"},
+        {"choppychart", "Choppy Chart"}
       ]},
       {"Execution", [
         {"adjusted_risk_reward", "Adjusted R:R"},
@@ -696,7 +756,8 @@ defmodule JournalexWeb.MetadataForm do
       {"Reflection", [
         {"normal_emotion", "Normal Emotion"},
         {"good_lesson", "Good Lesson"},
-        {"better_risk_reward_ratio", "Better R:R"}
+        {"better_risk_reward_ratio", "Better R:R"},
+        {"close_trade_remorse", "Close Trade Remorse"}
       ]},
       {"Discipline", [
         {"revenge_trade", "Revenge Trade"},
