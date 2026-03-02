@@ -1425,6 +1425,8 @@ defmodule JournalexWeb.TradesDumpLive do
       overnight?: params["overnight"] == "true",
       overnight_in_purpose?: params["overnight_in_purpose"] == "true",
       slipped_position?: params["slipped_position"] == "true",
+      choppychart?: params["choppychart"] == "true",
+      close_trade_remorse?: params["close_trade_remorse"] == "true",
       initial_risk_reward_ratio: parse_decimal(params["initial_risk_reward_ratio"]),
       best_risk_reward_ratio: (if params["best_rr_enabled"] == "true", do: parse_decimal(params["best_risk_reward_ratio"]), else: Decimal.new("0")),
       size: parse_decimal(params["size"]),
