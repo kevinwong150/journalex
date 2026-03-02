@@ -181,6 +181,18 @@ Hooks.AggregatedTradeList = {
   }
 }
 
+// Syncs a visible draft-name text input (outside the MetadataForm <form>) into a hidden input
+// inside the form, so the name travels with the form submission without triggering server re-renders.
+Hooks.DraftNameSync = {
+  mounted() {
+    const targetId = this.el.dataset.targetId
+    this.el.addEventListener('input', () => {
+      const hidden = document.getElementById(targetId)
+      if (hidden) hidden.value = this.el.value
+    })
+  }
+}
+
 // Keeps an <input type="range"> and <input type="number"> inside the same container in sync.
 // The number input holds the form value (has a name attribute); the range is for dragging.
 Hooks.RangeNumberSync = {

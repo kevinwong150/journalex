@@ -104,13 +104,8 @@ defmodule JournalexWeb.MetadataDraftLive do
   end
 
   @impl true
-  def handle_event("update_draft_name", %{"value" => name}, socket) do
-    {:noreply, assign(socket, :draft_name, name)}
-  end
-
-  @impl true
   def handle_event("save_draft", params, socket) do
-    name = String.trim(socket.assigns.draft_name)
+    name = String.trim(params["draft_name"] || socket.assigns.draft_name || "")
     version = socket.assigns.form_version
 
     metadata = build_metadata_from_params(params, version)
@@ -661,7 +656,8 @@ defmodule JournalexWeb.MetadataDraftLive do
                   type="text"
                   id="draft-name"
                   value={@draft_name}
-                  phx-keyup="update_draft_name"
+                  phx-hook="DraftNameSync"
+                  data-target-id="hidden-draft-name-0"
                   placeholder="e.g. My Quick Loss Template"
                   class="w-full px-3 py-2 text-sm border border-zinc-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
@@ -684,12 +680,14 @@ defmodule JournalexWeb.MetadataDraftLive do
                     item={synthetic_item}
                     idx={0}
                     on_save_event="save_draft"
+                    draft_name={@draft_name}
                   />
                 <% 2 -> %>
                   <JournalexWeb.MetadataForm.v2
                     item={synthetic_item}
                     idx={0}
                     on_save_event="save_draft"
+                    draft_name={@draft_name}
                   />
                 <% _ -> %>
                   <div class="text-center text-sm text-zinc-500 py-4">
