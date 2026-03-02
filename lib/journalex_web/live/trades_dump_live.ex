@@ -72,6 +72,17 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:update_finished_at_mono, nil)
       |> assign(:update_elapsed_ms, 0)
       |> assign(:update_timer_ref, nil)
+      # Sync-from-Notion (bulk) progress state
+      |> assign(:sync_queue, [])
+      |> assign(:sync_total, 0)
+      |> assign(:sync_processed, 0)
+      |> assign(:sync_in_progress?, false)
+      |> assign(:sync_current, nil)
+      |> assign(:sync_results, %{})
+      |> assign(:sync_started_at_mono, nil)
+      |> assign(:sync_finished_at_mono, nil)
+      |> assign(:sync_elapsed_ms, 0)
+      |> assign(:sync_timer_ref, nil)
       # Global metadata version for all forms — DB wins, app config is fallback
       |> assign(:global_metadata_version, Journalex.Settings.get_default_metadata_version())
       |> assign(:supported_versions, @supported_versions)
@@ -402,6 +413,44 @@ defmodule JournalexWeb.TradesDumpLive do
 
     timer_ref = Process.send_after(self(), :process_next_update, 0)
     {:noreply, assign(socket, :update_timer_ref, timer_ref)}
+  end
+
+  @impl true
+  def handle_event("bulk_sync_from_notion", _params, socket) do
+    selected = socket.assigns.selected_idx || MapSet.new()
+    rows = socket.assigns.trades || []
+    page_ids = socket.assigns.notion_page_ids || %{}
+
+    queue =
+      rows
+      |> Enum.with_index()
+      |> Enum.filter(fn {row, idx} ->
+        MapSet.member?(selected, idx) and is_binary(Map.get(page_ids, row_title(row)))
+      end)
+
+    if queue == [] do
+      {:noreply,
+       put_flash(
+         socket,
+         :error,
+         "No selected trades with known Notion pages. Run \"Check Notion\" first."
+       )}
+    else
+      socket =
+        socket
+        |> assign(:sync_queue, queue)
+        |> assign(:sync_total, length(queue))
+        |> assign(:sync_processed, 0)
+        |> assign(:sync_in_progress?, true)
+        |> assign(:sync_current, nil)
+        |> assign(:sync_results, %{})
+        |> assign(:sync_started_at_mono, System.monotonic_time(:millisecond))
+        |> assign(:sync_finished_at_mono, nil)
+        |> assign(:sync_elapsed_ms, 0)
+
+      timer_ref = Process.send_after(self(), :process_next_sync, 0)
+      {:noreply, assign(socket, :sync_timer_ref, timer_ref)}
+    end
   end
 
   @impl true
@@ -995,6 +1044,79 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   @impl true
+  def handle_info(:process_next_sync, socket) do
+    queue = socket.assigns.sync_queue
+
+    case queue do
+      [] ->
+        now = System.monotonic_time(:millisecond)
+
+        socket =
+          socket
+          |> assign(:sync_in_progress?, false)
+          |> assign(:sync_current, nil)
+          |> assign(:sync_finished_at_mono, socket.assigns.sync_finished_at_mono || now)
+          |> assign(
+            :sync_elapsed_ms,
+            if(socket.assigns.sync_started_at_mono,
+              do:
+                (socket.assigns.sync_finished_at_mono || now) -
+                  socket.assigns.sync_started_at_mono,
+              else: 0
+            )
+          )
+          |> assign(:sync_timer_ref, nil)
+
+        {:noreply, socket}
+
+      [{row, idx} | rest] ->
+        socket = assign(socket, :sync_current, row)
+        page_ids = socket.assigns.notion_page_ids || %{}
+        page_id = Map.get(page_ids, row_title(row))
+
+        {updated_trades, result_tag} =
+          case {Map.get(row, :id), page_id} do
+            {id, pid} when not is_nil(id) and is_binary(pid) ->
+              case Notion.sync_metadata_from_notion(id, pid) do
+                {:ok, updated_trade} ->
+                  trades =
+                    socket.assigns.trades
+                    |> Enum.with_index()
+                    |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+                  {trades, :synced}
+
+                {:error, _} ->
+                  {socket.assigns.trades, :error}
+              end
+
+            _ ->
+              {socket.assigns.trades, :skipped}
+          end
+
+        now = System.monotonic_time(:millisecond)
+
+        elapsed_ms =
+          if socket.assigns.sync_started_at_mono,
+            do: now - socket.assigns.sync_started_at_mono,
+            else: 0
+
+        sync_results = Map.put(socket.assigns.sync_results || %{}, idx, result_tag)
+
+        socket =
+          socket
+          |> assign(:trades, updated_trades)
+          |> assign(:sync_queue, rest)
+          |> assign(:sync_processed, socket.assigns.sync_processed + 1)
+          |> assign(:sync_results, sync_results)
+          |> assign(:sync_elapsed_ms, elapsed_ms)
+
+        timer_ref = Process.send_after(self(), :process_next_sync, 0)
+        {:noreply, assign(socket, :sync_timer_ref, timer_ref)}
+    end
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <div class="space-y-4">
@@ -1119,6 +1241,14 @@ defmodule JournalexWeb.TradesDumpLive do
               Update All
             </button>
             <button
+              phx-click="bulk_sync_from_notion"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
+              disabled={MapSet.size(@selected_idx) == 0 or @dump_in_progress? or @update_in_progress? or @check_in_progress? or @sync_in_progress?}
+              phx-disable-with="Starting..."
+            >
+              Sync from Notion
+            </button>
+            <button
               phx-click="insert_missing_notion"
               class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
               disabled={MapSet.size(@selected_idx) == 0 or @dump_in_progress? or @check_in_progress?}
@@ -1194,6 +1324,27 @@ defmodule JournalexWeb.TradesDumpLive do
           }
           metrics={%{remaining: length(@update_queue || [])}}
           labels={%{remaining: "Remaining"}}
+        />
+
+        <DumpProgress.progress
+          :if={@sync_total > 0}
+          id="sync-progress"
+          title="Sync from Notion progress"
+          processed={@sync_processed}
+          total={@sync_total}
+          in_progress?={@sync_in_progress?}
+          elapsed_ms={@sync_elapsed_ms}
+          current_text={
+            @sync_current &&
+              (@sync_current.ticker || @sync_current.symbol) <>
+                " @ " <> DateTime.to_iso8601(@sync_current.datetime)
+          }
+          metrics={%{
+            synced: Enum.count(@sync_results, fn {_, v} -> v == :synced end),
+            errors: Enum.count(@sync_results, fn {_, v} -> v == :error end),
+            remaining: length(@sync_queue || [])
+          }}
+          labels={%{synced: "Synced", errors: "Errors", remaining: "Remaining"}}
         />
 
         <div

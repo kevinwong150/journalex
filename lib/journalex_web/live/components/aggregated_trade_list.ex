@@ -519,7 +519,7 @@ defmodule JournalexWeb.AggregatedTradeList do
                     saved_version={Map.get(item, :metadata_version)}
                     global_version={@global_metadata_version}
                     has_data={not is_nil(Map.get(item, :metadata)) and map_size(Map.get(item, :metadata, %{})) > 0}
-                    is_done={Map.get(Map.get(item, :metadata, %{}), :done?) == true}
+                    is_done={metadata_done?(Map.get(item, :metadata))}
                   />
                 </td>
               </tr>
@@ -703,6 +703,13 @@ defmodule JournalexWeb.AggregatedTradeList do
       true -> "text-gray-900"
     end
   end
+
+  # Handles both atom keys (in-memory after save) and string keys (loaded from JSONB)
+  defp metadata_done?(nil), do: false
+  defp metadata_done?(meta) when is_map(meta) do
+    Map.get(meta, :done?) == true or Map.get(meta, "done?") == true
+  end
+  defp metadata_done?(_), do: false
 
   defp format_amount(nil), do: "0.00"
   defp format_amount(n) when is_number(n), do: :erlang.float_to_binary(n * 1.0, decimals: 2)
