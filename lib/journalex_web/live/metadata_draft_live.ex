@@ -28,6 +28,8 @@ defmodule JournalexWeb.MetadataDraftLive do
       |> assign(:bulk_mode, false)
       |> assign(:bulk_count, 2)
       |> assign(:bulk_names, List.duplicate("", 2))
+      |> assign(:select_mode, false)
+      |> assign(:selected_ids, MapSet.new())
 
     {:ok, socket}
   end
@@ -250,6 +252,87 @@ defmodule JournalexWeb.MetadataDraftLive do
   end
 
   @impl true
+  def handle_event("toggle_select_mode", _params, socket) do
+    select_mode = !socket.assigns.select_mode
+
+    socket =
+      socket
+      |> assign(:select_mode, select_mode)
+      |> assign(:selected_ids, MapSet.new())
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("toggle_select_draft", %{"id" => id_str}, socket) do
+    {id, _} = Integer.parse(id_str)
+    selected = socket.assigns.selected_ids
+
+    selected =
+      if MapSet.member?(selected, id),
+        do: MapSet.delete(selected, id),
+        else: MapSet.put(selected, id)
+
+    {:noreply, assign(socket, :selected_ids, selected)}
+  end
+
+  @impl true
+  def handle_event("toggle_select_all", _params, socket) do
+    all_ids = Enum.map(socket.assigns.drafts, & &1.id) |> MapSet.new()
+    currently_selected = socket.assigns.selected_ids
+
+    selected =
+      if MapSet.equal?(currently_selected, all_ids),
+        do: MapSet.new(),
+        else: all_ids
+
+    {:noreply, assign(socket, :selected_ids, selected)}
+  end
+
+  @impl true
+  def handle_event("delete_selected_drafts", _params, socket) do
+    ids = MapSet.to_list(socket.assigns.selected_ids)
+
+    results =
+      Enum.map(ids, fn id ->
+        draft = MetadataDrafts.get_draft!(id)
+        MetadataDrafts.delete_draft(draft)
+      end)
+
+    deleted = Enum.count(results, &match?({:ok, _}, &1))
+    failed  = Enum.count(results, &match?({:error, _}, &1))
+
+    drafts = MetadataDrafts.list_drafts()
+
+    # Clear editing panel if the edited draft was among the deleted
+    editing = socket.assigns.editing_draft
+
+    socket =
+      if editing && MapSet.member?(socket.assigns.selected_ids, editing.id) do
+        socket
+        |> assign(:editing_draft, nil)
+        |> assign(:draft_name, "")
+        |> assign(:draft_metadata, %{})
+      else
+        socket
+      end
+
+    flash_msg =
+      if failed == 0,
+        do: "Deleted #{deleted} draft(s)",
+        else: "Deleted #{deleted}, failed to delete #{failed}"
+
+    flash_level = if failed == 0, do: :info, else: :error
+
+    {:noreply,
+     socket
+     |> assign(:drafts, drafts)
+     |> assign(:selected_ids, MapSet.new())
+     |> assign(:select_mode, false)
+     |> put_flash(flash_level, flash_msg)}
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <div class="max-w-6xl mx-auto mt-8 px-4 pb-10">
@@ -379,9 +462,26 @@ defmodule JournalexWeb.MetadataDraftLive do
               <h3 class="text-xs font-semibold text-zinc-600 uppercase tracking-wide">
                 Saved Drafts
               </h3>
-              <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-200 text-zinc-600">
-                {length(@drafts)}
-              </span>
+              <div class="flex items-center gap-2">
+                <span :if={@select_mode && @drafts != []} class="text-xs text-zinc-500 cursor-pointer hover:text-zinc-800" phx-click="toggle_select_all">
+                  {if MapSet.size(@selected_ids) == length(@drafts), do: "Deselect all", else: "Select all"}
+                </span>
+                <button
+                  phx-click="toggle_select_mode"
+                  class={[
+                    "text-xs px-2 py-0.5 rounded-md border font-medium transition-colors",
+                    if(@select_mode,
+                      do: "bg-red-100 text-red-700 border-red-300 hover:bg-red-200",
+                      else: "bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-200"
+                    )
+                  ]}
+                >
+                  {if @select_mode, do: "Cancel", else: "Select"}
+                </button>
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-200 text-zinc-600">
+                  {length(@drafts)}
+                </span>
+              </div>
             </div>
 
             <%= if @drafts == [] do %>
@@ -413,6 +513,16 @@ defmodule JournalexWeb.MetadataDraftLive do
                     )
                   ]}>
                     <div class="flex items-start justify-between gap-1.5">
+                      <%!-- Checkbox (only in select mode) --%>
+                      <div :if={@select_mode} class="flex items-center pt-0.5 mr-1 shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={MapSet.member?(@selected_ids, draft.id)}
+                          phx-click="toggle_select_draft"
+                          phx-value-id={draft.id}
+                          class="w-4 h-4 rounded border-zinc-300 text-red-600 cursor-pointer"
+                        />
+                      </div>
                       <div class="min-w-0 flex-1">
                         <div class="flex items-center gap-1.5">
                           <svg
@@ -443,7 +553,7 @@ defmodule JournalexWeb.MetadataDraftLive do
                           </span>
                         </div>
                       </div>
-                      <div class="flex items-center gap-0.5 shrink-0">
+                      <div :if={!@select_mode} class="flex items-center gap-0.5 shrink-0">
                         <button
                           phx-click="edit_draft"
                           phx-value-id={draft.id}
@@ -495,6 +605,19 @@ defmodule JournalexWeb.MetadataDraftLive do
                   </li>
                 <% end %>
               </ul>
+              <%!-- Bulk delete footer --%>
+              <div :if={@select_mode && MapSet.size(@selected_ids) > 0} class="px-3 py-2 border-t border-red-100 bg-red-50">
+                <button
+                  phx-click="delete_selected_drafts"
+                  data-confirm={"Delete #{MapSet.size(@selected_ids)} selected draft(s)? This cannot be undone."}
+                  class="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors shadow-sm"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Delete {MapSet.size(@selected_ids)} selected
+                </button>
+              </div>
             <% end %>
           </div>
         </div>
@@ -633,6 +756,8 @@ defmodule JournalexWeb.MetadataDraftLive do
       overnight?: params["overnight"] == "true",
       overnight_in_purpose?: params["overnight_in_purpose"] == "true",
       slipped_position?: params["slipped_position"] == "true",
+      choppychart?: params["choppychart"] == "true",
+      close_trade_remorse?: params["close_trade_remorse"] == "true",
       initial_risk_reward_ratio: parse_decimal(params["initial_risk_reward_ratio"]),
       best_risk_reward_ratio: parse_decimal(params["best_risk_reward_ratio"]),
       size: parse_decimal(params["size"]),
