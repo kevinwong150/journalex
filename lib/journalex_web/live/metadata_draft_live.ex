@@ -501,10 +501,10 @@ defmodule JournalexWeb.MetadataDraftLive do
               <ul class="divide-y divide-zinc-100">
                 <%= for draft <- @drafts do %>
                   <li class={[
-                    "px-3 py-3 hover:bg-zinc-50 transition-colors border-l-2",
+                    "px-3 py-3 transition-colors border-l-[3px]",
                     if(@editing_draft && @editing_draft.id == draft.id,
-                      do: "bg-blue-50 border-blue-500",
-                      else: "border-transparent"
+                      do: "bg-blue-100 border-blue-500 shadow-sm",
+                      else: "border-transparent hover:bg-zinc-50"
                     )
                   ]}>
                     <div class="flex items-start justify-between gap-1.5">
@@ -529,7 +529,13 @@ defmodule JournalexWeb.MetadataDraftLive do
                           >
                             <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
                           </svg>
-                          <p class="text-sm font-medium text-zinc-900 truncate">
+                          <p class={[
+                            "text-sm font-medium truncate",
+                            if(@editing_draft && @editing_draft.id == draft.id,
+                              do: "text-blue-700 font-semibold",
+                              else: "text-zinc-900"
+                            )
+                          ]}>
                             {draft.name}
                           </p>
                         </div>
