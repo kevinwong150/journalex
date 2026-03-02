@@ -418,10 +418,10 @@ defmodule JournalexWeb.MetadataForm do
                 <div id={"rr_best_#{@idx}"} phx-hook="RangeNumberSync" class={if best_rr_on, do: "", else: "hidden"}>
                   <div class="flex items-center gap-2">
                     <input type="range" min="0" max="20" step="0.01"
-                      value={format_decimal(best_rr_raw)}
+                      value={format_decimal(best_rr_raw, "0")}
                       class="flex-1 accent-blue-600 cursor-pointer" />
                     <input type="number" name="best_risk_reward_ratio" min="0" step="0.01"
-                      value={format_decimal(best_rr_raw)}
+                      value={format_decimal(best_rr_raw, "0")}
                       class="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500" />
                   </div>
                 </div>

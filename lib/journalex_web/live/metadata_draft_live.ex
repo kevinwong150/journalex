@@ -759,7 +759,7 @@ defmodule JournalexWeb.MetadataDraftLive do
       choppychart?: params["choppychart"] == "true",
       close_trade_remorse?: params["close_trade_remorse"] == "true",
       initial_risk_reward_ratio: parse_decimal(params["initial_risk_reward_ratio"]),
-      best_risk_reward_ratio: parse_decimal(params["best_risk_reward_ratio"]),
+      best_risk_reward_ratio: (if params["best_rr_enabled"] == "true", do: parse_decimal(params["best_risk_reward_ratio"]), else: Decimal.new("0")),
       size: parse_decimal(params["size"]),
       close_time_comment: join_close_time_comments(params["close_time_comment"])
     }
