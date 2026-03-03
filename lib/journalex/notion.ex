@@ -533,6 +533,8 @@ defmodule Journalex.Notion do
     |> put_if_present(:slipped_position?, get_checkbox(properties, "SlippedPosition?"))
     |> put_if_present(:choppychart?, get_checkbox(properties, "ChoppyChart?"))
     |> put_if_present(:close_trade_remorse?, get_checkbox(properties, "CloseTradeRemorse?"))
+    |> put_if_present(:no_luck?, get_checkbox(properties, "NoLuck?"))
+    |> put_if_present(:no_risk?, get_checkbox(properties, "NoRisk?"))
     # Comments (multi_select joined as comma-separated text)
     |> put_if_present(:close_time_comment, get_multi_select_text(properties, "CloseTimeComment"))
   end
@@ -645,6 +647,10 @@ defmodule Journalex.Notion do
       {:overnight?, :boolean},
       {:overnight_in_purpose?, :boolean},
       {:slipped_position?, :boolean},
+      {:choppychart?, :boolean},
+      {:close_trade_remorse?, :boolean},
+      {:no_luck?, :boolean},
+      {:no_risk?, :boolean},
       {:close_time_comment, :multi_select}
     ]
   end
@@ -746,16 +752,24 @@ defmodule Journalex.Notion do
     metadata = Map.get(row, :metadata)
     version = Map.get(row, :metadata_version) || 2
 
-    case {metadata, version} do
-      {meta, 1} when is_map(meta) and map_size(meta) > 0 ->
-        build_v1_metadata_properties(meta)
+    base_props =
+      case {metadata, version} do
+        {meta, 1} when is_map(meta) and map_size(meta) > 0 ->
+          build_v1_metadata_properties(meta)
 
-      {meta, 2} when is_map(meta) and map_size(meta) > 0 ->
-        build_v2_metadata_properties(meta)
+        {meta, 2} when is_map(meta) and map_size(meta) > 0 ->
+          build_v2_metadata_properties(meta)
 
-      _ ->
-        # No metadata
-        %{}
+        _ ->
+          %{}
+      end
+
+    # For V2 trades: if size wasn't included from metadata (nil or metadata empty),
+    # auto-compute it from realized_pl using the same formula as the form's auto-fill.
+    if version == 2 and not Map.has_key?(base_props, "Size") do
+      maybe_put_number(base_props, "Size", auto_compute_size(row))
+    else
+      base_props
     end
   end
 
@@ -822,6 +836,8 @@ defmodule Journalex.Notion do
     |> maybe_put_checkbox("SlippedPosition?", get_meta_field(meta, :slipped_position?))
     |> maybe_put_checkbox("ChoppyChart?", get_meta_field(meta, :choppychart?))
     |> maybe_put_checkbox("CloseTradeRemorse?", get_meta_field(meta, :close_trade_remorse?))
+    |> maybe_put_checkbox("NoLuck?", get_meta_field(meta, :no_luck?))
+    |> maybe_put_checkbox("NoRisk?", get_meta_field(meta, :no_risk?))
     # Comments (multi_select in Notion)
     |> maybe_put_multi_select("CloseTimeComment", get_meta_field(meta, :close_time_comment))
   end
@@ -831,6 +847,26 @@ defmodule Journalex.Notion do
     Map.get(meta, field) || Map.get(meta, Atom.to_string(field))
   end
   defp get_meta_field(_, _), do: nil
+
+  # Auto-compute size for LOSE trades when not stored in metadata.
+  # Mirrors compute_size_value/3 in the metadata form component:
+  # size = |realized_pl| / r_size, rounded to 2 decimal places.
+  defp auto_compute_size(row) when is_map(row) do
+    result  = Map.get(row, :result)      || Map.get(row, "result")
+    realized = Map.get(row, :realized_pl) || Map.get(row, "realized_pl")
+    r_size  = Journalex.Settings.get_r_size()
+
+    with "LOSE" <- result,
+         false  <- is_nil(realized),
+         true   <- is_number(r_size) and r_size > 0,
+         pl     when is_number(pl) <- to_number(realized),
+         computed when computed > 0 <- Float.round(abs(pl) / r_size, 2) do
+      computed
+    else
+      _ -> nil
+    end
+  end
+  defp auto_compute_size(_), do: nil
 
   # (no date helper needed for Entry Timeslot; it's a select field now)
 

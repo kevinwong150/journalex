@@ -601,6 +601,7 @@ defmodule JournalexWeb.MetadataForm do
     [
       "Automatically - Take Profit",
       "Automatically - Stop Loss",
+      "Automatically - Breakeven",
       "Manually - Take Profit",
       "Manually - Stop Loss",
       "Manually - Reverse"
@@ -627,7 +628,8 @@ defmodule JournalexWeb.MetadataForm do
       "Too early",
       "Admit failure",
       "Good close to lock profit",
-      "Dangerous play"
+      "Dangerous play",
+      "Adjusted stop loss"
     ]
   end
 
@@ -768,6 +770,10 @@ defmodule JournalexWeb.MetadataForm do
         {"fomo", "FOMO"},
         {"overnight", "Overnight"},
         {"overnight_in_purpose", "Overnight in Purpose"}
+      ]},
+      {"Setup Quality", [
+        {"no_luck", "No Luck"},
+        {"no_risk", "No Risk"}
       ]}
     ]
   end

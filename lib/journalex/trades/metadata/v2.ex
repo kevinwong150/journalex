@@ -62,6 +62,8 @@ defmodule Journalex.Trades.Metadata.V2 do
     field :slipped_position?, :boolean, default: false
     field :choppychart?, :boolean, default: false
     field :close_trade_remorse?, :boolean, default: false
+    field :no_luck?, :boolean, default: false
+    field :no_risk?, :boolean, default: false
 
     # Comments & notes
     field :close_time_comment, :string
@@ -120,6 +122,8 @@ defmodule Journalex.Trades.Metadata.V2 do
       :slipped_position?,
       :choppychart?,
       :close_trade_remorse?,
+      :no_luck?,
+      :no_risk?,
       :close_time_comment,
       # :date_link,
       # :ticker_link
