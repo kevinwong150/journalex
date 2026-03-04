@@ -535,6 +535,10 @@ defmodule Journalex.Notion do
     |> put_if_present(:close_trade_remorse?, get_checkbox(properties, "CloseTradeRemorse?"))
     |> put_if_present(:no_luck?, get_checkbox(properties, "NoLuck?"))
     |> put_if_present(:no_risk?, get_checkbox(properties, "NoRisk?"))
+    |> put_if_present(:clear_liquidity_grab?, get_checkbox(properties, "ClearLiquidityGrab?"))
+    |> put_if_present(:entry_after_liquidity_grab?, get_checkbox(properties, "EntryAfterLiquidityGrab?"))
+    |> put_if_present(:instant_lose?, get_checkbox(properties, "InstantLose?"))
+    |> put_if_present(:too_tight_stop_loss?, get_checkbox(properties, "TooTightStopLoss?"))
     # Comments (multi_select joined as comma-separated text)
     |> put_if_present(:close_time_comment, get_multi_select_text(properties, "CloseTimeComment"))
   end
@@ -651,6 +655,10 @@ defmodule Journalex.Notion do
       {:close_trade_remorse?, :boolean},
       {:no_luck?, :boolean},
       {:no_risk?, :boolean},
+      {:clear_liquidity_grab?, :boolean},
+      {:entry_after_liquidity_grab?, :boolean},
+      {:instant_lose?, :boolean},
+      {:too_tight_stop_loss?, :boolean},
       {:close_time_comment, :multi_select}
     ]
   end
@@ -838,6 +846,10 @@ defmodule Journalex.Notion do
     |> maybe_put_checkbox("CloseTradeRemorse?", get_meta_field(meta, :close_trade_remorse?))
     |> maybe_put_checkbox("NoLuck?", get_meta_field(meta, :no_luck?))
     |> maybe_put_checkbox("NoRisk?", get_meta_field(meta, :no_risk?))
+    |> maybe_put_checkbox("ClearLiquidityGrab?", get_meta_field(meta, :clear_liquidity_grab?))
+    |> maybe_put_checkbox("EntryAfterLiquidityGrab?", get_meta_field(meta, :entry_after_liquidity_grab?))
+    |> maybe_put_checkbox("InstantLose?", get_meta_field(meta, :instant_lose?))
+    |> maybe_put_checkbox("TooTightStopLoss?", get_meta_field(meta, :too_tight_stop_loss?))
     # Comments (multi_select in Notion)
     |> maybe_put_multi_select("CloseTimeComment", get_meta_field(meta, :close_time_comment))
   end

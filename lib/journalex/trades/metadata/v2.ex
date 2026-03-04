@@ -64,6 +64,10 @@ defmodule Journalex.Trades.Metadata.V2 do
     field :close_trade_remorse?, :boolean, default: false
     field :no_luck?, :boolean, default: false
     field :no_risk?, :boolean, default: false
+    field :clear_liquidity_grab?, :boolean, default: false
+    field :entry_after_liquidity_grab?, :boolean, default: false
+    field :instant_lose?, :boolean, default: false
+    field :too_tight_stop_loss?, :boolean, default: false
 
     # Comments & notes
     field :close_time_comment, :string
@@ -124,6 +128,10 @@ defmodule Journalex.Trades.Metadata.V2 do
       :close_trade_remorse?,
       :no_luck?,
       :no_risk?,
+      :clear_liquidity_grab?,
+      :entry_after_liquidity_grab?,
+      :instant_lose?,
+      :too_tight_stop_loss?,
       :close_time_comment,
       # :date_link,
       # :ticker_link

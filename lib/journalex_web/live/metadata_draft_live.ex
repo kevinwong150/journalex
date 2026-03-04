@@ -449,10 +449,10 @@ defmodule JournalexWeb.MetadataDraftLive do
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <%!-- Left panel: Draft list --%>
-        <div class="lg:col-span-1">
-          <div class="bg-white rounded-lg border border-zinc-200 shadow-sm overflow-hidden">
+        <div class="lg:col-span-1 sticky top-20">
+          <div class="bg-white rounded-lg border border-zinc-200 shadow-sm overflow-hidden max-h-[calc(100vh-5.5rem)] flex flex-col">
             <div class="px-4 py-3 border-b border-zinc-100 bg-zinc-50 flex items-center justify-between">
               <h3 class="text-xs font-semibold text-zinc-600 uppercase tracking-wide">
                 Saved Drafts
@@ -479,6 +479,7 @@ defmodule JournalexWeb.MetadataDraftLive do
               </div>
             </div>
 
+            <div class="overflow-y-auto flex-1">
             <%= if @drafts == [] do %>
               <div class="px-4 py-10 text-center">
                 <svg
@@ -620,6 +621,7 @@ defmodule JournalexWeb.MetadataDraftLive do
                 </button>
               </div>
             <% end %>
+            </div>
           </div>
         </div>
 
@@ -764,6 +766,10 @@ defmodule JournalexWeb.MetadataDraftLive do
       close_trade_remorse?: params["close_trade_remorse"] == "true",
       no_luck?: params["no_luck"] == "true",
       no_risk?: params["no_risk"] == "true",
+      clear_liquidity_grab?: params["clear_liquidity_grab"] == "true",
+      entry_after_liquidity_grab?: params["entry_after_liquidity_grab"] == "true",
+      instant_lose?: params["instant_lose"] == "true",
+      too_tight_stop_loss?: params["too_tight_stop_loss"] == "true",
       initial_risk_reward_ratio: parse_decimal(params["initial_risk_reward_ratio"]),
       best_risk_reward_ratio: (if params["best_rr_enabled"] == "true", do: parse_decimal(params["best_risk_reward_ratio"]), else: Decimal.new("0")),
       size: parse_decimal(params["size"]),

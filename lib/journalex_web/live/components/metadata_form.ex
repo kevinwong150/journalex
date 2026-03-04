@@ -771,9 +771,13 @@ defmodule JournalexWeb.MetadataForm do
         {"overnight", "Overnight"},
         {"overnight_in_purpose", "Overnight in Purpose"}
       ]},
-      {"Setup Quality", [
+      {"Setup Review", [
         {"no_luck", "No Luck"},
-        {"no_risk", "No Risk"}
+        {"no_risk", "No Risk"},
+        {"clear_liquidity_grab", "Clear Liquidity Grab"},
+        {"entry_after_liquidity_grab", "Entry After Liquidity Grab"},
+        {"instant_lose", "Instant Lose"},
+        {"too_tight_stop_loss", "Too Tight Stop Loss"}
       ]}
     ]
   end
