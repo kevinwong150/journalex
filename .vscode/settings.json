@@ -1,0 +1,21 @@
+{
+  "github.copilot.chat.testGeneration.instructions": [
+    {
+      "file": ".github/instructions/testing.instructions.md"
+    }
+  ],
+  "github.copilot.chat.codeGeneration.instructions": [
+    {
+      "file": ".github/instructions/contexts.instructions.md"
+    },
+    {
+      "file": ".github/instructions/liveview.instructions.md"
+    },
+    {
+      "file": ".github/instructions/metadata.instructions.md"
+    },
+    {
+      "file": ".github/instructions/migrations.instructions.md"
+    }
+  ]
+}
