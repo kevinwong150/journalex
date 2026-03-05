@@ -539,6 +539,7 @@ defmodule Journalex.Notion do
     |> put_if_present(:entry_after_liquidity_grab?, get_checkbox(properties, "EntryAfterLiquidityGrab?"))
     |> put_if_present(:instant_lose?, get_checkbox(properties, "InstantLose?"))
     |> put_if_present(:too_tight_stop_loss?, get_checkbox(properties, "TooTightStopLoss?"))
+    |> put_if_present(:affected_by_other_trade?, get_checkbox(properties, "AffectedByOtherTrade?"))
     # Comments (multi_select joined as comma-separated text)
     |> put_if_present(:close_time_comment, get_multi_select_text(properties, "CloseTimeComment"))
   end
@@ -659,6 +660,7 @@ defmodule Journalex.Notion do
       {:entry_after_liquidity_grab?, :boolean},
       {:instant_lose?, :boolean},
       {:too_tight_stop_loss?, :boolean},
+      {:affected_by_other_trade?, :boolean},
       {:close_time_comment, :multi_select}
     ]
   end
@@ -850,6 +852,7 @@ defmodule Journalex.Notion do
     |> maybe_put_checkbox("EntryAfterLiquidityGrab?", get_meta_field(meta, :entry_after_liquidity_grab?))
     |> maybe_put_checkbox("InstantLose?", get_meta_field(meta, :instant_lose?))
     |> maybe_put_checkbox("TooTightStopLoss?", get_meta_field(meta, :too_tight_stop_loss?))
+    |> maybe_put_checkbox("AffectedByOtherTrade?", get_meta_field(meta, :affected_by_other_trade?))
     # Comments (multi_select in Notion)
     |> maybe_put_multi_select("CloseTimeComment", get_meta_field(meta, :close_time_comment))
   end

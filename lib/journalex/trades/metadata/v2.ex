@@ -68,6 +68,7 @@ defmodule Journalex.Trades.Metadata.V2 do
     field :entry_after_liquidity_grab?, :boolean, default: false
     field :instant_lose?, :boolean, default: false
     field :too_tight_stop_loss?, :boolean, default: false
+    field :affected_by_other_trade?, :boolean, default: false
 
     # Comments & notes
     field :close_time_comment, :string
@@ -132,6 +133,7 @@ defmodule Journalex.Trades.Metadata.V2 do
       :entry_after_liquidity_grab?,
       :instant_lose?,
       :too_tight_stop_loss?,
+      :affected_by_other_trade?,
       :close_time_comment,
       # :date_link,
       # :ticker_link

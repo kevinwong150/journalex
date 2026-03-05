@@ -770,6 +770,7 @@ defmodule JournalexWeb.MetadataDraftLive do
       entry_after_liquidity_grab?: params["entry_after_liquidity_grab"] == "true",
       instant_lose?: params["instant_lose"] == "true",
       too_tight_stop_loss?: params["too_tight_stop_loss"] == "true",
+      affected_by_other_trade?: params["affected_by_other_trade"] == "true",
       initial_risk_reward_ratio: parse_decimal(params["initial_risk_reward_ratio"]),
       best_risk_reward_ratio: (if params["best_rr_enabled"] == "true", do: parse_decimal(params["best_risk_reward_ratio"]), else: Decimal.new("0")),
       size: parse_decimal(params["size"]),

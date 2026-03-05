@@ -42,6 +42,8 @@ defmodule Journalex.Notion.Client do
       url = build_url(path)
       json_body = if body, do: Jason.encode!(body), else: nil
 
+      Logger.debug("[Notion] #{method |> Atom.to_string() |> String.upcase()} #{path}")
+
       headers =
         [
           {"Authorization", "Bearer " <> token},
@@ -55,11 +57,23 @@ defmodule Journalex.Notion.Client do
       case Finch.request(req, Journalex.Finch) do
         {:ok, %Finch.Response{status: status, body: resp_body}} ->
           case safe_decode_json(resp_body) do
-            {:ok, map} -> {:ok, status, map}
-            {:error, _} -> {:ok, status, %{"raw" => resp_body}}
+            {:ok, map} ->
+              if status in 200..299 do
+                Logger.debug("[Notion] #{status} OK #{path}")
+              else
+                notion_code = Map.get(map, "code", "unknown")
+                notion_msg  = Map.get(map, "message", resp_body)
+                Logger.warning("[Notion] #{status} #{path} — #{notion_code}: #{notion_msg}")
+              end
+              {:ok, status, map}
+
+            {:error, decode_err} ->
+              Logger.warning("[Notion] #{status} #{path} — failed to decode response: #{inspect(decode_err)}")
+              {:ok, status, %{"raw" => resp_body}}
           end
 
         {:error, reason} ->
+          Logger.error("[Notion] request failed #{path} — #{inspect(reason)}")
           {:error, reason}
       end
     end
@@ -164,6 +178,7 @@ defmodule Journalex.Notion.Client do
 
     cond do
       is_nil(token) or token == "" ->
+        Logger.error("[Notion] NOTION_API_TOKEN is not configured")
         {:error, :missing_notion_api_token}
 
       true ->

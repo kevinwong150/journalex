@@ -777,7 +777,8 @@ defmodule JournalexWeb.MetadataForm do
         {"clear_liquidity_grab", "Clear Liquidity Grab"},
         {"entry_after_liquidity_grab", "Entry After Liquidity Grab"},
         {"instant_lose", "Instant Lose"},
-        {"too_tight_stop_loss", "Too Tight Stop Loss"}
+        {"too_tight_stop_loss", "Too Tight Stop Loss"},
+        {"affected_by_other_trade", "Affected by Other Trade"}
       ]}
     ]
   end

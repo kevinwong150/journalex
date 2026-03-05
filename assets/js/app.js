@@ -24,6 +24,15 @@ import topbar from "../vendor/topbar"
 
 let Hooks = {}
 
+Hooks.FlashHide = {
+  mounted() {
+    this._timer = setTimeout(() => this.el.click(), 2000)
+  },
+  destroyed() {
+    clearTimeout(this._timer)
+  }
+}
+
 Hooks.AggregatedTradeList = {
   mounted() {
     this._init()
