@@ -750,7 +750,8 @@ defmodule JournalexWeb.MetadataForm do
         {"momentum", "Momentum"},
         {"news", "News"},
         {"earning_report", "Earning Report"},
-        {"choppychart", "Choppy Chart"}
+        {"choppychart", "Choppy Chart"},
+        {"mid_range", "Mid Range"}
       ]},
       {"Execution", [
         {"adjusted_risk_reward", "Adjusted R:R"},

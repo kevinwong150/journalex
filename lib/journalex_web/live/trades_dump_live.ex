@@ -598,9 +598,12 @@ defmodule JournalexWeb.TradesDumpLive do
               |> Enum.with_index()
               |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
 
+            row_incons = Map.delete(socket.assigns.row_inconsistencies || %{}, idx)
+
             {:noreply,
              socket
              |> assign(:trades, trades)
+             |> assign(:row_inconsistencies, row_incons)
              |> put_flash(:info, "Metadata synced from Notion")}
 
           {:error, reason} ->
@@ -1103,6 +1106,11 @@ defmodule JournalexWeb.TradesDumpLive do
 
         sync_results = Map.put(socket.assigns.sync_results || %{}, idx, result_tag)
 
+        row_incons =
+          if result_tag == :synced,
+            do: Map.delete(socket.assigns.row_inconsistencies || %{}, idx),
+            else: socket.assigns.row_inconsistencies || %{}
+
         socket =
           socket
           |> assign(:trades, updated_trades)
@@ -1110,6 +1118,7 @@ defmodule JournalexWeb.TradesDumpLive do
           |> assign(:sync_processed, socket.assigns.sync_processed + 1)
           |> assign(:sync_results, sync_results)
           |> assign(:sync_elapsed_ms, elapsed_ms)
+          |> assign(:row_inconsistencies, row_incons)
 
         timer_ref = Process.send_after(self(), :process_next_sync, 0)
         {:noreply, assign(socket, :sync_timer_ref, timer_ref)}
@@ -1585,6 +1594,7 @@ defmodule JournalexWeb.TradesDumpLive do
       instant_lose?: params["instant_lose"] == "true",
       too_tight_stop_loss?: params["too_tight_stop_loss"] == "true",
       affected_by_other_trade?: params["affected_by_other_trade"] == "true",
+      mid_range?: params["mid_range"] == "true",
       initial_risk_reward_ratio: parse_decimal(params["initial_risk_reward_ratio"]),
       best_risk_reward_ratio: (if params["best_rr_enabled"] == "true", do: parse_decimal(params["best_risk_reward_ratio"]), else: Decimal.new("0")),
       size: parse_decimal(params["size"]),
