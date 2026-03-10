@@ -70,6 +70,7 @@ defmodule Journalex.Trades.Metadata.V2 do
     field :too_tight_stop_loss?, :boolean, default: false
     field :affected_by_other_trade?, :boolean, default: false
     field :mid_range?, :boolean, default: false
+    field :fully_wrong_direction?, :boolean, default: false
 
     # Comments & notes
     field :close_time_comment, :string
@@ -136,6 +137,7 @@ defmodule Journalex.Trades.Metadata.V2 do
       :too_tight_stop_loss?,
       :affected_by_other_trade?,
       :mid_range?,
+      :fully_wrong_direction?,
       :close_time_comment,
       # :date_link,
       # :ticker_link

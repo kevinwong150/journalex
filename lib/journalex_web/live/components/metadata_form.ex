@@ -575,24 +575,11 @@ defmodule JournalexWeb.MetadataForm do
       "Reversal - Gravestone Doji",
       "Reversal - Exhausted Pressure",
       "Reversal - Three inside down",
+      "Reversal - Capitulation",
       "Reversal - Day High/Low",
       "Breakout - Day High/Low",
       "Bouncy Ball - Big Seller/Buyer",
-      "Not Setup"
-    ]
-  end
-
-  defp v2_setup_options do
-    [
-      "Reversal - Double Top/Bottom",
-      "Reversal - Double Top/Bottom - Pullback Reversal",
-      "Reversal - Double Top/Bottom - Sharp Top/Round Top",
-      "Reversal - Gravestone Doji",
-      "Reversal - Exhausted Pressure",
-      "Reversal - Three inside down",
-      "Reversal - Day High/Low",
-      "Breakout - Day High/Low",
-      "Bouncy Ball - Big Seller/Buyer",
+      "Trend Continuation - MACD",
       "Not Setup"
     ]
   end
@@ -779,7 +766,8 @@ defmodule JournalexWeb.MetadataForm do
         {"entry_after_liquidity_grab", "Entry After Liquidity Grab"},
         {"instant_lose", "Instant Lose"},
         {"too_tight_stop_loss", "Too Tight Stop Loss"},
-        {"affected_by_other_trade", "Affected by Other Trade"}
+        {"affected_by_other_trade", "Affected by Other Trade"},
+        {"fully_wrong_direction", "Fully Wrong Direction"}
       ]}
     ]
   end
