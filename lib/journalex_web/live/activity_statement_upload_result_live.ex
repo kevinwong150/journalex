@@ -683,10 +683,10 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
        socket
        |> assign(:activity_data, updated)
        |> assign(:unsaved_count, count_unsaved(updated))
-       |> put_flash(:info, "Saved #{inserted} new rows to DB")}
+       |> put_toast(:info, "Saved #{inserted} new rows to DB")}
     rescue
       e ->
-        {:noreply, put_flash(socket, :error, "Failed to save: #{Exception.message(e)}")}
+        {:noreply, put_toast(socket, :error, "Failed to save: #{Exception.message(e)}")}
     end
   end
 
@@ -700,7 +700,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
       end)
 
     if Enum.empty?(items) do
-      {:noreply, socket |> put_flash(:info, "No trades to save")}
+      {:noreply, socket |> put_toast(:info, "No trades to save")}
     else
       dates =
         items
@@ -713,7 +713,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
         |> Enum.uniq()
 
       if Enum.empty?(dates) do
-        {:noreply, socket |> put_flash(:error, "Cannot determine dates from trade items")}
+        {:noreply, socket |> put_toast(:error, "Cannot determine dates from trade items")}
       else
         min_date = Enum.min(dates, Date)
         max_date = Enum.max(dates, Date)
@@ -736,12 +736,12 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
            socket
            |> assign(:summary_by_symbol, updated_summary)
            |> assign(:summary_unsaved_count, count_summary_unsaved(updated_summary))
-           |> put_flash(:info, msg)}
+           |> put_toast(:info, msg)}
         rescue
           e ->
             {:noreply,
              socket
-             |> put_flash(:error, "Failed to save aggregated trades: #{Exception.message(e)}")}
+             |> put_toast(:error, "Failed to save aggregated trades: #{Exception.message(e)}")}
         end
       end
     end
@@ -775,7 +775,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
      |> assign(:statement_period, period)
      |> assign(:weeks, [])
      |> assign(:activity_page, 1)
-     |> put_flash(:info, "Deleted #{removed} uploaded file(s)")}
+     |> put_toast(:info, "Deleted #{removed} uploaded file(s)")}
   end
 
   @impl true
@@ -822,7 +822,7 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
     if Enum.empty?(db_statements) do
       {:noreply,
        socket
-       |> put_flash(
+       |> put_toast(
          :error,
          "No activity statements found in database for #{ticker} on #{Date.to_iso8601(item_date)}. Please save activity statements first."
        )}
@@ -877,10 +877,10 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
          socket
          |> assign(:summary_by_symbol, updated_summary)
          |> assign(:summary_unsaved_count, count_summary_unsaved(updated_summary))
-         |> put_flash(:info, if(count > 0, do: "Saved #{chain_msg}", else: "Already exists"))}
+         |> put_toast(:info, if(count > 0, do: "Saved #{chain_msg}", else: "Already exists"))}
       rescue
         e ->
-          {:noreply, socket |> put_flash(:error, "Failed to save row: #{Exception.message(e)}")}
+          {:noreply, socket |> put_toast(:error, "Failed to save row: #{Exception.message(e)}")}
       end
     end
   end
@@ -923,10 +923,10 @@ defmodule JournalexWeb.ActivityStatementUploadResultLive do
            socket
            |> assign(:activity_data, updated)
            |> assign(:unsaved_count, count_unsaved(updated))
-           |> put_flash(:info, "Row saved")}
+           |> put_toast(:info, "Row saved")}
 
         {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Failed to save row: #{inspect(reason)}")}
+          {:noreply, put_toast(socket, :error, "Failed to save row: #{inspect(reason)}")}
       end
     else
       _ -> {:noreply, socket}

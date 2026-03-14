@@ -24,12 +24,37 @@ import topbar from "../vendor/topbar"
 
 let Hooks = {}
 
-Hooks.FlashHide = {
+Hooks.Toast = {
   mounted() {
-    this._timer = setTimeout(() => this.el.click(), 2000)
+    this.handleEvent("toast", ({kind, message}) => {
+      const el = document.createElement('div')
+      el.setAttribute('role', 'alert')
+      el.style.pointerEvents = 'auto'
+      el.className = kind === 'error'
+        ? 'rounded-lg p-3 ring-1 bg-rose-50 text-rose-900 shadow-md ring-rose-500 fill-rose-900 cursor-pointer'
+        : 'rounded-lg p-3 ring-1 bg-emerald-50 text-emerald-800 ring-emerald-500 fill-cyan-900 cursor-pointer'
+
+      const title = kind === 'error' ? 'Error!' : 'Success!'
+      el.innerHTML = `<p class="flex items-center gap-1.5 text-sm font-semibold leading-6">${title}</p>`
+                   + `<p class="mt-2 text-sm leading-5">${this._escapeHtml(message)}</p>`
+
+      const dismiss = () => {
+        clearTimeout(timer)
+        el.style.transition = 'opacity 0.3s ease'
+        el.style.opacity = '0'
+        setTimeout(() => el.remove(), 350)
+      }
+
+      el.addEventListener('click', dismiss)
+      this.el.appendChild(el)
+
+      const timer = setTimeout(dismiss, 3000)
+    })
   },
-  destroyed() {
-    clearTimeout(this._timer)
+  _escapeHtml(str) {
+    const d = document.createElement('div')
+    d.textContent = str
+    return d.innerHTML
   }
 }
 
@@ -38,14 +63,23 @@ Hooks.AggregatedTradeList = {
     this._init()
   },
   updated() {
-    // Reinitialize after DOM patches (bindings are removed on replace)
+    // Preserve which detail rows are open before re-initializing.
+    // By the time updated() fires, dom.onBeforeElUpdated has already run and
+    // kept open rows visible in the DOM, so this capture is accurate.
+    const tbody = this.el.querySelector('table tbody')
+    const openIds = new Set()
+    if (tbody) {
+      tbody.querySelectorAll('tr[data-row-type="detail"]:not(.hidden)').forEach(row => {
+        if (row.dataset.parent) openIds.add(row.dataset.parent)
+      })
+    }
     this._teardown()
-    this._init()
+    this._init(openIds)
   },
   destroyed() {
     this._teardown()
   },
-  _init() {
+  _init(openIds = null) {
     if (this._bound) return
     const root = this.el
     const table = root.querySelector('table')
@@ -172,6 +206,20 @@ Hooks.AggregatedTradeList = {
     setArrows(initKey, initDir)
     collapseDetailRows()
 
+    // Restore any rows the user had open before the DOM was re-patched
+    if (openIds && openIds.size > 0) {
+      openIds.forEach(id => {
+        const detailRow = getDetailRow(id)
+        if (detailRow) {
+          detailRow.classList.remove('hidden')
+          const btn = tbody.querySelector(
+            `tr[data-row-type="main"][data-row-id="${id}"] [data-row-toggle]`
+          )
+          if (btn) updateButtonState(btn, true)
+        }
+      })
+    }
+
     this._bound = true
   },
   _teardown() {
@@ -238,7 +286,18 @@ let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: Hooks
+  hooks: Hooks,
+  dom: {
+    onBeforeElUpdated(from, to) {
+      // ── Detail-row expand/collapse preservation ──────────────────────────
+      // Detail rows are always server-rendered with class="hidden …".
+      // When the user expands a row and a background re-render arrives,
+      // morphdom would re-add `hidden`. Prevent that here.
+      if (from.dataset.rowType === 'detail' && !from.classList.contains('hidden')) {
+        to.classList.remove('hidden')
+      }
+    }
+  }
 })
 
 // Show progress bar on live navigation and form submits

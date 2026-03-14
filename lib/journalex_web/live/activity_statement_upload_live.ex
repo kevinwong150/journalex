@@ -67,7 +67,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
          |> assign(:uploaded_files, uploaded_files)
          |> assign(:upload_status, :success)
          |> assign(:redirect_countdown, 3)
-         |> put_flash(
+         |> put_toast(
            :info,
            "CSV file(s) uploaded and processed successfully! Redirecting in 3s…"
          )}
@@ -76,7 +76,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
         {:noreply,
          socket
          |> assign(:upload_status, :error)
-         |> put_flash(:error, "Failed to process the uploaded file(s).")}
+         |> put_toast(:error, "Failed to process the uploaded file(s).")}
     end
   end
 
@@ -119,7 +119,7 @@ defmodule JournalexWeb.ActivityStatementUploadLive do
         {:noreply,
          socket
          |> assign(:redirect_countdown, n1)
-         |> put_flash(
+         |> put_toast(
            :info,
            "CSV file(s) uploaded and processed successfully! Redirecting in #{n1}s…"
          )}

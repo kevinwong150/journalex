@@ -257,7 +257,7 @@ defmodule JournalexWeb.TradesDumpLive do
           |> assign(:notion_exists_count, 0)
           |> assign(:notion_missing_count, 0)
 
-        socket = if cache_warning, do: put_flash(socket, :error, cache_warning), else: socket
+        socket = if cache_warning, do: put_toast(socket, :error, cache_warning), else: socket
 
         timer_ref = Process.send_after(self(), :process_next_check, 0)
         {:noreply, assign(socket, :check_timer_ref, timer_ref)}
@@ -432,7 +432,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
     if queue == [] do
       {:noreply,
-       put_flash(
+       put_toast(
          socket,
          :error,
          "No selected trades with known Notion pages. Run \"Check Notion\" first."
@@ -493,16 +493,16 @@ defmodule JournalexWeb.TradesDumpLive do
           socket =
             socket
             |> assign(:trades, trades)
-            |> put_flash(:info, "Metadata saved as V#{version}")
+            |> put_toast(:info, "Metadata saved as V#{version}")
 
           {:noreply, socket}
 
         {:error, changeset} ->
-          socket = put_flash(socket, :error, "Failed to save metadata: #{inspect(changeset.errors)}")
+          socket = put_toast(socket, :error, "Failed to save metadata: #{inspect(changeset.errors)}")
           {:noreply, socket}
       end
     else
-      {:noreply, put_flash(socket, :error, "Trade not found")}
+      {:noreply, put_toast(socket, :error, "Trade not found")}
     end
   end
 
@@ -516,10 +516,10 @@ defmodule JournalexWeb.TradesDumpLive do
 
     cond do
       is_nil(trade) ->
-        {:noreply, put_flash(socket, :error, "Trade not found")}
+        {:noreply, put_toast(socket, :error, "Trade not found")}
 
       is_nil(draft) ->
-        {:noreply, put_flash(socket, :error, "Draft not found")}
+        {:noreply, put_toast(socket, :error, "Draft not found")}
 
       true ->
         metadata_attrs = draft.metadata || %{}
@@ -539,10 +539,10 @@ defmodule JournalexWeb.TradesDumpLive do
             {:noreply,
              socket
              |> assign(:trades, trades)
-             |> put_flash(:info, "Applied draft \"#{draft.name}\" to trade")}
+             |> put_toast(:info, "Applied draft \"#{draft.name}\" to trade")}
 
           {:error, changeset} ->
-            {:noreply, put_flash(socket, :error, "Failed to apply draft: #{inspect(changeset.errors)}")}
+            {:noreply, put_toast(socket, :error, "Failed to apply draft: #{inspect(changeset.errors)}")}
         end
     end
   end
@@ -563,15 +563,15 @@ defmodule JournalexWeb.TradesDumpLive do
           socket =
             socket
             |> assign(:trades, trades)
-            |> put_flash(:info, "Metadata cleared")
+            |> put_toast(:info, "Metadata cleared")
 
           {:noreply, socket}
 
         {:error, changeset} ->
-          {:noreply, put_flash(socket, :error, "Failed to reset metadata: #{inspect(changeset.errors)}")}
+          {:noreply, put_toast(socket, :error, "Failed to reset metadata: #{inspect(changeset.errors)}")}
       end
     else
-      {:noreply, put_flash(socket, :error, "Trade not found")}
+      {:noreply, put_toast(socket, :error, "Trade not found")}
     end
   end
 
@@ -586,11 +586,11 @@ defmodule JournalexWeb.TradesDumpLive do
 
     cond do
       is_nil(trade) ->
-        {:noreply, put_flash(socket, :error, "Trade not found")}
+        {:noreply, put_toast(socket, :error, "Trade not found")}
 
       is_nil(page_id) ->
         {:noreply,
-         put_flash(socket, :error, "No Notion page found for this trade. Run 'Check Notion' first.")}
+         put_toast(socket, :error, "No Notion page found for this trade. Run 'Check Notion' first.")}
 
       true ->
         case Notion.sync_metadata_from_notion(trade.id, page_id) do
@@ -606,10 +606,10 @@ defmodule JournalexWeb.TradesDumpLive do
              socket
              |> assign(:trades, trades)
              |> assign(:row_inconsistencies, row_incons)
-             |> put_flash(:info, "Metadata synced from Notion")}
+             |> put_toast(:info, "Metadata synced from Notion")}
 
           {:error, reason} ->
-            {:noreply, put_flash(socket, :error, "Sync failed: #{inspect(reason)}")}
+            {:noreply, put_toast(socket, :error, "Sync failed: #{inspect(reason)}")}
         end
     end
   end
@@ -678,7 +678,7 @@ defmodule JournalexWeb.TradesDumpLive do
           |> assign(:notion_exists_count, 0)
           |> assign(:notion_missing_count, 0)
 
-        socket = if cache_warning, do: put_flash(socket, :error, cache_warning), else: socket
+        socket = if cache_warning, do: put_toast(socket, :error, cache_warning), else: socket
 
         timer_ref = Process.send_after(self(), :process_next_check, 0)
         {:noreply, assign(socket, :check_timer_ref, timer_ref)}
@@ -960,7 +960,7 @@ defmodule JournalexWeb.TradesDumpLive do
           # Show flash for missing relation pages
           socket =
             if flash_msg do
-              put_flash(socket, :error, flash_msg)
+              put_toast(socket, :error, flash_msg)
             else
               socket
             end

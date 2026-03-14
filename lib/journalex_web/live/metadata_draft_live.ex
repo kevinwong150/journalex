@@ -85,10 +85,10 @@ defmodule JournalexWeb.MetadataDraftLive do
         {:noreply,
          socket
          |> assign(:drafts, drafts)
-         |> put_flash(:info, "Draft \"#{draft.name}\" deleted")}
+         |> put_toast(:info, "Draft \"#{draft.name}\" deleted")}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to delete draft")}
+        {:noreply, put_toast(socket, :error, "Failed to delete draft")}
     end
   end
 
@@ -134,7 +134,7 @@ defmodule JournalexWeb.MetadataDraftLive do
          |> assign(:editing_draft, saved_draft)
          |> assign(:draft_name, saved_draft.name)
          |> assign(:draft_metadata, saved_draft.metadata || %{})
-         |> put_flash(:info, "Draft \"#{saved_draft.name}\" #{action}")}
+         |> put_toast(:info, "Draft \"#{saved_draft.name}\" #{action}")}
 
       {:error, changeset} ->
         errors =
@@ -142,7 +142,7 @@ defmodule JournalexWeb.MetadataDraftLive do
           |> Enum.map(fn {field, {msg, _}} -> "#{field}: #{msg}" end)
           |> Enum.join(", ")
 
-        {:noreply, put_flash(socket, :error, "Failed to save draft: #{errors}")}
+        {:noreply, put_toast(socket, :error, "Failed to save draft: #{errors}")}
     end
   end
 
@@ -168,7 +168,7 @@ defmodule JournalexWeb.MetadataDraftLive do
          |> assign(:draft_name, new_draft.name)
          |> assign(:form_version, new_draft.metadata_version)
          |> assign(:draft_metadata, new_draft.metadata || %{})
-         |> put_flash(:info, "Draft duplicated as \"#{new_name}\"")}
+         |> put_toast(:info, "Draft duplicated as \"#{new_name}\"")}
 
       {:error, changeset} ->
         errors =
@@ -176,7 +176,7 @@ defmodule JournalexWeb.MetadataDraftLive do
           |> Enum.map(fn {field, {msg, _}} -> "#{field}: #{msg}" end)
           |> Enum.join(", ")
 
-        {:noreply, put_flash(socket, :error, "Failed to duplicate: #{errors}")}
+        {:noreply, put_toast(socket, :error, "Failed to duplicate: #{errors}")}
     end
   end
 
@@ -215,7 +215,7 @@ defmodule JournalexWeb.MetadataDraftLive do
       |> Enum.reject(&(&1 == ""))
 
     if names == [] do
-      {:noreply, put_flash(socket, :error, "Please enter at least one draft name")}
+      {:noreply, put_toast(socket, :error, "Please enter at least one draft name")}
     else
       results =
         Enum.map(names, fn name ->
@@ -232,14 +232,14 @@ defmodule JournalexWeb.MetadataDraftLive do
           |> assign(:bulk_mode, false)
           |> assign(:bulk_count, 2)
           |> assign(:bulk_names, List.duplicate("", 2))
-          |> put_flash(:info, "Created #{created} draft(s)")
+          |> put_toast(:info, "Created #{created} draft(s)")
         else
           failed = Enum.map(errors, fn {:error, cs} ->
             cs.errors |> Enum.map(fn {f, {m, _}} -> "#{f}: #{m}" end) |> Enum.join(", ")
           end)
           socket
           |> assign(:drafts, MetadataDrafts.list_drafts())
-          |> put_flash(:error, "#{created} created; #{length(errors)} failed: #{Enum.join(failed, " | ")}")
+          |> put_toast(:error, "#{created} created; #{length(errors)} failed: #{Enum.join(failed, " | ")}")
         end
 
       {:noreply, socket}
@@ -324,7 +324,7 @@ defmodule JournalexWeb.MetadataDraftLive do
      |> assign(:drafts, drafts)
      |> assign(:selected_ids, MapSet.new())
      |> assign(:select_mode, false)
-     |> put_flash(flash_level, flash_msg)}
+     |> put_toast(flash_level, flash_msg)}
   end
 
   @impl true

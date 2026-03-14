@@ -55,6 +55,8 @@ defmodule JournalexWeb do
       use Phoenix.LiveView,
         layout: {JournalexWeb.Layouts, :app}
 
+      import JournalexWeb.Toast, only: [put_toast: 3]
+
       unquote(html_helpers())
     end
   end
