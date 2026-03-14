@@ -56,6 +56,7 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:dump_cancel_requested?, false)
       |> assign(:dump_timer_ref, nil)
       |> assign(:dump_report_text, nil)
+      |> assign(:dump_errors, [])
       |> assign(:hide_exists?, false)
       # Notion page ids per row title ("TICKER@ISO")
       |> assign(:notion_page_ids, %{})
@@ -312,6 +313,7 @@ defmodule JournalexWeb.TradesDumpLive do
         |> assign(:dump_retry_counts, %{})
         |> assign(:dump_cancel_requested?, false)
         |> assign(:dump_report_text, nil)
+        |> assign(:dump_errors, [])
 
       timer_ref = Process.send_after(self(), :process_next_dump, 0)
       {:noreply, assign(socket, :dump_timer_ref, timer_ref)}
@@ -863,18 +865,18 @@ defmodule JournalexWeb.TradesDumpLive do
 
           {row_statuses, result_tag, next_queue, next_retry_counts, increment_processed?,
            next_delay_ms,
-           new_id_map, flash_msg} =
+           new_id_map, flash_msg, error_entry} =
             if missing_relations != nil do
               {Map.put(socket.assigns.row_statuses, idx, :error), :error, rest,
                socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000),
-               nil, missing_relations}
+               nil, missing_relations, {ticker <> "@" <> DateTime.to_iso8601(row.datetime), missing_relations}}
             else
               case Notion.exists_by_timestamp_and_ticker?(row.datetime, ticker,
                      data_source_id: row_data_source_id
                    ) do
                 {:ok, true} ->
                   {Map.put(socket.assigns.row_statuses, idx, :exists), :skipped_exists, rest,
-                   socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000), nil, nil}
+                   socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000), nil, nil, nil}
 
                 {:ok, false} ->
                   case Notion.create_from_trade(row,
@@ -891,9 +893,9 @@ defmodule JournalexWeb.TradesDumpLive do
 
                       {Map.put(socket.assigns.row_statuses, idx, :exists), :created, rest,
                        socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000),
-                       id_map_delta, nil}
+                       id_map_delta, nil, nil}
 
-                    {:error, _reason} ->
+                    {:error, reason} ->
                       retries = Map.get(socket.assigns.dump_retry_counts, idx, 0)
 
                       if retries < @dump_max_retries do
@@ -901,17 +903,20 @@ defmodule JournalexWeb.TradesDumpLive do
                         backoff_ms = 1000 * (retries + 1)
 
                         {Map.put(socket.assigns.row_statuses, idx, :retrying), :retrying,
-                         [{row, idx} | rest], next_retries, false, backoff_ms, nil, nil}
+                         [{row, idx} | rest], next_retries, false, backoff_ms, nil, nil, nil}
                       else
+                        label = ticker <> "@" <> DateTime.to_iso8601(row.datetime)
                         {Map.put(socket.assigns.row_statuses, idx, :error), :error, rest,
                          socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000),
-                         nil, nil}
+                         nil, nil, {label, format_notion_error(reason)}}
                       end
                   end
 
-                {:error, _reason} ->
+                {:error, reason} ->
+                  label = ticker <> "@" <> DateTime.to_iso8601(row.datetime)
                   {Map.put(socket.assigns.row_statuses, idx, :error), :error, rest,
-                   socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000), nil, nil}
+                   socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000), nil, nil,
+                   {label, format_notion_error(reason)}}
               end
             end
 
@@ -943,6 +948,14 @@ defmodule JournalexWeb.TradesDumpLive do
             |> assign(:dump_retry_counts, next_retry_counts)
             |> assign(:dump_elapsed_ms, elapsed_ms)
             |> assign(:notion_page_ids, notion_page_ids)
+
+          socket =
+            if error_entry do
+              {label, reason_str} = error_entry
+              assign(socket, :dump_errors, socket.assigns.dump_errors ++ [%{label: label, reason: reason_str}])
+            else
+              socket
+            end
 
           # Show flash for missing relation pages
           socket =
@@ -1318,6 +1331,21 @@ defmodule JournalexWeb.TradesDumpLive do
           }
         />
 
+        <details
+          :if={length(@dump_errors) > 0}
+          class="rounded-lg border border-red-200 bg-red-50 text-sm"
+        >
+          <summary class="cursor-pointer select-none px-4 py-2 font-medium text-red-700">
+            Insert errors ({length(@dump_errors)}) — click to expand
+          </summary>
+          <div class="px-4 pb-3 pt-1 space-y-1">
+            <div :for={entry <- @dump_errors} class="flex gap-2 text-xs text-red-800 font-mono">
+              <span class="font-semibold shrink-0">{entry.label}:</span>
+              <span class="break-all">{entry.reason}</span>
+            </div>
+          </div>
+        </details>
+
         <DumpProgress.progress
           :if={@update_total > 0}
           id="update-progress"
@@ -1404,6 +1432,18 @@ defmodule JournalexWeb.TradesDumpLive do
     </div>
     """
   end
+
+  defp format_notion_error({:http_error, status, %{"code" => code, "message" => msg}}),
+    do: "HTTP #{status} — #{code}: #{msg}"
+
+  defp format_notion_error({:http_error, status, body}),
+    do: "HTTP #{status} — #{inspect(body)}"
+
+  defp format_notion_error(:missing_notion_api_token),
+    do: "Notion API token is not configured"
+
+  defp format_notion_error(reason),
+    do: inspect(reason)
 
   defp format_conn_error(user_res, db_res) do
     ur =
