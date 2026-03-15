@@ -152,22 +152,24 @@ defmodule JournalexWeb.WriteupDraftLive do
   @impl true
   def handle_event("apply_preset", %{"preset" => preset_key}, socket) do
     case Map.get(@presets, preset_key) do
-      %{label: label, blocks: blocks} ->
-        # For the "standard" key, select the DB preset draft (is_preset: true).
-        # For other presets (minimal, empty) there is no DB draft.
-        matching_draft =
-          if preset_key == "standard",
-            do: Enum.find(socket.assigns.drafts, & &1.is_preset),
-            else: nil
+      %{label: label, blocks: fallback_blocks} ->
+        # Use the DB preset draft's actual saved blocks for "standard";
+        # fall back to the hardcoded blocks for other presets.
+        blocks =
+          if preset_key == "standard" do
+            case Enum.find(socket.assigns.drafts, & &1.is_preset) do
+              %{blocks: db_blocks} when is_list(db_blocks) -> db_blocks
+              _ -> fallback_blocks
+            end
+          else
+            fallback_blocks
+          end
 
-        socket =
-          socket
-          |> assign(:blocks, blocks)
-          |> assign(:editing_draft, matching_draft)
-          |> assign(:draft_name, if(matching_draft, do: matching_draft.name, else: ""))
-          |> put_toast(:info, "Applied \"#{label}\" preset")
-
-        {:noreply, socket}
+        # Always stay in new-draft mode — just populate the blocks as a starting point.
+        {:noreply,
+         socket
+         |> assign(:blocks, blocks)
+         |> put_toast(:info, "Applied \"#{label}\" preset")}
 
       nil ->
         {:noreply, put_toast(socket, :error, "Unknown preset")}
