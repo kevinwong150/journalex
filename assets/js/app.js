@@ -282,6 +282,22 @@ Hooks.RangeNumberSync = {
   }
 }
 
+Hooks.DownloadJSON = {
+  mounted() {
+    this.handleEvent("download_json", ({data, filename}) => {
+      const blob = new Blob([data], {type: "application/json"})
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = filename || "export.json"
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    })
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,

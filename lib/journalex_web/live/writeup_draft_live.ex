@@ -10,6 +10,7 @@ defmodule JournalexWeb.WriteupDraftLive do
 
   alias Journalex.WriteupDrafts
   alias Journalex.WriteupDrafts.Draft
+  alias Journalex.WriteupDrafts.PresetBlock
 
   @presets %{
     "standard" => %{
@@ -45,6 +46,9 @@ defmodule JournalexWeb.WriteupDraftLive do
     WriteupDrafts.ensure_preset_draft()
     drafts = WriteupDrafts.list_drafts()
 
+    preset_blocks = WriteupDrafts.list_preset_blocks()
+    preset_block_groups = WriteupDrafts.list_preset_block_groups()
+
     socket =
       socket
       |> assign(:drafts, drafts)
@@ -54,6 +58,23 @@ defmodule JournalexWeb.WriteupDraftLive do
       |> assign(:presets, @presets)
       |> assign(:select_mode, false)
       |> assign(:selected_ids, MapSet.new())
+      |> assign(:preset_blocks, preset_blocks)
+      |> assign(:preset_block_groups, preset_block_groups)
+      |> assign(:drawer_open, false)
+      |> assign(:drawer_mode, :list)
+      |> assign(:editing_preset_block, nil)
+      |> assign(:pb_name, "")
+      |> assign(:pb_blocks, [])
+      |> assign(:pb_group, "")
+      |> assign(:collapsed_groups, MapSet.new())
+      |> assign(:active_block_index, nil)
+      |> assign(:import_preview, nil)
+      |> allow_upload(:import_json,
+        accept: ~w(.json),
+        max_entries: 1,
+        max_file_size: 1_000_000,
+        auto_upload: true
+      )
 
     {:ok, socket}
   end
@@ -83,6 +104,30 @@ defmodule JournalexWeb.WriteupDraftLive do
       |> assign(:blocks, draft.blocks || [])
 
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("toggle_preset_draft", %{"id" => id_str}, socket) do
+    {id, _} = Integer.parse(id_str)
+    draft = WriteupDrafts.get_draft!(id)
+
+    case WriteupDrafts.toggle_preset_draft(draft) do
+      {:ok, updated} ->
+        drafts = WriteupDrafts.list_drafts()
+        msg = if updated.is_preset, do: "\"#{updated.name}\" marked as preset", else: "\"#{updated.name}\" removed from preset"
+
+        socket =
+          if socket.assigns.editing_draft && socket.assigns.editing_draft.id == updated.id do
+            assign(socket, :editing_draft, updated)
+          else
+            socket
+          end
+
+        {:noreply, socket |> assign(:drafts, drafts) |> put_toast(:info, msg)}
+
+      {:error, _} ->
+        {:noreply, put_toast(socket, :error, "Failed to update preset flag")}
+    end
   end
 
   @impl true
@@ -224,14 +269,14 @@ defmodule JournalexWeb.WriteupDraftLive do
     {after_idx, _} = Integer.parse(after_str)
     new_block = new_block(type)
     blocks = List.insert_at(socket.assigns.blocks, after_idx + 1, new_block)
-    {:noreply, assign(socket, :blocks, blocks)}
+    {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, after_idx + 1)}
   end
 
   @impl true
   def handle_event("add_block_end", %{"type" => type}, socket) do
     new_block = new_block(type)
     blocks = socket.assigns.blocks ++ [new_block]
-    {:noreply, assign(socket, :blocks, blocks)}
+    {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, length(blocks) - 1)}
   end
 
   @impl true
@@ -271,7 +316,7 @@ defmodule JournalexWeb.WriteupDraftLive do
   def handle_event("update_block_text", %{"index" => idx_str, "value" => value}, socket) do
     {idx, _} = Integer.parse(idx_str)
     blocks = List.update_at(socket.assigns.blocks, idx, &Map.put(&1, "text", value))
-    {:noreply, assign(socket, :blocks, blocks)}
+    {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, idx)}
   end
 
   @impl true
@@ -382,12 +427,372 @@ defmodule JournalexWeb.WriteupDraftLive do
      |> put_toast(flash_level, flash_msg)}
   end
 
+  # ── Preset block drawer ──────────────────────────────────────────────
+
+  @impl true
+  def handle_event("open_drawer", _params, socket) do
+    preset_blocks = WriteupDrafts.list_preset_blocks()
+    preset_block_groups = WriteupDrafts.list_preset_block_groups()
+
+    {:noreply,
+     socket
+     |> assign(:preset_blocks, preset_blocks)
+     |> assign(:preset_block_groups, preset_block_groups)
+     |> assign(:drawer_open, true)
+     |> assign(:drawer_mode, :list)}
+  end
+
+  @impl true
+  def handle_event("close_drawer", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:drawer_open, false)
+     |> assign(:drawer_mode, :list)
+     |> assign(:editing_preset_block, nil)
+     |> assign(:pb_name, "")
+     |> assign(:pb_blocks, [])
+     |> assign(:pb_group, "")}
+  end
+
+  @impl true
+  def handle_event("drawer_new", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:drawer_mode, :new)
+     |> assign(:editing_preset_block, nil)
+     |> assign(:pb_name, "")
+     |> assign(:pb_blocks, [])
+     |> assign(:pb_group, "")}
+  end
+
+  @impl true
+  def handle_event("drawer_edit", %{"id" => id_str}, socket) do
+    {id, _} = Integer.parse(id_str)
+    pb = WriteupDrafts.get_preset_block!(id)
+
+    {:noreply,
+     socket
+     |> assign(:drawer_mode, :edit)
+     |> assign(:editing_preset_block, pb)
+     |> assign(:pb_name, pb.name)
+     |> assign(:pb_blocks, pb.blocks || [])
+     |> assign(:pb_group, pb.group || "")}
+  end
+
+  @impl true
+  def handle_event("drawer_back", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:drawer_mode, :list)
+     |> assign(:editing_preset_block, nil)
+     |> assign(:pb_name, "")
+     |> assign(:pb_blocks, [])
+     |> assign(:pb_group, "")}
+  end
+
+  @impl true
+  def handle_event("update_pb_name", %{"value" => name}, socket) do
+    {:noreply, assign(socket, :pb_name, name)}
+  end
+
+  @impl true
+  def handle_event("update_pb_group", %{"value" => group}, socket) do
+    {:noreply, assign(socket, :pb_group, group)}
+  end
+
+  @impl true
+  def handle_event("toggle_group_collapse", %{"group" => group}, socket) do
+    collapsed =
+      if MapSet.member?(socket.assigns.collapsed_groups, group) do
+        MapSet.delete(socket.assigns.collapsed_groups, group)
+      else
+        MapSet.put(socket.assigns.collapsed_groups, group)
+      end
+
+    {:noreply, assign(socket, :collapsed_groups, collapsed)}
+  end
+
+  @impl true
+  def handle_event("export_all", _params, socket) do
+    data = WriteupDrafts.export_all() |> Jason.encode!(pretty: true)
+    {:noreply, push_event(socket, "download_json", %{data: data, filename: "writeup_drafts_export.json"})}
+  end
+
+  @impl true
+  def handle_event("validate_import_json", _params, socket) do
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("parse_import_json", _params, socket) do
+    results =
+      consume_uploaded_entries(socket, :import_json, fn %{path: path}, _entry ->
+        content = File.read!(path)
+
+        case Jason.decode(content) do
+          {:ok, %{"drafts" => drafts, "preset_blocks" => pbs}}
+              when is_list(drafts) and is_list(pbs) ->
+            {:ok, {:ok, %{drafts: drafts, preset_blocks: pbs}}}
+
+          {:ok, pbs} when is_list(pbs) ->
+            # Legacy format: just an array of preset blocks
+            {:ok, {:ok, %{drafts: [], preset_blocks: pbs}}}
+
+          {:ok, _} ->
+            {:ok, {:error, "Unrecognized JSON format"}}
+
+          {:error, _} ->
+            {:ok, {:error, "Invalid JSON file"}}
+        end
+      end)
+
+    case results do
+      [{:ok, preview}] ->
+        {:noreply, assign(socket, :import_preview, preview)}
+
+      [{:error, msg}] ->
+        {:noreply, put_toast(socket, :error, msg)}
+
+      _ ->
+        {:noreply, put_toast(socket, :error, "Please select a JSON file to import")}
+    end
+  end
+
+  @impl true
+  def handle_event("confirm_import", _params, socket) do
+    preview = socket.assigns.import_preview
+
+    {draft_msg, socket} =
+      case preview.drafts do
+        [] ->
+          {"", socket}
+
+        entries ->
+          {:ok, %{imported: imp, skipped: skip}} = WriteupDrafts.import_drafts(entries)
+          drafts = WriteupDrafts.list_drafts()
+          {"#{imp} draft(s) imported, #{skip} skipped", assign(socket, :drafts, drafts)}
+      end
+
+    {pb_msg, socket} =
+      case preview.preset_blocks do
+        [] ->
+          {"", socket}
+
+        entries ->
+          {:ok, %{imported: imp, skipped: skip}} = WriteupDrafts.import_preset_blocks(entries)
+          preset_blocks = WriteupDrafts.list_preset_blocks()
+          preset_block_groups = WriteupDrafts.list_preset_block_groups()
+
+          socket =
+            socket
+            |> assign(:preset_blocks, preset_blocks)
+            |> assign(:preset_block_groups, preset_block_groups)
+
+          {"#{imp} preset block(s) imported, #{skip} skipped", socket}
+      end
+
+    msg =
+      [draft_msg, pb_msg]
+      |> Enum.reject(& &1 == "")
+      |> Enum.join(". ")
+
+    {:noreply,
+     socket
+     |> assign(:import_preview, nil)
+     |> put_toast(:info, if(msg == "", do: "Nothing to import", else: msg))}
+  end
+
+  @impl true
+  def handle_event("cancel_import", _params, socket) do
+    {:noreply, assign(socket, :import_preview, nil)}
+  end
+
+  @impl true
+  def handle_event("save_preset_block", _params, socket) do
+    group = case String.trim(socket.assigns.pb_group) do
+      "" -> nil
+      g -> g
+    end
+
+    attrs = %{
+      name: String.trim(socket.assigns.pb_name),
+      blocks: socket.assigns.pb_blocks,
+      group: group
+    }
+
+    result =
+      case socket.assigns.editing_preset_block do
+        nil -> WriteupDrafts.create_preset_block(attrs)
+        %PresetBlock{} = pb -> WriteupDrafts.update_preset_block(pb, attrs)
+      end
+
+    case result do
+      {:ok, _saved} ->
+        preset_blocks = WriteupDrafts.list_preset_blocks()
+        preset_block_groups = WriteupDrafts.list_preset_block_groups()
+        action = if socket.assigns.editing_preset_block, do: "updated", else: "created"
+
+        {:noreply,
+         socket
+         |> assign(:preset_blocks, preset_blocks)
+         |> assign(:preset_block_groups, preset_block_groups)
+         |> assign(:drawer_mode, :list)
+         |> assign(:editing_preset_block, nil)
+         |> assign(:pb_name, "")
+         |> assign(:pb_blocks, [])
+         |> assign(:pb_group, "")
+         |> put_toast(:info, "Preset block #{action}")}
+
+      {:error, changeset} ->
+        errors =
+          changeset.errors
+          |> Enum.map(fn {field, {msg, _}} -> "#{field}: #{msg}" end)
+          |> Enum.join(", ")
+
+        {:noreply, put_toast(socket, :error, "Failed to save: #{errors}")}
+    end
+  end
+
+  @impl true
+  def handle_event("delete_preset_block", %{"id" => id_str}, socket) do
+    {id, _} = Integer.parse(id_str)
+    pb = WriteupDrafts.get_preset_block!(id)
+
+    case WriteupDrafts.delete_preset_block(pb) do
+      {:ok, _} ->
+        preset_blocks = WriteupDrafts.list_preset_blocks()
+
+        {:noreply,
+         socket
+         |> assign(:preset_blocks, preset_blocks)
+         |> put_toast(:info, "Preset block \"#{pb.name}\" deleted")}
+
+      {:error, _} ->
+        {:noreply, put_toast(socket, :error, "Failed to delete preset block")}
+    end
+  end
+
+  @impl true
+  def handle_event("save_blocks_as_preset", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:drawer_open, true)
+     |> assign(:drawer_mode, :new)
+     |> assign(:editing_preset_block, nil)
+     |> assign(:pb_name, "")
+     |> assign(:pb_blocks, socket.assigns.blocks)
+     |> assign(:pb_group, "")
+     |> assign(:preset_blocks, WriteupDrafts.list_preset_blocks())
+     |> assign(:preset_block_groups, WriteupDrafts.list_preset_block_groups())}
+  end
+
+  # ── Drawer block editing events ─────────────────────────────────────
+
+  @impl true
+  def handle_event("pb_add_block", %{"type" => type}, socket) do
+    new_block = new_block(type)
+    blocks = socket.assigns.pb_blocks ++ [new_block]
+    {:noreply, assign(socket, :pb_blocks, blocks)}
+  end
+
+  @impl true
+  def handle_event("pb_delete_block", %{"index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    blocks = List.delete_at(socket.assigns.pb_blocks, idx)
+    {:noreply, assign(socket, :pb_blocks, blocks)}
+  end
+
+  @impl true
+  def handle_event("pb_update_block_text", %{"index" => idx_str, "value" => value}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    blocks = List.update_at(socket.assigns.pb_blocks, idx, &Map.put(&1, "text", value))
+    {:noreply, assign(socket, :pb_blocks, blocks)}
+  end
+
+  @impl true
+  def handle_event("pb_toggle_block_type", %{"index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+
+    blocks =
+      List.update_at(socket.assigns.pb_blocks, idx, fn block ->
+        case block["type"] do
+          "paragraph" -> Map.put(block, "type", "toggle") |> Map.put_new("children", [])
+          "toggle" -> block |> Map.put("type", "paragraph") |> Map.delete("children")
+          _ -> block
+        end
+      end)
+
+    {:noreply, assign(socket, :pb_blocks, blocks)}
+  end
+
+  @impl true
+  def handle_event("pb_move_block_up", %{"index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+
+    if idx > 0 do
+      blocks = swap(socket.assigns.pb_blocks, idx, idx - 1)
+      {:noreply, assign(socket, :pb_blocks, blocks)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("pb_move_block_down", %{"index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+
+    if idx < length(socket.assigns.pb_blocks) - 1 do
+      blocks = swap(socket.assigns.pb_blocks, idx, idx + 1)
+      {:noreply, assign(socket, :pb_blocks, blocks)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  # ── Preset block insertion ─────────────────────────────────────────
+
+  @impl true
+  def handle_event("insert_preset_block", %{"id" => id_str}, socket) do
+    {id, _} = Integer.parse(id_str)
+    pb = WriteupDrafts.get_preset_block!(id)
+    insert_idx = max((socket.assigns.active_block_index || length(socket.assigns.blocks) - 1) + 1, 0)
+
+    {before, after_part} = Enum.split(socket.assigns.blocks, insert_idx)
+    blocks = before ++ (pb.blocks || []) ++ after_part
+    new_active = insert_idx + length(pb.blocks || []) - 1
+
+    {:noreply,
+     socket
+     |> assign(:blocks, blocks)
+     |> assign(:active_block_index, if(new_active >= 0, do: new_active, else: nil))
+     |> put_toast(:info, "Inserted #{length(pb.blocks || [])} block(s) from \"#{pb.name}\"")}
+  end
+
+  @impl true
+  def handle_event("insert_preset_block_at", %{"id" => id_str, "after" => after_str}, socket) do
+    {id, _} = Integer.parse(id_str)
+    {after_idx, _} = Integer.parse(after_str)
+    pb = WriteupDrafts.get_preset_block!(id)
+
+    insert_idx = after_idx + 1
+    {before, after_part} = Enum.split(socket.assigns.blocks, insert_idx)
+    blocks = before ++ (pb.blocks || []) ++ after_part
+
+    new_active = insert_idx + length(pb.blocks || []) - 1
+
+    {:noreply,
+     socket
+     |> assign(:blocks, blocks)
+     |> assign(:active_block_index, if(new_active >= 0, do: new_active, else: nil))
+     |> put_toast(:info, "Inserted #{length(pb.blocks || [])} block(s) from \"#{pb.name}\"")}
+  end
+
   # ── Render ──────────────────────────────────────────────────────────
 
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="max-w-6xl mx-auto mt-8 px-4 pb-10">
+    <div id="writeup-draft-page" phx-hook="DownloadJSON" class="max-w-6xl mx-auto mt-8 px-4 pb-10">
       <%!-- Page header --%>
       <div class="mb-6 flex items-start justify-between gap-4">
         <div>
@@ -397,6 +802,49 @@ defmodule JournalexWeb.WriteupDraftLive do
           </p>
         </div>
         <div class="flex items-center gap-2 shrink-0">
+          <%!-- Export --%>
+          <button
+            phx-click="export_all"
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium bg-zinc-100 text-zinc-700 hover:bg-zinc-200 transition-colors"
+            title="Export drafts & preset blocks as JSON"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Export
+          </button>
+          <%!-- Import --%>
+          <form phx-change="validate_import_json" phx-submit="parse_import_json">
+            <label
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium bg-zinc-100 text-zinc-700 hover:bg-zinc-200 transition-colors cursor-pointer"
+              title="Import drafts & preset blocks from JSON"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              Import
+              <.live_file_input upload={@uploads.import_json} class="hidden" />
+            </label>
+            <button
+              :if={@uploads.import_json.entries != []}
+              type="submit"
+              class="mt-1 inline-flex items-center justify-center px-3 py-1.5 rounded-md text-xs font-medium bg-green-100 text-green-700 hover:bg-green-200 transition-colors"
+            >
+              Preview &amp; Import
+            </button>
+          </form>
+          <button
+            phx-click="open_drawer"
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium bg-violet-600 text-white hover:bg-violet-700 transition-colors shadow-sm"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            Preset Blocks
+            <span :if={@preset_blocks != []} class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-violet-500 text-white">
+              {length(@preset_blocks)}
+            </span>
+          </button>
           <button
             phx-click="new_draft"
             class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
@@ -528,6 +976,22 @@ defmodule JournalexWeb.WriteupDraftLive do
                           >
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </button>
+                          <button
+                            phx-click="toggle_preset_draft"
+                            phx-value-id={draft.id}
+                            class={[
+                              "p-1.5 rounded transition-colors",
+                              if(draft.is_preset,
+                                do: "text-amber-500 bg-amber-50 hover:bg-amber-100",
+                                else: "text-zinc-400 hover:text-amber-500 hover:bg-amber-50"
+                              )
+                            ]}
+                            title={if draft.is_preset, do: "Remove preset mark", else: "Mark as preset"}
+                          >
+                            <svg class="w-3.5 h-3.5" fill={if draft.is_preset, do: "currentColor", else: "none"} stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                             </svg>
                           </button>
                           <%= if draft.is_preset do %>
@@ -740,7 +1204,7 @@ defmodule JournalexWeb.WriteupDraftLive do
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                               </svg>
                             </button>
-                            <div class="hidden group-hover:flex absolute right-0 top-full mt-0.5 bg-white border border-zinc-200 rounded-md shadow-lg z-10 flex-col py-1 min-w-[120px]">
+                            <div class="hidden group-hover:flex absolute right-0 top-full mt-0.5 bg-white border border-zinc-200 rounded-md shadow-lg z-10 flex-col py-1 min-w-[160px]">
                               <button
                                 type="button"
                                 phx-click="add_block"
@@ -759,6 +1223,21 @@ defmodule JournalexWeb.WriteupDraftLive do
                               >
                                 + Toggle
                               </button>
+                              <%= if @preset_blocks != [] do %>
+                                <div class="border-t border-zinc-100 my-1"></div>
+                                <p class="px-3 py-1 text-[10px] font-semibold text-zinc-400 uppercase">Preset Blocks</p>
+                                <%= for pb <- @preset_blocks do %>
+                                  <button
+                                    type="button"
+                                    phx-click="insert_preset_block_at"
+                                    phx-value-id={pb.id}
+                                    phx-value-after={idx}
+                                    class="px-3 py-1.5 text-xs text-left hover:bg-violet-50 text-violet-600 truncate"
+                                  >
+                                    + {pb.name} <span class="text-zinc-400">({length(pb.blocks)})</span>
+                                  </button>
+                                <% end %>
+                              <% end %>
                             </div>
                           </div>
                           <button
@@ -800,7 +1279,7 @@ defmodule JournalexWeb.WriteupDraftLive do
               </div>
 
               <%!-- Save button --%>
-              <div class="pt-2 border-t border-zinc-100">
+              <div class="pt-2 border-t border-zinc-100 flex items-center gap-2">
                 <button
                   type="button"
                   phx-click="save_draft"
@@ -811,9 +1290,510 @@ defmodule JournalexWeb.WriteupDraftLive do
                   </svg>
                   {if @editing_draft, do: "Update Draft", else: "Save Draft"}
                 </button>
+                <button
+                  :if={@blocks != []}
+                  type="button"
+                  phx-click="save_blocks_as_preset"
+                  class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-violet-100 text-violet-700 rounded-md hover:bg-violet-200 transition-colors"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  Save as Preset Block
+                </button>
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <%!-- Import Preview Modal --%>
+    <div
+      :if={@import_preview}
+      class="fixed inset-0 z-50 flex items-center justify-center"
+      phx-window-keydown="cancel_import"
+      phx-key="Escape"
+    >
+      <div class="absolute inset-0 bg-zinc-900/65" phx-click="cancel_import"></div>
+      <div class="relative bg-white rounded-xl shadow-2xl ring-1 ring-black/15 w-full max-w-lg mx-4 max-h-[80vh] flex flex-col overflow-hidden">
+        <%!-- Coloured top accent bar --%>
+        <div class="h-1 w-full bg-gradient-to-r from-blue-500 via-violet-500 to-violet-400 shrink-0"></div>
+        <%!-- Header --%>
+        <div class="px-5 py-4 border-b border-zinc-200 bg-white flex items-center justify-between shrink-0">
+          <h3 class="text-base font-semibold text-zinc-900">Import Preview</h3>
+          <button type="button" phx-click="cancel_import" class="p-1.5 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <%!-- Body --%>
+        <div class="flex-1 overflow-y-auto p-5 space-y-5">
+          <%!-- Drafts section --%>
+          <div>
+            <h4 class="text-sm font-semibold text-zinc-700 mb-2 flex items-center gap-2">
+              <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Drafts
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">
+                {length(@import_preview.drafts)}
+              </span>
+            </h4>
+            <%= if @import_preview.drafts == [] do %>
+              <p class="text-xs text-zinc-400 italic">No drafts in this file.</p>
+            <% else %>
+              <div class="space-y-1.5">
+                <%= for entry <- @import_preview.drafts do %>
+                  <%
+                    name = entry["name"] || entry[:name] || "(unnamed)"
+                    blocks = entry["blocks"] || entry[:blocks] || []
+                  %>
+                  <div class="flex items-center justify-between gap-2 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg">
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm font-medium text-zinc-900 truncate">{name}</p>
+                      <span class="text-[10px] text-zinc-400">{length(blocks)} blocks</span>
+                    </div>
+                  </div>
+                <% end %>
+              </div>
+            <% end %>
+          </div>
+
+          <%!-- Preset Blocks section --%>
+          <div>
+            <h4 class="text-sm font-semibold text-zinc-700 mb-2 flex items-center gap-2">
+              <svg class="w-4 h-4 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+              Preset Blocks
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-violet-100 text-violet-700">
+                {length(@import_preview.preset_blocks)}
+              </span>
+            </h4>
+            <%= if @import_preview.preset_blocks == [] do %>
+              <p class="text-xs text-zinc-400 italic">No preset blocks in this file.</p>
+            <% else %>
+              <div class="space-y-1.5">
+                <%= for entry <- @import_preview.preset_blocks do %>
+                  <%
+                    name = entry["name"] || entry[:name] || "(unnamed)"
+                    blocks = entry["blocks"] || entry[:blocks] || []
+                    group = entry["group"] || entry[:group]
+                  %>
+                  <div class="flex items-center justify-between gap-2 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg">
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm font-medium text-zinc-900 truncate">{name}</p>
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-[10px] text-zinc-400">{length(blocks)} blocks</span>
+                        <span :if={group} class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-100 text-amber-700">
+                          {group}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                <% end %>
+              </div>
+            <% end %>
+          </div>
+
+          <p class="text-xs text-zinc-500">
+            Items with names that already exist will be skipped during import.
+          </p>
+        </div>
+
+        <%!-- Footer --%>
+        <div class="px-5 py-3 border-t border-zinc-200 bg-white flex items-center justify-end gap-2 shrink-0">
+          <button
+            type="button"
+            phx-click="cancel_import"
+            class="px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-300 rounded-md hover:bg-zinc-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            phx-click="confirm_import"
+            class="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors shadow-sm"
+          >
+            Import {length(@import_preview.drafts) + length(@import_preview.preset_blocks)} item(s)
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <%!-- Preset Blocks Drawer --%>
+    <div
+      :if={@drawer_open}
+      class="fixed inset-0 z-50 flex justify-end"
+      phx-window-keydown="close_drawer"
+      phx-key="Escape"
+    >
+      <%!-- Backdrop --%>
+      <div class="absolute inset-0 bg-zinc-900/30" phx-click="close_drawer"></div>
+
+      <%!-- Drawer panel --%>
+      <div class="relative w-full max-w-md bg-white shadow-xl flex flex-col overflow-hidden">
+        <%!-- Drawer header --%>
+        <div class="px-4 py-3 border-b border-zinc-200 bg-zinc-50 flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-2">
+            <%= if @drawer_mode != :list do %>
+              <button
+                type="button"
+                phx-click="drawer_back"
+                class="p-1 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
+                title="Back to list"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            <% end %>
+            <h3 class="text-sm font-semibold text-zinc-800">
+              <%= case @drawer_mode do %>
+                <% :list -> %>Preset Blocks
+                <% :new -> %>New Preset Block
+                <% :edit -> %>Edit Preset Block
+              <% end %>
+            </h3>
+            <span :if={@drawer_mode == :list} class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-violet-100 text-violet-700">
+              {length(@preset_blocks)}
+            </span>
+          </div>
+          <button
+            type="button"
+            phx-click="close_drawer"
+            class="p-1.5 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
+            title="Close"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <%!-- Drawer body --%>
+        <div class="flex-1 overflow-y-auto">
+          <%= if @drawer_mode == :list do %>
+            <%!-- List mode --%>
+            <div class="p-3">
+              <button
+                type="button"
+                phx-click="drawer_new"
+                class="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium bg-violet-600 text-white hover:bg-violet-700 transition-colors shadow-sm mb-3"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                New Preset Block
+              </button>
+
+              <%= if @preset_blocks == [] do %>
+                <div class="text-center py-8">
+                  <svg class="mx-auto w-8 h-8 text-zinc-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  <p class="text-sm text-zinc-400">No preset blocks yet.</p>
+                  <p class="text-xs text-zinc-400 mt-0.5">Create reusable block snippets to insert into drafts.</p>
+                </div>
+              <% else %>
+                <%
+                  grouped = Enum.group_by(@preset_blocks, fn pb -> pb.group || "" end)
+                  group_names = grouped |> Map.keys() |> Enum.filter(& &1 != "") |> Enum.sort()
+                  ungrouped = Map.get(grouped, "", [])
+                %>
+
+                <div class="space-y-2">
+                  <%!-- Grouped sections --%>
+                  <%= for group_name <- group_names do %>
+                    <% collapsed = MapSet.member?(@collapsed_groups, group_name) %>
+                    <div class="border border-zinc-200 rounded-lg overflow-hidden">
+                      <button
+                        type="button"
+                        phx-click="toggle_group_collapse"
+                        phx-value-group={group_name}
+                        class="w-full flex items-center gap-2 px-3 py-2 bg-zinc-100 hover:bg-zinc-200 transition-colors text-left"
+                      >
+                        <svg class={"w-3 h-3 text-zinc-500 transition-transform #{if !collapsed, do: "rotate-90"}"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                        <svg class="w-3.5 h-3.5 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+                        </svg>
+                        <span class="text-xs font-semibold text-zinc-700 flex-1 truncate">{group_name}</span>
+                        <span class="text-[10px] text-zinc-400">{length(grouped[group_name])}</span>
+                      </button>
+                      <div :if={!collapsed} class="p-2 space-y-1.5">
+                        <%= for pb <- grouped[group_name] do %>
+                          {preset_block_card(Map.put(assigns, :pb, pb))}
+                        <% end %>
+                      </div>
+                    </div>
+                  <% end %>
+
+                  <%!-- Ungrouped --%>
+                  <%= if ungrouped != [] do %>
+                    <%= if group_names != [] do %>
+                      <div class="pt-1">
+                        <p class="px-1 pb-1 text-[10px] font-semibold text-zinc-400 uppercase">Ungrouped</p>
+                      </div>
+                    <% end %>
+                    <%= for pb <- ungrouped do %>
+                      {preset_block_card(Map.put(assigns, :pb, pb))}
+                    <% end %>
+                  <% end %>
+                </div>
+              <% end %>
+            </div>
+          <% else %>
+            <%!-- New / Edit mode --%>
+            <div class="p-4 space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-zinc-700 mb-1.5">Name</label>
+                <input
+                  type="text"
+                  value={@pb_name}
+                  phx-keyup="update_pb_name"
+                  placeholder="e.g. Timeframes, Comments Section"
+                  class="w-full px-3 py-2 text-sm border border-zinc-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                />
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-zinc-700 mb-1.5">
+                  Group <span class="text-zinc-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={@pb_group}
+                  phx-keyup="update_pb_group"
+                  placeholder="e.g. Timeframes, Analysis"
+                  list="preset-block-groups"
+                  class="w-full px-3 py-2 text-sm border border-zinc-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                />
+                <datalist id="preset-block-groups">
+                  <%= for g <- @preset_block_groups do %>
+                    <option value={g} />
+                  <% end %>
+                </datalist>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-zinc-700 mb-1.5">
+                  Blocks <span class="text-zinc-400 font-normal">({length(@pb_blocks)})</span>
+                </label>
+
+                <%= if @pb_blocks == [] do %>
+                  <div class="text-center py-6 border-2 border-dashed border-zinc-200 rounded-lg">
+                    <p class="text-sm text-zinc-400 mb-2">No blocks yet.</p>
+                    <div class="flex items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        phx-click="pb_add_block"
+                        phx-value-type="paragraph"
+                        class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                      >
+                        + Paragraph
+                      </button>
+                      <button
+                        type="button"
+                        phx-click="pb_add_block"
+                        phx-value-type="toggle"
+                        class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors"
+                      >
+                        + Toggle
+                      </button>
+                    </div>
+                  </div>
+                <% else %>
+                  <div class="space-y-1.5">
+                    <%= for {block, idx} <- Enum.with_index(@pb_blocks) do %>
+                      <div class={[
+                        "flex items-start gap-1.5 p-2 rounded-lg border transition-colors",
+                        if(block["type"] == "toggle",
+                          do: "bg-violet-50/50 border-violet-200",
+                          else: "bg-zinc-50 border-zinc-200"
+                        )
+                      ]}>
+                        <div class="flex flex-col items-center gap-0.5 pt-1 shrink-0">
+                          <span class="text-[10px] text-zinc-400 font-mono">{idx + 1}</span>
+                          <button
+                            type="button"
+                            phx-click="pb_toggle_block_type"
+                            phx-value-index={idx}
+                            class={[
+                              "px-1 py-0.5 text-[10px] font-semibold rounded cursor-pointer transition-colors",
+                              if(block["type"] == "toggle",
+                                do: "bg-violet-200 text-violet-700 hover:bg-violet-300",
+                                else: "bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
+                              )
+                            ]}
+                          >
+                            {if block["type"] == "toggle", do: "TGL", else: "TXT"}
+                          </button>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                          <%= if block["type"] == "toggle" do %>
+                            <input
+                              type="text"
+                              value={block["text"] || ""}
+                              phx-keyup="pb_update_block_text"
+                              phx-value-index={idx}
+                              placeholder="Toggle title..."
+                              class="w-full px-2 py-1 text-sm border border-zinc-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                            />
+                          <% else %>
+                            <textarea
+                              phx-keyup="pb_update_block_text"
+                              phx-value-index={idx}
+                              placeholder="Paragraph text..."
+                              rows="1"
+                              class="w-full px-2 py-1 text-sm border border-zinc-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500 resize-y"
+                            ><%= block["text"] || "" %></textarea>
+                          <% end %>
+                        </div>
+                        <div class="flex items-center gap-0.5 shrink-0 pt-1">
+                          <button
+                            type="button"
+                            phx-click="pb_move_block_up"
+                            phx-value-index={idx}
+                            disabled={idx == 0}
+                            class="p-0.5 rounded text-zinc-400 hover:text-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            phx-click="pb_move_block_down"
+                            phx-value-index={idx}
+                            disabled={idx == length(@pb_blocks) - 1}
+                            class="p-0.5 rounded text-zinc-400 hover:text-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            phx-click="pb_delete_block"
+                            phx-value-index={idx}
+                            class="p-0.5 rounded text-zinc-400 hover:text-red-600 transition-colors"
+                          >
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    <% end %>
+                  </div>
+
+                  <div class="mt-2 flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      phx-click="pb_add_block"
+                      phx-value-type="paragraph"
+                      class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                    >
+                      + Paragraph
+                    </button>
+                    <button
+                      type="button"
+                      phx-click="pb_add_block"
+                      phx-value-type="toggle"
+                      class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors"
+                    >
+                      + Toggle
+                    </button>
+                  </div>
+                <% end %>
+              </div>
+
+              <div class="pt-2 border-t border-zinc-100">
+                <button
+                  type="button"
+                  phx-click="save_preset_block"
+                  class="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors shadow-sm"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                  {if @editing_preset_block, do: "Update Preset Block", else: "Save Preset Block"}
+                </button>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  # ── Preset block card component ──────────────────────────────────────
+
+  defp preset_block_card(assigns) do
+    ~H"""
+    <div class="bg-zinc-50 border border-zinc-200 rounded-lg p-3">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-zinc-900 truncate">{@pb.name}</p>
+          <div class="flex items-center gap-1.5 mt-1">
+            <span class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded bg-violet-100 text-violet-700">
+              {length(@pb.blocks)} blocks
+            </span>
+            <span :if={@pb.group} class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-100 text-amber-700">
+              {@pb.group}
+            </span>
+            <span class="text-[10px] text-zinc-400">
+              {Calendar.strftime(@pb.updated_at, "%b %d, %H:%M")}
+            </span>
+          </div>
+          <%!-- Block preview --%>
+          <div class="mt-2 space-y-0.5">
+            <%= for block <- Enum.take(@pb.blocks, 3) do %>
+              <div class="flex items-center gap-1 text-[10px] text-zinc-500">
+                <span class={if(block["type"] == "toggle", do: "text-violet-500", else: "text-zinc-400")}>
+                  {if block["type"] == "toggle", do: "▸", else: "¶"}
+                </span>
+                <span class="truncate">{block["text"] || "(empty)"}</span>
+              </div>
+            <% end %>
+            <p :if={length(@pb.blocks) > 3} class="text-[10px] text-zinc-400 italic">
+              +{length(@pb.blocks) - 3} more...
+            </p>
+          </div>
+        </div>
+        <div class="flex flex-col gap-1 shrink-0">
+          <button
+            type="button"
+            phx-click="insert_preset_block"
+            phx-value-id={@pb.id}
+            class="px-2.5 py-1 text-xs font-medium rounded-md bg-green-100 text-green-700 hover:bg-green-200 transition-colors"
+            title="Insert into draft"
+          >
+            Insert
+          </button>
+          <button
+            type="button"
+            phx-click="drawer_edit"
+            phx-value-id={@pb.id}
+            class="px-2.5 py-1 text-xs font-medium rounded-md bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors"
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            phx-click="delete_preset_block"
+            phx-value-id={@pb.id}
+            class="px-2.5 py-1 text-xs font-medium rounded-md bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+            data-confirm={"Delete preset block \"#{@pb.name}\"?"}
+          >
+            Delete
+          </button>
         </div>
       </div>
     </div>

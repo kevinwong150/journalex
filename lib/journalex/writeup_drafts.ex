@@ -1,10 +1,11 @@
 defmodule Journalex.WriteupDrafts do
   @moduledoc """
-  Context for managing named writeup draft templates.
+  Context for managing named writeup draft templates and reusable preset blocks.
   """
   import Ecto.Query, warn: false
   alias Journalex.Repo
   alias Journalex.WriteupDrafts.Draft
+  alias Journalex.WriteupDrafts.PresetBlock
 
   @doc """
   List all writeup drafts, ordered by creation time ascending (oldest first).
@@ -40,6 +41,23 @@ defmodule Journalex.WriteupDrafts do
     draft
     |> Draft.changeset(attrs)
     |> Repo.update()
+  end
+
+  @doc """
+  Toggle the `is_preset` flag on a draft.
+  When toggling ON, any existing preset drafts are first unset so there
+  is at most one preset at a time.
+  Returns `{:ok, draft}` or `{:error, changeset}`.
+  """
+  def toggle_preset_draft(%Draft{is_preset: already_preset} = draft) do
+    if already_preset do
+      update_draft(draft, %{is_preset: false})
+    else
+      from(d in Draft, where: d.is_preset == true)
+      |> Repo.update_all(set: [is_preset: false])
+
+      update_draft(draft, %{is_preset: true})
+    end
   end
 
   @doc """
@@ -86,5 +104,140 @@ defmodule Journalex.WriteupDrafts do
 
         :ok
     end
+  end
+
+  # ── Preset blocks ───────────────────────────────────────────────────
+
+  @doc """
+  List all preset blocks, ordered by group (nulls last) then creation time ascending.
+  """
+  def list_preset_blocks do
+    from(pb in PresetBlock, order_by: [asc_nulls_last: pb.group, asc: pb.inserted_at])
+    |> Repo.all()
+  end
+
+  @doc """
+  Return a sorted list of distinct non-nil group names.
+  """
+  def list_preset_block_groups do
+    from(pb in PresetBlock,
+      where: not is_nil(pb.group) and pb.group != "",
+      distinct: true,
+      select: pb.group,
+      order_by: [asc: pb.group]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  Get a single preset block by id. Raises if not found.
+  """
+  def get_preset_block!(id), do: Repo.get!(PresetBlock, id)
+
+  @doc """
+  Create a new preset block.
+  """
+  def create_preset_block(attrs) do
+    %PresetBlock{}
+    |> PresetBlock.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Update an existing preset block.
+  """
+  def update_preset_block(%PresetBlock{} = preset_block, attrs) do
+    preset_block
+    |> PresetBlock.changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
+  Delete a preset block.
+  """
+  def delete_preset_block(%PresetBlock{} = preset_block) do
+    Repo.delete(preset_block)
+  end
+
+  @doc """
+  Import preset blocks from a list of maps. Skips entries whose name already
+  exists. Returns `{:ok, %{imported: count, skipped: count}}`.
+  """
+  def import_preset_blocks(entries) when is_list(entries) do
+    existing_names =
+      from(pb in PresetBlock, select: pb.name)
+      |> Repo.all()
+      |> MapSet.new()
+
+    {imported, skipped} =
+      Enum.reduce(entries, {0, 0}, fn entry, {imp, skip} ->
+        name = Map.get(entry, "name") || Map.get(entry, :name)
+
+        if name && !MapSet.member?(existing_names, name) do
+          attrs = %{
+            name: name,
+            blocks: Map.get(entry, "blocks") || Map.get(entry, :blocks) || [],
+            group: Map.get(entry, "group") || Map.get(entry, :group)
+          }
+
+          case create_preset_block(attrs) do
+            {:ok, _} -> {imp + 1, skip}
+            {:error, _} -> {imp, skip + 1}
+          end
+        else
+          {imp, skip + 1}
+        end
+      end)
+
+    {:ok, %{imported: imported, skipped: skipped}}
+  end
+
+  @doc """
+  Import drafts from a list of maps. Skips entries whose name already exists
+  and entries with `is_preset: true`. Returns `{:ok, %{imported: count, skipped: count}}`.
+  """
+  def import_drafts(entries) when is_list(entries) do
+    existing_names =
+      from(d in Draft, select: d.name)
+      |> Repo.all()
+      |> MapSet.new()
+
+    {imported, skipped} =
+      Enum.reduce(entries, {0, 0}, fn entry, {imp, skip} ->
+        name = Map.get(entry, "name") || Map.get(entry, :name)
+        is_preset = Map.get(entry, "is_preset") || Map.get(entry, :is_preset) || false
+
+        if name && !is_preset && !MapSet.member?(existing_names, name) do
+          attrs = %{
+            name: name,
+            blocks: Map.get(entry, "blocks") || Map.get(entry, :blocks) || []
+          }
+
+          case create_draft(attrs) do
+            {:ok, _} -> {imp + 1, skip}
+            {:error, _} -> {imp, skip + 1}
+          end
+        else
+          {imp, skip + 1}
+        end
+      end)
+
+    {:ok, %{imported: imported, skipped: skipped}}
+  end
+
+  @doc """
+  Export all drafts (excluding the preset draft) and preset blocks as a map.
+  """
+  def export_all do
+    drafts =
+      list_drafts()
+      |> Enum.reject(& &1.is_preset)
+      |> Enum.map(fn d -> %{name: d.name, blocks: d.blocks} end)
+
+    preset_blocks =
+      list_preset_blocks()
+      |> Enum.map(fn pb -> %{name: pb.name, group: pb.group, blocks: pb.blocks} end)
+
+    %{drafts: drafts, preset_blocks: preset_blocks}
   end
 end

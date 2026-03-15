@@ -105,4 +105,64 @@ defmodule Journalex.WriteupDraftsTest do
       assert is_nil(WriteupDrafts.get_draft(draft.id))
     end
   end
+
+  describe "import_drafts/1" do
+    test "imports new drafts" do
+      entries = [
+        %{"name" => "Draft A", "blocks" => [%{"type" => "paragraph", "text" => "hello"}]},
+        %{"name" => "Draft B", "blocks" => []}
+      ]
+
+      assert {:ok, %{imported: 2, skipped: 0}} = WriteupDrafts.import_drafts(entries)
+      drafts = WriteupDrafts.list_drafts()
+      assert length(drafts) == 2
+    end
+
+    test "skips existing names" do
+      assert {:ok, _} = WriteupDrafts.create_draft(%{name: "Existing", blocks: []})
+
+      entries = [
+        %{"name" => "Existing", "blocks" => []},
+        %{"name" => "New", "blocks" => []}
+      ]
+
+      assert {:ok, %{imported: 1, skipped: 1}} = WriteupDrafts.import_drafts(entries)
+      assert length(WriteupDrafts.list_drafts()) == 2
+    end
+
+    test "skips entries with is_preset true" do
+      entries = [
+        %{"name" => "Preset", "blocks" => [], "is_preset" => true},
+        %{"name" => "Normal", "blocks" => []}
+      ]
+
+      assert {:ok, %{imported: 1, skipped: 1}} = WriteupDrafts.import_drafts(entries)
+    end
+
+    test "handles atom-keyed entries" do
+      entries = [%{name: "AtomDraft", blocks: []}]
+      assert {:ok, %{imported: 1, skipped: 0}} = WriteupDrafts.import_drafts(entries)
+    end
+  end
+
+  describe "export_all/0" do
+    test "exports drafts excluding preset and all preset blocks" do
+      WriteupDrafts.ensure_preset_draft()
+      assert {:ok, _} = WriteupDrafts.create_draft(%{name: "My Draft", blocks: [%{"type" => "paragraph", "text" => "hi"}]})
+      assert {:ok, _} = WriteupDrafts.create_preset_block(%{name: "PB1", blocks: [], group: "G1"})
+
+      result = WriteupDrafts.export_all()
+
+      assert length(result.drafts) == 1
+      assert hd(result.drafts).name == "My Draft"
+      assert length(result.preset_blocks) == 1
+      assert hd(result.preset_blocks).name == "PB1"
+      assert hd(result.preset_blocks).group == "G1"
+    end
+
+    test "returns empty lists when nothing exists" do
+      result = WriteupDrafts.export_all()
+      assert result == %{drafts: [], preset_blocks: []}
+    end
+  end
 end
