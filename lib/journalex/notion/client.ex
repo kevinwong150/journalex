@@ -165,6 +165,23 @@ defmodule Journalex.Notion.Client do
     end
   end
 
+  @doc """
+  Append block children to a page or block.
+
+  Uses `PATCH /v1/blocks/{block_id}/children` to add content blocks
+  (paragraphs, toggles, etc.) to a Notion page.
+
+  Returns `{:ok, map}` or `{:error, reason}`.
+  """
+  @spec append_block_children(binary(), list(map())) :: {:ok, map()} | {:error, term()}
+  def append_block_children(block_id, children) when is_binary(block_id) and is_list(children) do
+    case request(:patch, "/blocks/#{block_id}/children", %{"children" => children}) do
+      {:ok, status, map} when status in 200..299 -> {:ok, map}
+      {:ok, status, map} -> {:error, {:http_error, status, map}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc false
   defp build_url(path) do
     @base_url <> path

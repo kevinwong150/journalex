@@ -27,11 +27,14 @@ defmodule Journalex.Trades.Trade do
     # Polymorphic metadata - actual type determined by metadata_version
     field :metadata, :map
 
+    # Writeup blocks (list of block maps) for Notion page body content
+    field :writeup, {:array, :map}
+
     timestamps(type: :utc_datetime_usec)
   end
 
   @required ~w(datetime ticker aggregated_side result realized_pl)a
-  @optional ~w(action_chain duration metadata_version metadata)a
+  @optional ~w(action_chain duration metadata_version metadata writeup)a
 
   def changeset(trade, attrs) do
     trade

@@ -267,4 +267,31 @@ defmodule Journalex.Settings do
   def set_summary_period_unit(unit) when unit in ["week", "day"] do
     put(@summary_period_unit_key, unit)
   end
+
+  # ---------------------------------------------------------------------------
+  # Typed helpers — nav_pinned_pages
+  # ---------------------------------------------------------------------------
+
+  @nav_pinned_pages_key "nav_pinned_pages"
+  @default_nav_pinned_pages ["trade_dump", "metadata_drafts", "writeup_drafts"]
+
+  @doc """
+  Returns the list of page keys that should appear as shortcut buttons in the nav bar.
+  Default: ["trade_dump", "metadata_drafts", "writeup_drafts"]
+  """
+  def get_nav_pinned_pages do
+    case get(@nav_pinned_pages_key) do
+      nil -> @default_nav_pinned_pages
+      "" -> []
+      raw -> String.split(raw, ",", trim: true)
+    end
+  end
+
+  @doc """
+  Persists the nav pinned pages list to the DB.
+  Returns `{:ok, setting}` or `{:error, changeset}`.
+  """
+  def set_nav_pinned_pages(pages) when is_list(pages) do
+    put(@nav_pinned_pages_key, Enum.join(pages, ","))
+  end
 end

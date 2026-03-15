@@ -36,6 +36,9 @@ defmodule JournalexWeb.Router do
     # Metadata drafts management page
     live "/trade/drafts", MetadataDraftLive
 
+    # Writeup drafts management page
+    live "/trade/writeups", WriteupDraftLive
+
     # Settings page
     live "/settings", SettingsLive
 

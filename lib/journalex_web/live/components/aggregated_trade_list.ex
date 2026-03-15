@@ -140,6 +140,14 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: nil,
     doc: "Event name to emit when a draft is applied to a trade row"
 
+  attr :writeup_drafts, :list,
+    default: [],
+    doc: "List of writeup draft templates for block content"
+
+  attr :on_apply_writeup_draft_event, :string,
+    default: nil,
+    doc: "Event name to emit when a writeup draft is applied to a trade row"
+
   def aggregated_trade_list(assigns) do
     ~H"""
     <% chain_key = @action_chain_key %>
@@ -592,6 +600,30 @@ defmodule JournalexWeb.AggregatedTradeList do
                       drafts={@drafts}
                       on_apply_draft_event={@on_apply_draft_event}
                     />
+
+                    <%!-- Writeup draft apply buttons --%>
+                    <div :if={@on_apply_writeup_draft_event && @writeup_drafts != []} class="mt-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3">
+                      <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-semibold text-violet-700 uppercase tracking-wide">Writeup</span>
+                        <span :if={item.writeup && item.writeup != []} class="text-[10px] font-medium text-violet-600 bg-violet-100 px-1.5 py-0.5 rounded">
+                          {length(item.writeup)} blocks applied
+                        </span>
+                      </div>
+                      <div class="flex flex-wrap gap-1.5">
+                        <%= for wd <- @writeup_drafts do %>
+                          <button
+                            type="button"
+                            phx-click={@on_apply_writeup_draft_event}
+                            phx-value-index={idx}
+                            phx-value-draft-id={wd.id}
+                            class="px-2.5 py-1 text-xs font-medium rounded-md bg-violet-100 text-violet-700 hover:bg-violet-200 transition-colors"
+                            title={"Apply writeup: #{wd.name} (#{length(wd.blocks || [])} blocks)"}
+                          >
+                            {wd.name}
+                          </button>
+                        <% end %>
+                      </div>
+                    </div>
                   <% end %>
 
                   <%= if has_chain do %>

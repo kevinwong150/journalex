@@ -11,6 +11,7 @@ defmodule JournalexWeb.TradesDumpLive do
   alias Journalex.Notion.Client, as: NotionClient
   alias Journalex.Notion.DataSources
   alias Journalex.MetadataDrafts
+  alias Journalex.WriteupDrafts
 
   @dump_max_retries 3
   @supported_versions [1, 2]
@@ -89,6 +90,8 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:supported_versions, @supported_versions)
       # Metadata drafts for quick-apply
       |> assign(:drafts, MetadataDrafts.list_drafts())
+      # Writeup drafts for block content
+      |> assign(:writeup_drafts, WriteupDrafts.list_drafts())
 
     will_auto_check = connected?(socket) && Journalex.Settings.get_auto_check_on_load()
     socket = assign(socket, :auto_check_pending?, will_auto_check)
@@ -548,6 +551,40 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   @impl true
+  def handle_event("apply_writeup_draft", %{"index" => idx_str, "draft-id" => draft_id_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    {draft_id, _} = Integer.parse(draft_id_str)
+
+    trade = Enum.at(socket.assigns.trades, idx)
+    draft = WriteupDrafts.get_draft(draft_id)
+
+    cond do
+      is_nil(trade) ->
+        {:noreply, put_toast(socket, :error, "Trade not found")}
+
+      is_nil(draft) ->
+        {:noreply, put_toast(socket, :error, "Writeup draft not found")}
+
+      true ->
+        case Journalex.Trades.update_trade(trade, %{writeup: draft.blocks || []}) do
+          {:ok, updated_trade} ->
+            trades =
+              socket.assigns.trades
+              |> Enum.with_index()
+              |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+            {:noreply,
+             socket
+             |> assign(:trades, trades)
+             |> put_toast(:info, "Applied writeup \"#{draft.name}\" (#{length(draft.blocks || [])} blocks)")}
+
+          {:error, changeset} ->
+            {:noreply, put_toast(socket, :error, "Failed to apply writeup: #{inspect(changeset.errors)}")}
+        end
+    end
+  end
+
+  @impl true
   def handle_event("reset_metadata", %{"index" => idx_str}, socket) do
     {idx, _} = Integer.parse(idx_str)
     trade = Enum.at(socket.assigns.trades, idx)
@@ -891,9 +928,21 @@ defmodule JournalexWeb.TradesDumpLive do
                       page_id = Map.get(page, "id")
                       id_map_delta = if is_binary(page_id), do: %{title => page_id}, else: nil
 
+                      # Push writeup blocks if the trade has them
+                      writeup_flash =
+                        if is_binary(page_id) && is_list(row.writeup) && row.writeup != [] do
+                          notion_blocks = Journalex.Notion.BlockBuilder.to_notion_blocks(row.writeup)
+                          case NotionClient.append_block_children(page_id, notion_blocks) do
+                            {:ok, _} -> nil
+                            {:error, reason} -> "Writeup blocks failed for #{title}: #{inspect(reason)}"
+                          end
+                        else
+                          nil
+                        end
+
                       {Map.put(socket.assigns.row_statuses, idx, :exists), :created, rest,
                        socket.assigns.dump_retry_counts, true, if(rest == [], do: 0, else: 1000),
-                       id_map_delta, nil, nil}
+                       id_map_delta, writeup_flash, nil}
 
                     {:error, reason} ->
                       retries = Map.get(socket.assigns.dump_retry_counts, idx, 0)
@@ -1428,6 +1477,8 @@ defmodule JournalexWeb.TradesDumpLive do
         global_metadata_version={@global_metadata_version}
         drafts={Enum.filter(@drafts, & &1.metadata_version == @global_metadata_version)}
         on_apply_draft_event="apply_draft"
+        writeup_drafts={@writeup_drafts}
+        on_apply_writeup_draft_event="apply_writeup_draft"
       />
     </div>
     """

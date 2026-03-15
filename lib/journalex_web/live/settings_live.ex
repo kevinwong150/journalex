@@ -14,6 +14,7 @@ defmodule JournalexWeb.SettingsLive do
     filter_visible_weeks = Settings.get_filter_visible_weeks()
     summary_period_value = Settings.get_summary_period_value()
     summary_period_unit = Settings.get_summary_period_unit()
+    nav_pinned_pages = Settings.get_nav_pinned_pages()
 
     socket =
       socket
@@ -26,6 +27,7 @@ defmodule JournalexWeb.SettingsLive do
       |> assign(:filter_visible_weeks, filter_visible_weeks)
       |> assign(:summary_period_value, summary_period_value)
       |> assign(:summary_period_unit, summary_period_unit)
+      |> assign(:nav_pinned_pages, nav_pinned_pages)
       |> assign(:save_status, nil)
 
     {:ok, socket}
@@ -71,13 +73,19 @@ defmodule JournalexWeb.SettingsLive do
         _ -> "week"
       end
 
+    nav_pinned_pages =
+      params
+      |> Map.get("nav_pinned_pages", %{})
+      |> Map.keys()
+
     with {:ok, _} <- Settings.set_default_metadata_version(version),
          {:ok, _} <- Settings.set_auto_check_on_load(auto_check),
          {:ok, _} <- Settings.set_r_size(r_size),
          {:ok, _} <- Settings.set_activity_page_size(activity_page_size),
          {:ok, _} <- Settings.set_filter_visible_weeks(filter_visible_weeks),
          {:ok, _} <- Settings.set_summary_period_value(summary_period_value),
-         {:ok, _} <- Settings.set_summary_period_unit(summary_period_unit) do
+         {:ok, _} <- Settings.set_summary_period_unit(summary_period_unit),
+         {:ok, _} <- Settings.set_nav_pinned_pages(nav_pinned_pages) do
       {:noreply,
        socket
        |> assign(:default_metadata_version, version)
@@ -87,6 +95,7 @@ defmodule JournalexWeb.SettingsLive do
        |> assign(:filter_visible_weeks, filter_visible_weeks)
        |> assign(:summary_period_value, summary_period_value)
        |> assign(:summary_period_unit, summary_period_unit)
+       |> assign(:nav_pinned_pages, nav_pinned_pages)
        |> assign(:save_status, :ok)}
     else
       {:error, _changeset} ->
