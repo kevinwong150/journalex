@@ -130,13 +130,16 @@ defmodule Journalex.WriteupDraftsTest do
       assert length(WriteupDrafts.list_drafts()) == 2
     end
 
-    test "skips entries with is_preset true" do
+    test "imports entries with is_preset true and preserves the flag" do
       entries = [
         %{"name" => "Preset", "blocks" => [], "is_preset" => true},
         %{"name" => "Normal", "blocks" => []}
       ]
 
-      assert {:ok, %{imported: 1, skipped: 1}} = WriteupDrafts.import_drafts(entries)
+      assert {:ok, %{imported: 2, skipped: 0}} = WriteupDrafts.import_drafts(entries)
+      drafts = WriteupDrafts.list_drafts()
+      assert Enum.find(drafts, & &1.name == "Preset").is_preset == true
+      assert Enum.find(drafts, & &1.name == "Normal").is_preset == false
     end
 
     test "handles atom-keyed entries" do
@@ -146,15 +149,17 @@ defmodule Journalex.WriteupDraftsTest do
   end
 
   describe "export_all/0" do
-    test "exports drafts excluding preset and all preset blocks" do
+    test "exports only preset drafts and all preset blocks" do
       WriteupDrafts.ensure_preset_draft()
       assert {:ok, _} = WriteupDrafts.create_draft(%{name: "My Draft", blocks: [%{"type" => "paragraph", "text" => "hi"}]})
       assert {:ok, _} = WriteupDrafts.create_preset_block(%{name: "PB1", blocks: [], group: "G1"})
 
       result = WriteupDrafts.export_all()
 
+      # ensure_preset_draft creates one preset draft; "My Draft" is non-preset so excluded
       assert length(result.drafts) == 1
-      assert hd(result.drafts).name == "My Draft"
+      assert hd(result.drafts).is_preset == true
+      refute Enum.any?(result.drafts, & &1.name == "My Draft")
       assert length(result.preset_blocks) == 1
       assert hd(result.preset_blocks).name == "PB1"
       assert hd(result.preset_blocks).group == "G1"

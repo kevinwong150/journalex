@@ -44,20 +44,12 @@ defmodule Journalex.WriteupDrafts do
   end
 
   @doc """
-  Toggle the `is_preset` flag on a draft.
-  When toggling ON, any existing preset drafts are first unset so there
-  is at most one preset at a time.
+  Toggle the `is_preset` flag on a draft. Multiple drafts can be flagged
+  as preset simultaneously — the flag is purely additive.
   Returns `{:ok, draft}` or `{:error, changeset}`.
   """
   def toggle_preset_draft(%Draft{is_preset: already_preset} = draft) do
-    if already_preset do
-      update_draft(draft, %{is_preset: false})
-    else
-      from(d in Draft, where: d.is_preset == true)
-      |> Repo.update_all(set: [is_preset: false])
-
-      update_draft(draft, %{is_preset: true})
-    end
+    update_draft(draft, %{is_preset: !already_preset})
   end
 
   @doc """
@@ -193,8 +185,9 @@ defmodule Journalex.WriteupDrafts do
   end
 
   @doc """
-  Import drafts from a list of maps. Skips entries whose name already exists
-  and entries with `is_preset: true`. Returns `{:ok, %{imported: count, skipped: count}}`.
+  Import preset drafts from a list of maps. Skips entries whose name already
+  exists. Preserves the `is_preset` flag from the serialised data.
+  Returns `{:ok, %{imported: count, skipped: count}}`.
   """
   def import_drafts(entries) when is_list(entries) do
     existing_names =
@@ -205,12 +198,12 @@ defmodule Journalex.WriteupDrafts do
     {imported, skipped} =
       Enum.reduce(entries, {0, 0}, fn entry, {imp, skip} ->
         name = Map.get(entry, "name") || Map.get(entry, :name)
-        is_preset = Map.get(entry, "is_preset") || Map.get(entry, :is_preset) || false
 
-        if name && !is_preset && !MapSet.member?(existing_names, name) do
+        if name && !MapSet.member?(existing_names, name) do
           attrs = %{
             name: name,
-            blocks: Map.get(entry, "blocks") || Map.get(entry, :blocks) || []
+            blocks: Map.get(entry, "blocks") || Map.get(entry, :blocks) || [],
+            is_preset: Map.get(entry, "is_preset") || Map.get(entry, :is_preset) || false
           }
 
           case create_draft(attrs) do
@@ -226,13 +219,13 @@ defmodule Journalex.WriteupDrafts do
   end
 
   @doc """
-  Export all drafts (excluding the preset draft) and preset blocks as a map.
+  Export all preset drafts and preset blocks as a map.
   """
   def export_all do
     drafts =
       list_drafts()
-      |> Enum.reject(& &1.is_preset)
-      |> Enum.map(fn d -> %{name: d.name, blocks: d.blocks} end)
+      |> Enum.filter(& &1.is_preset)
+      |> Enum.map(fn d -> %{name: d.name, blocks: d.blocks, is_preset: true} end)
 
     preset_blocks =
       list_preset_blocks()
