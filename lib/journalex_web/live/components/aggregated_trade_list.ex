@@ -156,6 +156,10 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: nil,
     doc: "Event name to emit when writeup should be synced from Notion for a trade row"
 
+  attr :on_open_writeup_modal_event, :string,
+    default: nil,
+    doc: "Event name to emit when the full writeup modal is requested for a trade row"
+
   def aggregated_trade_list(assigns) do
     ~H"""
     <% chain_key = @action_chain_key %>
@@ -745,6 +749,15 @@ defmodule JournalexWeb.AggregatedTradeList do
                             <span :if={writeup_blocks == []} class="text-[10px] text-violet-400 italic">no content</span>
                           </div>
                           <div class="flex items-center gap-1.5">
+                            <button
+                              :if={@on_open_writeup_modal_event && writeup_blocks != []}
+                              type="button"
+                              phx-click={@on_open_writeup_modal_event}
+                              phx-value-index={idx}
+                              class="text-[10px] font-medium text-violet-600 hover:text-violet-800 hover:bg-violet-50 px-1.5 py-0.5 rounded transition-colors"
+                            >
+                              View full
+                            </button>
                             <button
                               :if={@on_sync_writeup_event && is_binary(notion_page_id_for_row)}
                               type="button"

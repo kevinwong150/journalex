@@ -103,6 +103,8 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:drafts, MetadataDrafts.list_drafts())
       # Writeup drafts for block content (preset-flagged only)
       |> assign(:writeup_drafts, WriteupDrafts.list_preset_drafts())
+      # Writeup detail modal state
+      |> assign(:writeup_modal_trade, nil)
 
     will_auto_check = connected?(socket) && Journalex.Settings.get_auto_check_on_load()
     socket = assign(socket, :auto_check_pending?, will_auto_check)
@@ -597,6 +599,23 @@ defmodule JournalexWeb.TradesDumpLive do
             {:noreply, put_toast(socket, :error, "Failed to apply draft: #{inspect(changeset.errors)}")}
         end
     end
+  end
+
+  @impl true
+  def handle_event("open_writeup_modal", %{"index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    trade = Enum.at(socket.assigns.trades, idx)
+
+    if trade do
+      {:noreply, assign(socket, :writeup_modal_trade, trade)}
+    else
+      {:noreply, put_toast(socket, :error, "Trade not found")}
+    end
+  end
+
+  @impl true
+  def handle_event("close_writeup_modal", _params, socket) do
+    {:noreply, assign(socket, :writeup_modal_trade, nil)}
   end
 
   @impl true
@@ -1687,7 +1706,66 @@ defmodule JournalexWeb.TradesDumpLive do
         on_apply_writeup_draft_event="apply_writeup_draft"
         on_clear_writeup_event="clear_writeup"
         on_sync_writeup_event="sync_writeup_from_notion"
+        on_open_writeup_modal_event="open_writeup_modal"
       />
+
+      <%!-- Writeup detail modal (single shared instance) --%>
+      <.modal
+        :if={@writeup_modal_trade}
+        id="writeup-detail-modal"
+        show
+        on_cancel={JS.push("close_writeup_modal")}
+      >
+        <% wt = @writeup_modal_trade %>
+        <% wblocks = wt.writeup || [] %>
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-base font-semibold text-slate-800">
+                {(wt.ticker || wt.symbol) <> "@" <> DateTime.to_iso8601(wt.datetime)}
+              </h3>
+              <p class="text-xs text-slate-500 mt-0.5">Full writeup</p>
+            </div>
+            <span :if={wblocks != []} class="text-xs font-medium text-violet-600 bg-violet-100 px-2 py-0.5 rounded-full">
+              {length(wblocks)} blocks
+            </span>
+          </div>
+
+          <div :if={wblocks == []} class="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+            No writeup content.
+          </div>
+
+          <div :if={wblocks != []} class="space-y-1">
+            <%= for block <- wblocks do %>
+              <% btype = block["type"] || block[:type] || "paragraph" %>
+              <% btext = block["text"] || block[:text] || "" %>
+              <% children = block["children"] || block[:children] || [] %>
+              <%= if btype == "toggle" do %>
+                <div class="rounded-md border border-violet-100 bg-violet-50/50 p-2">
+                  <div class="flex items-baseline gap-1.5">
+                    <span class="shrink-0 text-xs text-violet-400">▸</span>
+                    <span class={["text-sm font-medium text-violet-800", if(btext == "", do: "text-slate-300 italic", else: "")]}>
+                      {if btext == "", do: "(empty)", else: btext}
+                    </span>
+                  </div>
+                  <div :if={children != []} class="ml-4 mt-1 border-l-2 border-violet-200 pl-3 space-y-0.5">
+                    <%= for child <- children do %>
+                      <% ctext = child["text"] || child[:text] || "" %>
+                      <p class={["text-sm text-slate-700", if(ctext == "", do: "text-slate-300 italic", else: "")]}>
+                        {if ctext == "", do: "(empty)", else: ctext}
+                      </p>
+                    <% end %>
+                  </div>
+                </div>
+              <% else %>
+                <p class={["text-sm text-slate-700 pl-5", if(btext == "", do: "text-slate-300 italic", else: "")]}>
+                  {if btext == "", do: "(empty)", else: btext}
+                </p>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+      </.modal>
     </div>
     """
   end
