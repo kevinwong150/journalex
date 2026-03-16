@@ -298,6 +298,51 @@ Hooks.DownloadJSON = {
   }
 }
 
+// Pure-JS tab switcher for detail-row tab panels.
+// Expects: a container with [data-tab-btn] buttons whose data-tab-btn matches
+// a [data-tab-panel] value on sibling panel divs.
+Hooks.DetailTabs = {
+  mounted()  { this._setup() },
+  updated()  { this._setup() },
+  _setup() {
+    const el = this.el
+    const btns   = el.querySelectorAll('[data-tab-btn]')
+    const panels = el.querySelectorAll('[data-tab-panel]')
+    if (!btns.length) return
+
+    const activate = (key) => {
+      btns.forEach(b => {
+        const active = b.dataset.tabBtn === key
+        b.classList.toggle('border-blue-500',  active)
+        b.classList.toggle('text-blue-700',    active)
+        b.classList.toggle('border-transparent', !active)
+        b.classList.toggle('text-slate-500',   !active)
+      })
+      panels.forEach(p => {
+        p.classList.toggle('hidden', p.dataset.tabPanel !== key)
+      })
+    }
+
+    // Default: first button
+    const initial = btns[0].dataset.tabBtn
+    activate(initial)
+
+    if (!this._handler) {
+      this._handler = (ev) => {
+        const btn = ev.target.closest('[data-tab-btn]')
+        if (btn) activate(btn.dataset.tabBtn)
+      }
+      el.addEventListener('click', this._handler)
+    }
+  },
+  destroyed() {
+    if (this._handler) {
+      this.el.removeEventListener('click', this._handler)
+      this._handler = null
+    }
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,

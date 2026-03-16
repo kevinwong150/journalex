@@ -16,6 +16,14 @@ defmodule Journalex.WriteupDrafts do
   end
 
   @doc """
+  List only preset-flagged writeup drafts, ordered by creation time ascending.
+  """
+  def list_preset_drafts do
+    from(d in Draft, where: d.is_preset == true, order_by: [asc: d.inserted_at])
+    |> Repo.all()
+  end
+
+  @doc """
   Get a single writeup draft by id. Raises if not found.
   """
   def get_draft!(id), do: Repo.get!(Draft, id)

@@ -148,6 +148,10 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: nil,
     doc: "Event name to emit when a writeup draft is applied to a trade row"
 
+  attr :on_clear_writeup_event, :string,
+    default: nil,
+    doc: "Event name to emit when writeup blocks are cleared from a trade row"
+
   def aggregated_trade_list(assigns) do
     ~H"""
     <% chain_key = @action_chain_key %>
@@ -529,6 +533,14 @@ defmodule JournalexWeb.AggregatedTradeList do
                     has_data={not is_nil(Map.get(item, :metadata)) and map_size(Map.get(item, :metadata, %{})) > 0}
                     is_done={metadata_done?(Map.get(item, :metadata))}
                   />
+                  <div :if={is_list(Map.get(item, :writeup)) && Map.get(item, :writeup) != []} class="mt-1 flex justify-center">
+                    <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 text-violet-700" title={"Writeup: #{length(item.writeup)} blocks"}>
+                      <svg class="w-2.5 h-2.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      {length(item.writeup)}
+                    </span>
+                  </div>
                 </td>
               </tr>
               <tr
@@ -538,173 +550,239 @@ defmodule JournalexWeb.AggregatedTradeList do
                 id={"detail-" <> row_id}
                 class={["hidden bg-slate-50"]}
               >
-                <td colspan={detail_colspan(assigns, show_action_toggle?)} class="px-6 py-4">
+                <td colspan={detail_colspan(assigns, show_action_toggle?)} class="px-0 py-0">
+                  <%!-- Tabbed detail panel --%>
+                  <% writeup_blocks = Map.get(item, :writeup) || [] %>
                   <% diffs = Map.get(@row_inconsistencies || %{}, idx) %>
-                  <%= if is_map(diffs) and map_size(diffs) > 0 do %>
-                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm mb-3">
-                      <div class="flex flex-wrap items-center justify-between gap-2">
-                        <h4 class="text-sm font-semibold text-amber-800">Notion mismatches</h4>
-                        <span class="text-xs text-amber-700">
-                          {map_size(diffs)} difference{if map_size(diffs) == 1, do: "", else: "s"}
+                  <% has_diffs = is_map(diffs) and map_size(diffs) > 0 %>
+                  <% trade_title = item_ticker(item) <> "@" <> item_datetime_value(item) %>
+                  <% notion_page_id_for_row = Map.get(@page_ids_map || %{}, trade_title) %>
+                  <div id={"tabs-" <> row_id} phx-hook="DetailTabs">
+                    <%!-- Tab bar --%>
+                    <div class="flex border-b border-slate-200 bg-slate-50 px-4">
+                      <button :if={@show_metadata_column?} type="button" data-tab-btn="metadata" class="px-3 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap">
+                        Metadata
+                        <span :if={metadata_done?(Map.get(item, :metadata))} class="ml-1 text-green-600">✓</span>
+                        <span :if={has_diffs} class="ml-0.5 inline-flex items-center justify-center rounded-full px-1 text-[10px] font-semibold h-4 min-w-[1rem] bg-amber-100 text-amber-700">
+                          {map_size(diffs)}
                         </span>
-                      </div>
-                      <div class="mt-3 overflow-x-auto">
-                        <table class="min-w-full text-xs">
-                          <thead>
-                            <tr class="text-left text-amber-900">
-                              <th class="px-2 py-1">Field</th>
-                              <th class="px-2 py-1">Expected</th>
-                              <th class="px-2 py-1">Actual</th>
-                            </tr>
-                          </thead>
-                          <tbody class="text-amber-900">
-                            <%= for {field, change} <- ordered_diff_list(diffs) do %>
-                              <tr class="align-top">
-                                <td class="px-2 py-1 whitespace-nowrap font-medium">
-                                  {diff_field_label(field)}
-                                </td>
-                                <td class="px-2 py-1">
-                                  {present_string(Map.get(change, :expected))}
-                                </td>
-                                <td class="px-2 py-1">{present_string(Map.get(change, :actual))}</td>
-                              </tr>
-                            <% end %>
-                          </tbody>
-                        </table>
-                      </div>
+                      </button>
+                      <button :if={@on_apply_writeup_draft_event} type="button" data-tab-btn="writeup" class="px-3 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap">
+                        Writeup
+                        <span :if={writeup_blocks != []} class="ml-1 inline-flex items-center justify-center rounded-full px-1 text-[10px] font-semibold h-4 min-w-[1rem] bg-violet-100 text-violet-700">
+                          {length(writeup_blocks)}
+                        </span>
+                        <span :if={writeup_blocks == []} class="ml-1 text-[10px] text-slate-400">—</span>
+                      </button>
+                      <button type="button" data-tab-btn="actions" class="px-3 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap">
+                        Actions
+                        <span class={["ml-1 inline-flex items-center justify-center rounded-full px-1.5 text-[10px] font-semibold h-4 min-w-[1rem]",
+                          if(chain_length > 0, do: "bg-blue-100 text-blue-700", else: "bg-slate-100 text-slate-500")
+                        ]}>
+                          {chain_length}
+                        </span>
+                      </button>
                     </div>
-                  <% end %>
 
-                  <%= if @show_metadata_column? do %>
-                    <%!-- Sync from Notion button — only shown when the trade has a known Notion page --%>
-                    <% trade_title = item_ticker(item) <> "@" <> item_datetime_value(item) %>
-                    <% notion_page_id_for_row = Map.get(@page_ids_map || %{}, trade_title) %>
-                    <%= if is_binary(notion_page_id_for_row) and not is_nil(@on_sync_metadata_event) do %>
-                      <div class="flex justify-end mb-2">
-                        <button
-                          type="button"
-                          phx-click={@on_sync_metadata_event}
-                          phx-value-index={idx}
-                          class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded hover:bg-emerald-100 transition"
-                        >
-                          ↙ Sync from Notion
-                        </button>
-                      </div>
-                    <% end %>
-                    <.render_metadata_form
-                      version={@global_metadata_version}
-                      item={item}
-                      idx={idx}
-                      on_save_event={@on_save_metadata_event}
-                      on_reset_event={@on_reset_metadata_event}
-                      drafts={@drafts}
-                      on_apply_draft_event={@on_apply_draft_event}
-                    />
+                    <%!-- ═══ Actions panel ═══ --%>
+                    <div data-tab-panel="actions" class="hidden px-6 py-4">
+                      <%= if has_chain do %>
+                        <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                          <div class="flex flex-wrap items-center justify-between gap-2">
+                            <h4 class="text-sm font-semibold text-slate-700">Action chain</h4>
+                            <span class="text-xs text-slate-500">
+                              {chain_length} {if chain_length == 1, do: "step", else: "steps"}
+                            </span>
+                          </div>
+                          <ol class="mt-4 space-y-3">
+                            <%= for {action, action_idx} <- Enum.with_index(chain) do %>
+                              <% action_time = format_action_time(action) %>
+                              <% action_meta = action_meta(action) %>
+                              <% action_notes = action_notes(action) %>
+                              <li class="relative">
+                                <div class="grid grid-cols-[auto_1fr_auto] items-start gap-3">
+                                  <div class="relative">
+                                    <div class="z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white shadow">
+                                      {action_idx + 1}
+                                    </div>
+                                    <div
+                                      :if={action_idx < chain_length - 1}
+                                      class="absolute left-1/2 top-6 -ml-px h-full w-px bg-slate-200"
+                                    >
+                                    </div>
+                                  </div>
+                                  <div class="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                      <span class="text-sm font-medium text-slate-800">
+                                        {action_label(action, action_idx)}
+                                      </span>
+                                      <span :if={action_time != ""} class="text-xs text-slate-500">
+                                        {action_time}
+                                      </span>
+                                    </div>
+                                    <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+                                      <div
+                                        :if={action_price(action)}
+                                        class="inline-flex items-center gap-1 font-medium text-slate-700"
+                                      >
+                                        <span class="text-slate-500">Price:</span>
+                                        <span>{action_price(action)}</span>
+                                      </div>
+                                      <%= for meta <- action_meta do %>
+                                        <span class="inline-flex items-center gap-1">
+                                          <span class="h-1.5 w-1.5 rounded-full bg-slate-300"></span>
+                                          {meta}
+                                        </span>
+                                      <% end %>
+                                      <.link
+                                        :if={
+                                          action_id =
+                                            Map.get(action, :activity_statement_id) ||
+                                              Map.get(action, "activity_statement_id")
+                                        }
+                                        navigate={~p"/activity_statement/#{action_id}"}
+                                        class="inline-flex items-center rounded border border-blue-200 px-2 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-50"
+                                        title="View activity statement"
+                                      >
+                                        View statement →
+                                      </.link>
+                                    </div>
+                                    <p
+                                      :if={action_notes != ""}
+                                      class="mt-2 text-xs leading-relaxed text-slate-600"
+                                    >
+                                      {action_notes}
+                                    </p>
+                                  </div>
+                                  <div class="pt-1 text-right"></div>
+                                </div>
+                              </li>
+                            <% end %>
+                          </ol>
+                        </div>
+                      <% else %>
+                        <div class="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
+                          No recorded actions for this trade.
+                        </div>
+                      <% end %>
+                    </div>
 
-                    <%!-- Writeup draft apply buttons --%>
-                    <div :if={@on_apply_writeup_draft_event && @writeup_drafts != []} class="mt-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3">
-                      <div class="flex items-center justify-between mb-2">
-                        <span class="text-xs font-semibold text-violet-700 uppercase tracking-wide">Writeup</span>
-                        <span :if={item.writeup && item.writeup != []} class="text-[10px] font-medium text-violet-600 bg-violet-100 px-1.5 py-0.5 rounded">
-                          {length(item.writeup)} blocks applied
-                        </span>
-                      </div>
-                      <div class="flex flex-wrap gap-1.5">
-                        <%= for wd <- @writeup_drafts do %>
+                    <%!-- ═══ Metadata panel ═══ --%>
+                    <div :if={@show_metadata_column?} data-tab-panel="metadata" class="px-6 py-4">
+                      <%= if has_diffs do %>
+                        <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm mb-3">
+                          <div class="flex flex-wrap items-center justify-between gap-2">
+                            <h4 class="text-sm font-semibold text-amber-800">Notion mismatches</h4>
+                            <span class="text-xs text-amber-700">
+                              {map_size(diffs)} difference{if map_size(diffs) == 1, do: "", else: "s"}
+                            </span>
+                          </div>
+                          <div class="mt-3 overflow-x-auto">
+                            <table class="min-w-full text-xs">
+                              <thead>
+                                <tr class="text-left text-amber-900">
+                                  <th class="px-2 py-1">Field</th>
+                                  <th class="px-2 py-1">Expected</th>
+                                  <th class="px-2 py-1">Actual</th>
+                                </tr>
+                              </thead>
+                              <tbody class="text-amber-900">
+                                <%= for {field, change} <- ordered_diff_list(diffs) do %>
+                                  <tr class="align-top">
+                                    <td class="px-2 py-1 whitespace-nowrap font-medium">
+                                      {diff_field_label(field)}
+                                    </td>
+                                    <td class="px-2 py-1">
+                                      {present_string(Map.get(change, :expected))}
+                                    </td>
+                                    <td class="px-2 py-1">{present_string(Map.get(change, :actual))}</td>
+                                  </tr>
+                                <% end %>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      <% end %>
+                      <%= if is_binary(notion_page_id_for_row) and not is_nil(@on_sync_metadata_event) do %>
+                        <div class="flex justify-end mb-2">
                           <button
                             type="button"
-                            phx-click={@on_apply_writeup_draft_event}
+                            phx-click={@on_sync_metadata_event}
                             phx-value-index={idx}
-                            phx-value-draft-id={wd.id}
-                            class="px-2.5 py-1 text-xs font-medium rounded-md bg-violet-100 text-violet-700 hover:bg-violet-200 transition-colors"
-                            title={"Apply writeup: #{wd.name} (#{length(wd.blocks || [])} blocks)"}
+                            class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded hover:bg-emerald-100 transition"
                           >
-                            {wd.name}
+                            ↙ Sync from Notion
                           </button>
-                        <% end %>
-                      </div>
+                        </div>
+                      <% end %>
+                      <.render_metadata_form
+                        version={@global_metadata_version}
+                        item={item}
+                        idx={idx}
+                        on_save_event={@on_save_metadata_event}
+                        on_reset_event={@on_reset_metadata_event}
+                        drafts={@drafts}
+                        on_apply_draft_event={@on_apply_draft_event}
+                      />
                     </div>
-                  <% end %>
 
-                  <%= if has_chain do %>
-                    <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                      <div class="flex flex-wrap items-center justify-between gap-2">
-                        <h4 class="text-sm font-semibold text-slate-700">Action chain</h4>
-                        <span class="text-xs text-slate-500">
-                          {chain_length} {if chain_length == 1, do: "step", else: "steps"}
-                        </span>
-                      </div>
-                      <ol class="mt-4 space-y-3">
-                        <%= for {action, action_idx} <- Enum.with_index(chain) do %>
-                          <% action_time = format_action_time(action) %>
-                          <% action_meta = action_meta(action) %>
-                          <% action_notes = action_notes(action) %>
-                          <li class="relative">
-                            <div class="grid grid-cols-[auto_1fr_auto] items-start gap-3">
-                              <div class="relative">
-                                <div class="z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white shadow">
-                                  {action_idx + 1}
-                                </div>
-                                <div
-                                  :if={action_idx < chain_length - 1}
-                                  class="absolute left-1/2 top-6 -ml-px h-full w-px bg-slate-200"
-                                >
-                                </div>
-                              </div>
-                              <div class="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
-                                <div class="flex flex-wrap items-center justify-between gap-2">
-                                  <span class="text-sm font-medium text-slate-800">
-                                    {action_label(action, action_idx)}
-                                  </span>
-                                  <span :if={action_time != ""} class="text-xs text-slate-500">
-                                    {action_time}
-                                  </span>
-                                </div>
-                                <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
-                                  <div
-                                    :if={action_price(action)}
-                                    class="inline-flex items-center gap-1 font-medium text-slate-700"
-                                  >
-                                    <span class="text-slate-500">Price:</span>
-                                    <span>{action_price(action)}</span>
-                                  </div>
-                                  <%= for meta <- action_meta do %>
-                                    <span class="inline-flex items-center gap-1">
-                                      <span class="h-1.5 w-1.5 rounded-full bg-slate-300"></span>
-                                      {meta}
-                                    </span>
-                                  <% end %>
-                                  <.link
-                                    :if={
-                                      action_id =
-                                        Map.get(action, :activity_statement_id) ||
-                                          Map.get(action, "activity_statement_id")
-                                    }
-                                    navigate={~p"/activity_statement/#{action_id}"}
-                                    class="inline-flex items-center rounded border border-blue-200 px-2 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-50"
-                                    title="View activity statement"
-                                  >
-                                    View statement →
-                                  </.link>
-                                </div>
-                                <p
-                                  :if={action_notes != ""}
-                                  class="mt-2 text-xs leading-relaxed text-slate-600"
-                                >
-                                  {action_notes}
-                                </p>
-                              </div>
-                              <div class="pt-1 text-right"></div>
+                    <%!-- ═══ Writeup panel ═══ --%>
+                    <div :if={@on_apply_writeup_draft_event} data-tab-panel="writeup" class="hidden px-6 py-4">
+                      <div class="rounded-lg border border-violet-200 bg-violet-50/50 p-3">
+                        <% preview_blocks = Enum.take(writeup_blocks, 8) %>
+                        <% remaining = length(writeup_blocks) - 8 %>
+                        <%!-- Header --%>
+                        <div class="flex items-center justify-between mb-2">
+                          <div class="flex items-center gap-2">
+                            <span class="text-xs font-semibold text-violet-700 uppercase tracking-wide">Writeup</span>
+                            <span :if={writeup_blocks != []} class="text-[10px] font-medium text-violet-600 bg-violet-100 px-1.5 py-0.5 rounded-full">
+                              {length(writeup_blocks)} blocks
+                            </span>
+                            <span :if={writeup_blocks == []} class="text-[10px] text-violet-400 italic">no content</span>
+                          </div>
+                          <button
+                            :if={@on_clear_writeup_event && writeup_blocks != []}
+                            type="button"
+                            phx-click={@on_clear_writeup_event}
+                            phx-value-index={idx}
+                            class="text-[10px] font-medium text-red-500 hover:text-red-700 hover:bg-red-50 px-1.5 py-0.5 rounded transition-colors"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                        <%!-- Block content preview --%>
+                        <div :if={writeup_blocks != []} class="mb-2.5 bg-white border border-violet-100 rounded-md p-2 space-y-0.5">
+                          <%= for block <- preview_blocks do %>
+                            <% btype = block["type"] || block[:type] || "paragraph" %>
+                            <% btext = block["text"] || block[:text] || "" %>
+                            <div class="text-xs flex items-baseline gap-1.5">
+                              <span class={["shrink-0 text-[10px]", if(btype == "toggle", do: "text-violet-400", else: "invisible")]}>▸</span>
+                              <span class={[if(btype == "toggle", do: "text-violet-800 font-medium", else: "text-slate-700"), if(btext == "", do: "text-slate-300 italic", else: "")]}>
+                                {if btext == "", do: "(empty)", else: btext}
+                              </span>
                             </div>
-                          </li>
-                        <% end %>
-                      </ol>
+                          <% end %>
+                          <p :if={remaining > 0} class="text-[10px] text-slate-400 pt-0.5 pl-5">+ {remaining} more block{if remaining == 1, do: "", else: "s"}</p>
+                        </div>
+                        <%!-- Apply draft buttons --%>
+                        <div :if={@writeup_drafts != []} class="flex flex-wrap items-center gap-1.5">
+                          <span class="text-[10px] text-violet-600 font-medium mr-0.5">Apply:</span>
+                          <%= for wd <- @writeup_drafts do %>
+                            <button
+                              type="button"
+                              phx-click={@on_apply_writeup_draft_event}
+                              phx-value-index={idx}
+                              phx-value-draft-id={wd.id}
+                              class="px-2.5 py-1 text-xs font-medium rounded-md bg-violet-100 text-violet-700 hover:bg-violet-200 transition-colors"
+                              title={"#{length(wd.blocks || [])} blocks"}
+                            >
+                              {wd.name}
+                            </button>
+                          <% end %>
+                        </div>
+                      </div>
                     </div>
-                  <% else %>
-                    <div class="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
-                      No recorded actions for this trade.
-                    </div>
-                  <% end %>
+                  </div>
                 </td>
               </tr>
             <% end %>

@@ -90,8 +90,8 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:supported_versions, @supported_versions)
       # Metadata drafts for quick-apply
       |> assign(:drafts, MetadataDrafts.list_drafts())
-      # Writeup drafts for block content
-      |> assign(:writeup_drafts, WriteupDrafts.list_drafts())
+      # Writeup drafts for block content (preset-flagged only)
+      |> assign(:writeup_drafts, WriteupDrafts.list_preset_drafts())
 
     will_auto_check = connected?(socket) && Journalex.Settings.get_auto_check_on_load()
     socket = assign(socket, :auto_check_pending?, will_auto_check)
@@ -547,6 +547,25 @@ defmodule JournalexWeb.TradesDumpLive do
           {:error, changeset} ->
             {:noreply, put_toast(socket, :error, "Failed to apply draft: #{inspect(changeset.errors)}")}
         end
+    end
+  end
+
+  @impl true
+  def handle_event("clear_writeup", %{"index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    trade = Enum.at(socket.assigns.trades, idx)
+
+    case Journalex.Trades.update_trade(trade, %{writeup: []}) do
+      {:ok, updated_trade} ->
+        trades =
+          socket.assigns.trades
+          |> Enum.with_index()
+          |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+        {:noreply, socket |> assign(:trades, trades) |> put_toast(:info, "Writeup cleared")}
+
+      {:error, _} ->
+        {:noreply, put_toast(socket, :error, "Failed to clear writeup")}
     end
   end
 
@@ -1479,6 +1498,7 @@ defmodule JournalexWeb.TradesDumpLive do
         on_apply_draft_event="apply_draft"
         writeup_drafts={@writeup_drafts}
         on_apply_writeup_draft_event="apply_writeup_draft"
+        on_clear_writeup_event="clear_writeup"
       />
     </div>
     """
