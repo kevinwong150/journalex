@@ -152,6 +152,10 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: nil,
     doc: "Event name to emit when writeup blocks are cleared from a trade row"
 
+  attr :on_sync_writeup_event, :string,
+    default: nil,
+    doc: "Event name to emit when writeup should be synced from Notion for a trade row"
+
   def aggregated_trade_list(assigns) do
     ~H"""
     <% chain_key = @action_chain_key %>
@@ -740,15 +744,27 @@ defmodule JournalexWeb.AggregatedTradeList do
                             </span>
                             <span :if={writeup_blocks == []} class="text-[10px] text-violet-400 italic">no content</span>
                           </div>
-                          <button
-                            :if={@on_clear_writeup_event && writeup_blocks != []}
-                            type="button"
-                            phx-click={@on_clear_writeup_event}
-                            phx-value-index={idx}
-                            class="text-[10px] font-medium text-red-500 hover:text-red-700 hover:bg-red-50 px-1.5 py-0.5 rounded transition-colors"
-                          >
-                            Clear
-                          </button>
+                          <div class="flex items-center gap-1.5">
+                            <button
+                              :if={@on_sync_writeup_event && is_binary(notion_page_id_for_row)}
+                              type="button"
+                              phx-click={@on_sync_writeup_event}
+                              phx-value-index={idx}
+                              class="text-[10px] font-medium text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 px-1.5 py-0.5 rounded transition-colors"
+                              title="Pull writeup blocks from Notion"
+                            >
+                              ↙ Sync
+                            </button>
+                            <button
+                              :if={@on_clear_writeup_event && writeup_blocks != []}
+                              type="button"
+                              phx-click={@on_clear_writeup_event}
+                              phx-value-index={idx}
+                              class="text-[10px] font-medium text-red-500 hover:text-red-700 hover:bg-red-50 px-1.5 py-0.5 rounded transition-colors"
+                            >
+                              Clear
+                            </button>
+                          </div>
                         </div>
                         <%!-- Block content preview --%>
                         <div :if={writeup_blocks != []} class="mb-2.5 bg-white border border-violet-100 rounded-md p-2 space-y-0.5">

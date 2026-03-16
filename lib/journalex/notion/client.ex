@@ -166,6 +166,32 @@ defmodule Journalex.Notion.Client do
   end
 
   @doc """
+  Retrieve the children blocks of a page or block.
+
+  Uses `GET /v1/blocks/{block_id}/children` to fetch content blocks.
+  Accepts an optional `page_size` (default 100) and `start_cursor` for pagination.
+
+  Returns `{:ok, map}` (with `"results"` and pagination fields) or `{:error, reason}`.
+  """
+  @spec get_block_children(binary(), keyword()) :: {:ok, map()} | {:error, term()}
+  def get_block_children(block_id, opts \\ []) when is_binary(block_id) do
+    page_size = Keyword.get(opts, :page_size, 100)
+    query = "?page_size=#{page_size}"
+
+    query =
+      case Keyword.get(opts, :start_cursor) do
+        nil -> query
+        cursor -> query <> "&start_cursor=#{cursor}"
+      end
+
+    case request(:get, "/blocks/#{block_id}/children#{query}") do
+      {:ok, status, map} when status in 200..299 -> {:ok, map}
+      {:ok, status, map} -> {:error, {:http_error, status, map}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
   Append block children to a page or block.
 
   Uses `PATCH /v1/blocks/{block_id}/children` to add content blocks

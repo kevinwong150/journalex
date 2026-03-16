@@ -453,6 +453,48 @@ defmodule Journalex.Notion do
     end
   end
 
+  @doc """
+  Sync writeup blocks from a Notion page back to a trade record.
+
+  Fetches the top-level block children of the Notion page. For toggle blocks,
+  also fetches their children (one level deep). Converts all supported blocks
+  (paragraph, toggle) to the internal writeup format and saves to `trade.writeup`.
+
+  Returns `{:ok, updated_trade}` on success or `{:error, reason}` on failure.
+  """
+  def sync_writeup_from_notion(trade_id, page_id) when is_binary(page_id) do
+    alias Journalex.Repo
+    alias Journalex.Trades.Trade
+    alias Journalex.Notion.BlockBuilder
+
+    with {:ok, trade} <- Repo.get(Trade, trade_id) |> validate_trade(),
+         {:ok, %{"results" => top_blocks}} <- Client.get_block_children(page_id) do
+      # Enrich toggle blocks with their children (one level deep)
+      enriched =
+        Enum.map(top_blocks, fn block ->
+          if block["type"] == "toggle" and block["has_children"] == true do
+            block_id = block["id"]
+
+            children =
+              case Client.get_block_children(block_id) do
+                {:ok, %{"results" => child_blocks}} -> child_blocks
+                _ -> []
+              end
+
+            put_in(block, ["toggle", "children"], children)
+          else
+            block
+          end
+        end)
+
+      writeup = BlockBuilder.from_notion_blocks(enriched)
+
+      trade
+      |> Trade.changeset(%{writeup: writeup})
+      |> Repo.update()
+    end
+  end
+
   defp validate_trade(nil), do: {:error, :trade_not_found}
   defp validate_trade(trade), do: {:ok, trade}
 

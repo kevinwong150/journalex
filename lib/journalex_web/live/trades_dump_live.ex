@@ -85,6 +85,17 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:sync_finished_at_mono, nil)
       |> assign(:sync_elapsed_ms, 0)
       |> assign(:sync_timer_ref, nil)
+      # Bulk writeup sync-from-Notion progress state
+      |> assign(:wsync_queue, [])
+      |> assign(:wsync_total, 0)
+      |> assign(:wsync_processed, 0)
+      |> assign(:wsync_in_progress?, false)
+      |> assign(:wsync_current, nil)
+      |> assign(:wsync_results, %{})
+      |> assign(:wsync_started_at_mono, nil)
+      |> assign(:wsync_finished_at_mono, nil)
+      |> assign(:wsync_elapsed_ms, 0)
+      |> assign(:wsync_timer_ref, nil)
       # Global metadata version for all forms — DB wins, app config is fallback
       |> assign(:global_metadata_version, Journalex.Settings.get_default_metadata_version())
       |> assign(:supported_versions, @supported_versions)
@@ -459,6 +470,44 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   @impl true
+  def handle_event("bulk_sync_writeup_from_notion", _params, socket) do
+    selected = socket.assigns.selected_idx || MapSet.new()
+    rows = socket.assigns.trades || []
+    page_ids = socket.assigns.notion_page_ids || %{}
+
+    queue =
+      rows
+      |> Enum.with_index()
+      |> Enum.filter(fn {row, idx} ->
+        MapSet.member?(selected, idx) and is_binary(Map.get(page_ids, row_title(row)))
+      end)
+
+    if queue == [] do
+      {:noreply,
+       put_toast(
+         socket,
+         :error,
+         "No selected trades with known Notion pages. Run \"Check Notion\" first."
+       )}
+    else
+      socket =
+        socket
+        |> assign(:wsync_queue, queue)
+        |> assign(:wsync_total, length(queue))
+        |> assign(:wsync_processed, 0)
+        |> assign(:wsync_in_progress?, true)
+        |> assign(:wsync_current, nil)
+        |> assign(:wsync_results, %{})
+        |> assign(:wsync_started_at_mono, System.monotonic_time(:millisecond))
+        |> assign(:wsync_finished_at_mono, nil)
+        |> assign(:wsync_elapsed_ms, 0)
+
+      timer_ref = Process.send_after(self(), :process_next_writeup_sync, 0)
+      {:noreply, assign(socket, :wsync_timer_ref, timer_ref)}
+    end
+  end
+
+  @impl true
   def handle_event("toggle_hide_exists", _params, socket) do
     {:noreply, assign(socket, hide_exists?: !socket.assigns.hide_exists?)}
   end
@@ -666,6 +715,42 @@ defmodule JournalexWeb.TradesDumpLive do
 
           {:error, reason} ->
             {:noreply, put_toast(socket, :error, "Sync failed: #{inspect(reason)}")}
+        end
+    end
+  end
+
+  @impl true
+  def handle_event("sync_writeup_from_notion", %{"index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    trade = Enum.at(socket.assigns.trades, idx)
+    page_ids = socket.assigns.notion_page_ids || %{}
+
+    title = if trade, do: row_title(trade), else: nil
+    page_id = if title, do: Map.get(page_ids, title), else: nil
+
+    cond do
+      is_nil(trade) ->
+        {:noreply, put_toast(socket, :error, "Trade not found")}
+
+      is_nil(page_id) ->
+        {:noreply,
+         put_toast(socket, :error, "No Notion page found for this trade. Run 'Check Notion' first.")}
+
+      true ->
+        case Notion.sync_writeup_from_notion(trade.id, page_id) do
+          {:ok, updated_trade} ->
+            trades =
+              socket.assigns.trades
+              |> Enum.with_index()
+              |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+            {:noreply,
+             socket
+             |> assign(:trades, trades)
+             |> put_toast(:info, "Writeup synced from Notion")}
+
+          {:error, reason} ->
+            {:noreply, put_toast(socket, :error, "Writeup sync failed: #{inspect(reason)}")}
         end
     end
   end
@@ -1207,6 +1292,79 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   @impl true
+  def handle_info(:process_next_writeup_sync, socket) do
+    queue = socket.assigns.wsync_queue
+
+    case queue do
+      [] ->
+        now = System.monotonic_time(:millisecond)
+
+        socket =
+          socket
+          |> assign(:wsync_in_progress?, false)
+          |> assign(:wsync_current, nil)
+          |> assign(:wsync_finished_at_mono, socket.assigns.wsync_finished_at_mono || now)
+          |> assign(
+            :wsync_elapsed_ms,
+            if(socket.assigns.wsync_started_at_mono,
+              do:
+                (socket.assigns.wsync_finished_at_mono || now) -
+                  socket.assigns.wsync_started_at_mono,
+              else: 0
+            )
+          )
+          |> assign(:wsync_timer_ref, nil)
+
+        {:noreply, socket}
+
+      [{row, idx} | rest] ->
+        socket = assign(socket, :wsync_current, row)
+        page_ids = socket.assigns.notion_page_ids || %{}
+        page_id = Map.get(page_ids, row_title(row))
+
+        {updated_trades, result_tag} =
+          case {Map.get(row, :id), page_id} do
+            {id, pid} when not is_nil(id) and is_binary(pid) ->
+              case Notion.sync_writeup_from_notion(id, pid) do
+                {:ok, updated_trade} ->
+                  trades =
+                    socket.assigns.trades
+                    |> Enum.with_index()
+                    |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+                  {trades, :synced}
+
+                {:error, _} ->
+                  {socket.assigns.trades, :error}
+              end
+
+            _ ->
+              {socket.assigns.trades, :skipped}
+          end
+
+        now = System.monotonic_time(:millisecond)
+
+        elapsed_ms =
+          if socket.assigns.wsync_started_at_mono,
+            do: now - socket.assigns.wsync_started_at_mono,
+            else: 0
+
+        wsync_results = Map.put(socket.assigns.wsync_results || %{}, idx, result_tag)
+
+        socket =
+          socket
+          |> assign(:trades, updated_trades)
+          |> assign(:wsync_queue, rest)
+          |> assign(:wsync_processed, socket.assigns.wsync_processed + 1)
+          |> assign(:wsync_results, wsync_results)
+          |> assign(:wsync_elapsed_ms, elapsed_ms)
+
+        timer_ref = Process.send_after(self(), :process_next_writeup_sync, 0)
+        {:noreply, assign(socket, :wsync_timer_ref, timer_ref)}
+    end
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <div class="space-y-4">
@@ -1336,7 +1494,15 @@ defmodule JournalexWeb.TradesDumpLive do
               disabled={MapSet.size(@selected_idx) == 0 or @dump_in_progress? or @update_in_progress? or @check_in_progress? or @sync_in_progress?}
               phx-disable-with="Starting..."
             >
-              Sync from Notion
+              Sync Metadata
+            </button>
+            <button
+              phx-click="bulk_sync_writeup_from_notion"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50"
+              disabled={MapSet.size(@selected_idx) == 0 or @dump_in_progress? or @update_in_progress? or @check_in_progress? or @wsync_in_progress?}
+              phx-disable-with="Starting..."
+            >
+              Sync Writeup
             </button>
             <button
               phx-click="insert_missing_notion"
@@ -1452,6 +1618,27 @@ defmodule JournalexWeb.TradesDumpLive do
           labels={%{synced: "Synced", errors: "Errors", remaining: "Remaining"}}
         />
 
+        <DumpProgress.progress
+          :if={@wsync_total > 0}
+          id="wsync-progress"
+          title="Sync Writeup from Notion progress"
+          processed={@wsync_processed}
+          total={@wsync_total}
+          in_progress?={@wsync_in_progress?}
+          elapsed_ms={@wsync_elapsed_ms}
+          current_text={
+            @wsync_current &&
+              (@wsync_current.ticker || @wsync_current.symbol) <>
+                " @ " <> DateTime.to_iso8601(@wsync_current.datetime)
+          }
+          metrics={%{
+            synced: Enum.count(@wsync_results, fn {_, v} -> v == :synced end),
+            errors: Enum.count(@wsync_results, fn {_, v} -> v == :error end),
+            remaining: length(@wsync_queue || [])
+          }}
+          labels={%{synced: "Synced", errors: "Errors", remaining: "Remaining"}}
+        />
+
         <div
           :if={@auto_check_pending?}
           class="flex items-center gap-3 px-4 py-3 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-700"
@@ -1499,6 +1686,7 @@ defmodule JournalexWeb.TradesDumpLive do
         writeup_drafts={@writeup_drafts}
         on_apply_writeup_draft_event="apply_writeup_draft"
         on_clear_writeup_event="clear_writeup"
+        on_sync_writeup_event="sync_writeup_from_notion"
       />
     </div>
     """
