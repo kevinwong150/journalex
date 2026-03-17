@@ -189,10 +189,11 @@ defmodule JournalexWeb.ActivityStatementUploadResultLiveTest do
     test "saves rows and shows success flash", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/activity_statement/upload/result")
 
-      html = render_click(view, "save_all")
+      render_click(view, "save_all")
 
-      assert html =~ "Saved"
-      assert html =~ "new rows to DB"
+      assert_push_event(view, "toast", %{kind: :info, message: msg})
+      assert msg =~ "Saved"
+      assert msg =~ "new rows to DB"
     end
 
     test "rows are persisted in the database", %{conn: conn} do
@@ -208,11 +209,11 @@ defmodule JournalexWeb.ActivityStatementUploadResultLiveTest do
       {:ok, view, _html} = live(conn, ~p"/activity_statement/upload/result")
 
       render_click(view, "save_all")
-      html = render_click(view, "save_all")
+      assert_push_event(view, "toast", %{kind: :info, message: _})
 
-      # Second save should still succeed (0 new rows)
-      assert html =~ "Saved"
-      refute html =~ "Failed"
+      render_click(view, "save_all")
+      # Second save should still succeed (kind: :info, not :error)
+      assert_push_event(view, "toast", %{kind: :info, message: _})
     end
   end
 
@@ -227,9 +228,9 @@ defmodule JournalexWeb.ActivityStatementUploadResultLiveTest do
     test "saves one row and shows flash", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/activity_statement/upload/result")
 
-      html = render_click(view, "save_row", %{"index" => "0"})
+      render_click(view, "save_row", %{"index" => "0"})
 
-      assert html =~ "Row saved"
+      assert_push_event(view, "toast", %{kind: :info, message: "Row saved"})
     end
   end
 
@@ -246,7 +247,8 @@ defmodule JournalexWeb.ActivityStatementUploadResultLiveTest do
 
       html = render_click(view, "delete_all_uploads")
 
-      assert html =~ "Deleted"
+      assert_push_event(view, "toast", %{kind: :info, message: msg})
+      assert msg =~ "Deleted"
       assert html =~ "No activity data available"
     end
 
