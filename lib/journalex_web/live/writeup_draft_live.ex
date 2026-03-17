@@ -13,28 +13,6 @@ defmodule JournalexWeb.WriteupDraftLive do
   alias Journalex.WriteupDrafts.PresetBlock
 
   @presets %{
-    "standard" => %{
-      label: "Standard Trade",
-      blocks: [
-        %{"type" => "toggle", "text" => "1min", "children" => []},
-        %{"type" => "toggle", "text" => "2min", "children" => []},
-        %{"type" => "toggle", "text" => "5min", "children" => []},
-        %{"type" => "toggle", "text" => "15min", "children" => []},
-        %{"type" => "toggle", "text" => "daily", "children" => []},
-        %{"type" => "paragraph", "text" => ""},
-        %{"type" => "paragraph", "text" => "Environment Overview:"},
-        %{"type" => "paragraph", "text" => ""},
-        %{"type" => "paragraph", "text" => "Comments:"}
-      ]
-    },
-    "minimal" => %{
-      label: "Minimal",
-      blocks: [
-        %{"type" => "paragraph", "text" => "Environment Overview:"},
-        %{"type" => "paragraph", "text" => ""},
-        %{"type" => "paragraph", "text" => "Comments:"}
-      ]
-    },
     "empty" => %{
       label: "Empty",
       blocks: []
@@ -197,20 +175,7 @@ defmodule JournalexWeb.WriteupDraftLive do
   @impl true
   def handle_event("apply_preset", %{"preset" => preset_key}, socket) do
     case Map.get(@presets, preset_key) do
-      %{label: label, blocks: fallback_blocks} ->
-        # Use the DB preset draft's actual saved blocks for "standard";
-        # fall back to the hardcoded blocks for other presets.
-        blocks =
-          if preset_key == "standard" do
-            case Enum.find(socket.assigns.drafts, & &1.is_preset) do
-              %{blocks: db_blocks} when is_list(db_blocks) -> db_blocks
-              _ -> fallback_blocks
-            end
-          else
-            fallback_blocks
-          end
-
-        # Always stay in new-draft mode — just populate the blocks as a starting point.
+      %{label: label, blocks: blocks} ->
         {:noreply,
          socket
          |> assign(:blocks, blocks)
@@ -218,6 +183,22 @@ defmodule JournalexWeb.WriteupDraftLive do
 
       nil ->
         {:noreply, put_toast(socket, :error, "Unknown preset")}
+    end
+  end
+
+  @impl true
+  def handle_event("apply_preset_draft", %{"draft-id" => draft_id_str}, socket) do
+    {draft_id, _} = Integer.parse(draft_id_str)
+
+    case WriteupDrafts.get_draft(draft_id) do
+      nil ->
+        {:noreply, put_toast(socket, :error, "Draft not found")}
+
+      draft ->
+        {:noreply,
+         socket
+         |> assign(:blocks, draft.blocks || [])
+         |> put_toast(:info, "Applied \"#{draft.name}\" preset")}
     end
   end
 
@@ -1049,7 +1030,6 @@ defmodule JournalexWeb.WriteupDraftLive do
                 </h3>
                 <div class="flex items-center gap-1.5">
                   <span class="text-xs text-zinc-500 mr-1">Preset:</span>
-                  <% db_preset = Enum.find(@drafts, & &1.is_preset) %>
                   <%= for {key, preset} <- @presets do %>
                     <button
                       type="button"
@@ -1057,7 +1037,18 @@ defmodule JournalexWeb.WriteupDraftLive do
                       phx-value-preset={key}
                       class="px-2.5 py-1 text-xs font-medium rounded-md bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors"
                     >
-                      {if key == "standard" && db_preset, do: db_preset.name, else: preset.label}
+                      {preset.label}
+                    </button>
+                  <% end %>
+                  <%= for draft <- Enum.filter(@drafts, & &1.is_preset) do %>
+                    <button
+                      type="button"
+                      phx-click="apply_preset_draft"
+                      phx-value-draft-id={draft.id}
+                      class="px-2.5 py-1 text-xs font-medium rounded-md bg-violet-100 text-violet-700 hover:bg-violet-200 transition-colors"
+                      title={"#{length(draft.blocks || [])} blocks"}
+                    >
+                      {draft.name}
                     </button>
                   <% end %>
                 </div>

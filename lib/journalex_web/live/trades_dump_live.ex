@@ -101,8 +101,8 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:supported_versions, @supported_versions)
       # Metadata drafts for quick-apply
       |> assign(:drafts, MetadataDrafts.list_drafts())
-      # Writeup drafts for block content (preset-flagged only)
-      |> assign(:writeup_drafts, WriteupDrafts.list_preset_drafts())
+      # Writeup drafts for applying block content to trades
+      |> assign(:writeup_drafts, WriteupDrafts.list_drafts())
       # Writeup detail modal state
       |> assign(:writeup_modal_trade, nil)
 

@@ -93,16 +93,16 @@ defmodule Journalex.WriteupDrafts do
   Called on LiveView mount so the preset is always present in the list.
   """
   def ensure_preset_draft do
-    case Repo.get_by(Draft, is_preset: true) do
-      %Draft{} ->
-        :ok
+    query = from(d in Draft, where: d.is_preset == true)
 
-      nil ->
-        %Draft{}
-        |> Draft.changeset(%{name: @preset_name, blocks: @preset_blocks, is_preset: true})
-        |> Repo.insert(on_conflict: :nothing)
+    if Repo.exists?(query) do
+      :ok
+    else
+      %Draft{}
+      |> Draft.changeset(%{name: @preset_name, blocks: @preset_blocks, is_preset: true})
+      |> Repo.insert(on_conflict: :nothing)
 
-        :ok
+      :ok
     end
   end
 
