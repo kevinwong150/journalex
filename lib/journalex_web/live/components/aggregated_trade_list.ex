@@ -160,6 +160,14 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: nil,
     doc: "Event name to emit when the full writeup modal is requested for a trade row"
 
+  attr :combined_drafts, :list,
+    default: [],
+    doc: "List of combined draft templates (preloaded metadata_draft + writeup_draft)"
+
+  attr :on_apply_combined_draft_event, :string,
+    default: nil,
+    doc: "Event name to emit when a combined draft is applied to a trade row"
+
   def aggregated_trade_list(assigns) do
     ~H"""
     <% chain_key = @action_chain_key %>
@@ -566,6 +574,25 @@ defmodule JournalexWeb.AggregatedTradeList do
                   <% trade_title = item_ticker(item) <> "@" <> item_datetime_value(item) %>
                   <% notion_page_id_for_row = Map.get(@page_ids_map || %{}, trade_title) %>
                   <div id={"tabs-" <> row_id} phx-hook="DetailTabs">
+                    <%!-- Combined draft quick-apply bar --%>
+                    <div :if={@combined_drafts != [] and @on_apply_combined_draft_event} class="flex flex-wrap items-center gap-1.5 px-4 py-2 bg-sky-50/60 border-b border-sky-100">
+                      <span class="text-[10px] text-sky-700 font-semibold uppercase tracking-wide mr-0.5">Combined:</span>
+                      <%= for cd <- @combined_drafts do %>
+                        <% has_meta = not is_nil(cd.metadata_draft) %>
+                        <% has_writeup = not is_nil(cd.writeup_draft) %>
+                        <% parts = [if(has_meta, do: "M"), if(has_writeup, do: "W")] |> Enum.reject(&is_nil/1) |> Enum.join("+") %>
+                        <button
+                          type="button"
+                          phx-click={@on_apply_combined_draft_event}
+                          phx-value-index={idx}
+                          phx-value-draft-id={cd.id}
+                          class="px-2.5 py-1 text-xs font-medium rounded-md bg-sky-100 text-sky-700 hover:bg-sky-200 transition-colors"
+                          title={"#{cd.name}: #{if(has_meta, do: "metadata V#{cd.metadata_draft.metadata_version}", else: "no metadata")} + #{if(has_writeup, do: "#{length(cd.writeup_draft.blocks || [])} writeup blocks", else: "no writeup")}"}
+                        >
+                          {cd.name} <span class="text-[10px] text-sky-500 ml-0.5">({parts})</span>
+                        </button>
+                      <% end %>
+                    </div>
                     <%!-- Tab bar --%>
                     <div class="flex border-b border-slate-200 bg-slate-50 px-4">
                       <button :if={@show_metadata_column?} type="button" data-tab-btn="metadata" class="px-3 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap">

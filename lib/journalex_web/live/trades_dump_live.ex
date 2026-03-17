@@ -12,6 +12,7 @@ defmodule JournalexWeb.TradesDumpLive do
   alias Journalex.Notion.DataSources
   alias Journalex.MetadataDrafts
   alias Journalex.WriteupDrafts
+  alias Journalex.CombinedDrafts
 
   @dump_max_retries 3
   @supported_versions [1, 2]
@@ -103,6 +104,8 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:drafts, MetadataDrafts.list_drafts())
       # Writeup drafts for applying block content to trades
       |> assign(:writeup_drafts, WriteupDrafts.list_drafts())
+      # Combined drafts for one-click metadata + writeup apply
+      |> assign(:combined_drafts, CombinedDrafts.list_drafts())
       # Writeup detail modal state
       |> assign(:writeup_modal_trade, nil)
 
@@ -667,6 +670,67 @@ defmodule JournalexWeb.TradesDumpLive do
 
           {:error, changeset} ->
             {:noreply, put_toast(socket, :error, "Failed to apply writeup: #{inspect(changeset.errors)}")}
+        end
+    end
+  end
+
+  @impl true
+  def handle_event("apply_combined_draft", %{"index" => idx_str, "draft-id" => draft_id_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    {draft_id, _} = Integer.parse(draft_id_str)
+
+    trade = Enum.at(socket.assigns.trades, idx)
+    combined = CombinedDrafts.get_draft(draft_id)
+
+    cond do
+      is_nil(trade) ->
+        {:noreply, put_toast(socket, :error, "Trade not found")}
+
+      is_nil(combined) ->
+        {:noreply, put_toast(socket, :error, "Combined draft not found")}
+
+      true ->
+        md = combined.metadata_draft
+        wd = combined.writeup_draft
+
+        # Build update attrs from whichever references exist
+        attrs =
+          %{}
+          |> then(fn attrs ->
+            if md do
+              metadata_attrs = preserve_readonly_fields(md.metadata || %{}, trade.metadata)
+              Map.merge(attrs, %{metadata: metadata_attrs, metadata_version: md.metadata_version})
+            else
+              attrs
+            end
+          end)
+          |> then(fn attrs ->
+            if wd, do: Map.put(attrs, :writeup, wd.blocks || []), else: attrs
+          end)
+
+        if attrs == %{} do
+          {:noreply, put_toast(socket, :info, "Combined draft \"#{combined.name}\" has no references — nothing applied")}
+        else
+          case Journalex.Trades.update_trade(trade, attrs) do
+            {:ok, updated_trade} ->
+              trades =
+                socket.assigns.trades
+                |> Enum.with_index()
+                |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+              parts =
+                [if(md, do: "metadata V#{md.metadata_version}"), if(wd, do: "#{length(wd.blocks || [])} writeup blocks")]
+                |> Enum.reject(&is_nil/1)
+                |> Enum.join(" + ")
+
+              {:noreply,
+               socket
+               |> assign(:trades, trades)
+               |> put_toast(:info, "Applied \"#{combined.name}\" (#{parts})")}
+
+            {:error, changeset} ->
+              {:noreply, put_toast(socket, :error, "Failed to apply combined draft: #{inspect(changeset.errors)}")}
+          end
         end
     end
   end
@@ -1704,6 +1768,8 @@ defmodule JournalexWeb.TradesDumpLive do
         on_apply_draft_event="apply_draft"
         writeup_drafts={@writeup_drafts}
         on_apply_writeup_draft_event="apply_writeup_draft"
+        combined_drafts={@combined_drafts}
+        on_apply_combined_draft_event="apply_combined_draft"
         on_clear_writeup_event="clear_writeup"
         on_sync_writeup_event="sync_writeup_from_notion"
         on_open_writeup_modal_event="open_writeup_modal"
