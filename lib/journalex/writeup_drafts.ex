@@ -71,11 +71,6 @@ defmodule Journalex.WriteupDrafts do
 
   @preset_name "Standard Trade"
   @preset_blocks [
-    %{"type" => "toggle", "text" => "1min", "children" => []},
-    %{"type" => "toggle", "text" => "2min", "children" => []},
-    %{"type" => "toggle", "text" => "5min", "children" => []},
-    %{"type" => "toggle", "text" => "15min", "children" => []},
-    %{"type" => "toggle", "text" => "daily", "children" => []},
     %{"type" => "paragraph", "text" => ""},
     %{"type" => "paragraph", "text" => "Environment Overview:"},
     %{"type" => "paragraph", "text" => ""},
