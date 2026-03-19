@@ -273,11 +273,11 @@ defmodule Journalex.Settings do
   # ---------------------------------------------------------------------------
 
   @nav_pinned_pages_key "nav_pinned_pages"
-  @default_nav_pinned_pages ["trade_dump", "metadata_drafts", "writeup_drafts"]
+  @default_nav_pinned_pages ["trade_dump", "trade_drafts"]
 
   @doc """
   Returns the list of page keys that should appear as shortcut buttons in the nav bar.
-  Default: ["trade_dump", "metadata_drafts", "writeup_drafts"]
+  Default: ["trade_dump", "trade_drafts"]
   """
   def get_nav_pinned_pages do
     case get(@nav_pinned_pages_key) do

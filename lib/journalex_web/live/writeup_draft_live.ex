@@ -11,8 +11,7 @@ defmodule JournalexWeb.WriteupDraftLive do
   alias Journalex.WriteupDrafts
   alias Journalex.WriteupDrafts.Draft
   alias Journalex.WriteupDrafts.PresetBlock
-  alias Journalex.CombinedDrafts
-  alias Journalex.MetadataDrafts
+  alias JournalexWeb.BlockHelpers
 
   @presets %{
     "empty" => %{
@@ -49,19 +48,6 @@ defmodule JournalexWeb.WriteupDraftLive do
       |> assign(:collapsed_groups, MapSet.new())
       |> assign(:active_block_index, nil)
       |> assign(:import_preview, nil)
-      # Combined drafts management
-      |> assign(:combined_drafts, CombinedDrafts.list_drafts())
-      |> assign(:all_metadata_drafts, MetadataDrafts.list_drafts())
-      |> assign(:all_writeup_drafts, WriteupDrafts.list_drafts())
-      |> assign(:cd_editing, nil)
-      |> assign(:cd_name, "")
-      |> assign(:cd_metadata_draft_id, nil)
-      |> assign(:cd_writeup_draft_id, nil)
-      |> assign(:cd_bulk_mode, false)
-      |> assign(:cd_bulk_names, List.duplicate("", 2))
-      |> assign(:cd_bulk_auto_meta, true)
-      |> assign(:cd_bulk_auto_writeup, true)
-      |> assign(:cd_bulk_version, Journalex.Settings.get_default_metadata_version())
       |> allow_upload(:import_json,
         accept: ~w(.json),
         max_entries: 1,
@@ -263,72 +249,45 @@ defmodule JournalexWeb.WriteupDraftLive do
   @impl true
   def handle_event("add_block", %{"type" => type, "after" => after_str}, socket) do
     {after_idx, _} = Integer.parse(after_str)
-    new_block = new_block(type)
-    blocks = List.insert_at(socket.assigns.blocks, after_idx + 1, new_block)
+    blocks = BlockHelpers.add_after(socket.assigns.blocks, type, after_idx)
     {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, after_idx + 1)}
   end
 
   @impl true
   def handle_event("add_block_end", %{"type" => type}, socket) do
-    new_block = new_block(type)
-    blocks = socket.assigns.blocks ++ [new_block]
+    blocks = BlockHelpers.add_end(socket.assigns.blocks, type)
     {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, length(blocks) - 1)}
   end
 
   @impl true
   def handle_event("delete_block", %{"index" => idx_str}, socket) do
     {idx, _} = Integer.parse(idx_str)
-    blocks = List.delete_at(socket.assigns.blocks, idx)
-    {:noreply, assign(socket, :blocks, blocks)}
+    {:noreply, assign(socket, :blocks, BlockHelpers.delete(socket.assigns.blocks, idx))}
   end
 
   @impl true
   def handle_event("move_block_up", %{"index" => idx_str}, socket) do
     {idx, _} = Integer.parse(idx_str)
-    blocks = socket.assigns.blocks
-
-    if idx > 0 do
-      blocks = swap(blocks, idx, idx - 1)
-      {:noreply, assign(socket, :blocks, blocks)}
-    else
-      {:noreply, socket}
-    end
+    {:noreply, assign(socket, :blocks, BlockHelpers.move_up(socket.assigns.blocks, idx))}
   end
 
   @impl true
   def handle_event("move_block_down", %{"index" => idx_str}, socket) do
     {idx, _} = Integer.parse(idx_str)
-    blocks = socket.assigns.blocks
-
-    if idx < length(blocks) - 1 do
-      blocks = swap(blocks, idx, idx + 1)
-      {:noreply, assign(socket, :blocks, blocks)}
-    else
-      {:noreply, socket}
-    end
+    {:noreply, assign(socket, :blocks, BlockHelpers.move_down(socket.assigns.blocks, idx))}
   end
 
   @impl true
   def handle_event("update_block_text", %{"index" => idx_str, "value" => value}, socket) do
     {idx, _} = Integer.parse(idx_str)
-    blocks = List.update_at(socket.assigns.blocks, idx, &Map.put(&1, "text", value))
+    blocks = BlockHelpers.update_text(socket.assigns.blocks, idx, value)
     {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, idx)}
   end
 
   @impl true
   def handle_event("toggle_block_type", %{"index" => idx_str}, socket) do
     {idx, _} = Integer.parse(idx_str)
-
-    blocks =
-      List.update_at(socket.assigns.blocks, idx, fn block ->
-        case block["type"] do
-          "paragraph" -> Map.put(block, "type", "toggle") |> Map.put_new("children", [])
-          "toggle" -> block |> Map.put("type", "paragraph") |> Map.delete("children")
-          _ -> block
-        end
-      end)
-
-    {:noreply, assign(socket, :blocks, blocks)}
+    {:noreply, assign(socket, :blocks, BlockHelpers.toggle_type(socket.assigns.blocks, idx))}
   end
 
   # ── Select mode ─────────────────────────────────────────────────────
@@ -783,224 +742,6 @@ defmodule JournalexWeb.WriteupDraftLive do
      |> put_toast(:info, "Inserted #{length(pb.blocks || [])} block(s) from \"#{pb.name}\"")}
   end
 
-  # ── Combined Drafts event handlers ──────────────────────────────────
-
-  @impl true
-  def handle_event("cd_update_name", %{"value" => value}, socket) do
-    {:noreply, assign(socket, :cd_name, value)}
-  end
-
-  @impl true
-  def handle_event("cd_select_metadata_draft", %{"value" => value}, socket) do
-    id = if value == "", do: nil, else: String.to_integer(value)
-    {:noreply, assign(socket, :cd_metadata_draft_id, id)}
-  end
-
-  @impl true
-  def handle_event("cd_select_writeup_draft", %{"value" => value}, socket) do
-    id = if value == "", do: nil, else: String.to_integer(value)
-    {:noreply, assign(socket, :cd_writeup_draft_id, id)}
-  end
-
-  @impl true
-  def handle_event("cd_save", _params, socket) do
-    attrs = %{
-      name: socket.assigns.cd_name,
-      metadata_draft_id: socket.assigns.cd_metadata_draft_id,
-      writeup_draft_id: socket.assigns.cd_writeup_draft_id
-    }
-
-    result =
-      if socket.assigns.cd_editing do
-        CombinedDrafts.update_draft(socket.assigns.cd_editing, attrs)
-      else
-        CombinedDrafts.create_draft(attrs)
-      end
-
-    case result do
-      {:ok, _draft} ->
-        action = if socket.assigns.cd_editing, do: "Updated", else: "Created"
-
-        {:noreply,
-         socket
-         |> assign(:combined_drafts, CombinedDrafts.list_drafts())
-         |> assign(:cd_editing, nil)
-         |> assign(:cd_name, "")
-         |> assign(:cd_metadata_draft_id, nil)
-         |> assign(:cd_writeup_draft_id, nil)
-         |> put_toast(:info, "#{action} combined draft")}
-
-      {:error, changeset} ->
-        msg =
-          changeset.errors
-          |> Enum.map(fn {f, {m, _}} -> "#{f}: #{m}" end)
-          |> Enum.join(", ")
-
-        {:noreply, put_toast(socket, :error, "Failed: #{msg}")}
-    end
-  end
-
-  @impl true
-  def handle_event("cd_edit", %{"id" => id_str}, socket) do
-    {id, _} = Integer.parse(id_str)
-    draft = CombinedDrafts.get_draft!(id)
-
-    {:noreply,
-     socket
-     |> assign(:cd_editing, draft)
-     |> assign(:cd_name, draft.name)
-     |> assign(:cd_metadata_draft_id, draft.metadata_draft_id)
-     |> assign(:cd_writeup_draft_id, draft.writeup_draft_id)}
-  end
-
-  @impl true
-  def handle_event("cd_cancel_edit", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:cd_editing, nil)
-     |> assign(:cd_name, "")
-     |> assign(:cd_metadata_draft_id, nil)
-     |> assign(:cd_writeup_draft_id, nil)}
-  end
-
-  @impl true
-  def handle_event("cd_delete", %{"id" => id_str}, socket) do
-    {id, _} = Integer.parse(id_str)
-    draft = CombinedDrafts.get_draft!(id)
-
-    case CombinedDrafts.delete_draft(draft) do
-      {:ok, _} ->
-        {:noreply,
-         socket
-         |> assign(:combined_drafts, CombinedDrafts.list_drafts())
-         |> put_toast(:info, "Deleted combined draft \"#{draft.name}\"")}
-
-      {:error, _} ->
-        {:noreply, put_toast(socket, :error, "Failed to delete combined draft")}
-    end
-  end
-
-  @impl true
-  def handle_event("cd_toggle_bulk", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:cd_bulk_mode, !socket.assigns.cd_bulk_mode)
-     |> assign(:cd_bulk_names, List.duplicate("", 2))
-     |> assign(:cd_bulk_auto_meta, true)
-     |> assign(:cd_bulk_auto_writeup, true)
-     |> assign(:cd_bulk_version, Journalex.Settings.get_default_metadata_version())}
-  end
-
-  @impl true
-  def handle_event("cd_bulk_toggle_auto_meta", _params, socket) do
-    {:noreply, assign(socket, :cd_bulk_auto_meta, !socket.assigns.cd_bulk_auto_meta)}
-  end
-
-  @impl true
-  def handle_event("cd_bulk_toggle_auto_writeup", _params, socket) do
-    {:noreply, assign(socket, :cd_bulk_auto_writeup, !socket.assigns.cd_bulk_auto_writeup)}
-  end
-
-  @impl true
-  def handle_event("cd_bulk_set_version", %{"value" => v}, socket) do
-    {:noreply, assign(socket, :cd_bulk_version, String.to_integer(v))}
-  end
-
-  @impl true
-  def handle_event("cd_bulk_update_name", %{"value" => value, "index" => idx_str}, socket) do
-    {idx, _} = Integer.parse(idx_str)
-    names = List.replace_at(socket.assigns.cd_bulk_names, idx, value)
-    {:noreply, assign(socket, :cd_bulk_names, names)}
-  end
-
-  @impl true
-  def handle_event("cd_bulk_add_row", _params, socket) do
-    {:noreply, assign(socket, :cd_bulk_names, socket.assigns.cd_bulk_names ++ [""])}
-  end
-
-  @impl true
-  def handle_event("cd_bulk_remove_row", _params, socket) do
-    names = socket.assigns.cd_bulk_names
-    {:noreply, assign(socket, :cd_bulk_names, Enum.take(names, max(length(names) - 1, 1)))}
-  end
-
-  @impl true
-  def handle_event("cd_bulk_create", _params, socket) do
-    names =
-      socket.assigns.cd_bulk_names
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-
-    if names == [] do
-      {:noreply, put_toast(socket, :error, "Please enter at least one name")}
-    else
-      auto_meta = socket.assigns.cd_bulk_auto_meta
-      auto_writeup = socket.assigns.cd_bulk_auto_writeup
-      version = socket.assigns.cd_bulk_version
-
-      results =
-        Enum.map(names, fn name ->
-          md_id =
-            if auto_meta do
-              case MetadataDrafts.create_draft(%{name: name, metadata_version: version, metadata: %{}}) do
-                {:ok, md} -> md.id
-                {:error, _} -> nil
-              end
-            end
-
-          wd_id =
-            if auto_writeup do
-              case WriteupDrafts.create_draft(%{name: name, blocks: []}) do
-                {:ok, wd} -> wd.id
-                {:error, _} -> nil
-              end
-            end
-
-          CombinedDrafts.create_draft(%{
-            name: name,
-            metadata_draft_id: md_id,
-            writeup_draft_id: wd_id
-          })
-        end)
-
-      errors = Enum.filter(results, &match?({:error, _}, &1))
-      created = Enum.count(results, &match?({:ok, _}, &1))
-
-      parts =
-        [if(auto_meta, do: "metadata V#{version}"), if(auto_writeup, do: "writeup")]
-        |> Enum.reject(&is_nil/1)
-        |> Enum.join(" + ")
-
-      suffix = if parts != "", do: " with #{parts} drafts", else: ""
-
-      socket =
-        if errors == [] do
-          socket
-          |> assign(:combined_drafts, CombinedDrafts.list_drafts())
-          |> assign(:all_metadata_drafts, MetadataDrafts.list_drafts())
-          |> assign(:all_writeup_drafts, WriteupDrafts.list_drafts())
-          |> assign(:drafts, WriteupDrafts.list_drafts())
-          |> assign(:cd_bulk_mode, false)
-          |> assign(:cd_bulk_names, List.duplicate("", 2))
-          |> put_toast(:info, "Created #{created} combined draft(s)#{suffix}")
-        else
-          failed =
-            Enum.map(errors, fn {:error, cs} ->
-              cs.errors |> Enum.map(fn {f, {m, _}} -> "#{f}: #{m}" end) |> Enum.join(", ")
-            end)
-
-          socket
-          |> assign(:combined_drafts, CombinedDrafts.list_drafts())
-          |> assign(:all_metadata_drafts, MetadataDrafts.list_drafts())
-          |> assign(:all_writeup_drafts, WriteupDrafts.list_drafts())
-          |> assign(:drafts, WriteupDrafts.list_drafts())
-          |> put_toast(:error, "#{created} created; #{length(errors)} failed: #{Enum.join(failed, " | ")}")
-        end
-
-      {:noreply, socket}
-    end
-  end
-
   # ── Render ──────────────────────────────────────────────────────────
 
   @impl true
@@ -1312,194 +1053,7 @@ defmodule JournalexWeb.WriteupDraftLive do
                   </label>
                 </div>
 
-                <%= if @blocks == [] do %>
-                  <div class="text-center py-8 border-2 border-dashed border-zinc-200 rounded-lg">
-                    <p class="text-sm text-zinc-400 mb-3">No blocks yet. Add one or apply a preset.</p>
-                    <div class="flex items-center justify-center gap-2">
-                      <button
-                        type="button"
-                        phx-click="add_block_end"
-                        phx-value-type="paragraph"
-                        class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
-                      >
-                        + Paragraph
-                      </button>
-                      <button
-                        type="button"
-                        phx-click="add_block_end"
-                        phx-value-type="toggle"
-                        class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors"
-                      >
-                        + Toggle
-                      </button>
-                    </div>
-                  </div>
-                <% else %>
-                  <div class="space-y-2">
-                    <%= for {block, idx} <- Enum.with_index(@blocks) do %>
-                      <div class={[
-                        "flex items-start gap-2 p-2.5 rounded-lg border transition-colors",
-                        if(block["type"] == "toggle",
-                          do: "bg-violet-50/50 border-violet-200",
-                          else: "bg-zinc-50 border-zinc-200"
-                        )
-                      ]}>
-                        <%!-- Block index + type badge --%>
-                        <div class="flex flex-col items-center gap-1 pt-1 shrink-0">
-                          <span class="text-[10px] text-zinc-400 font-mono">{idx + 1}</span>
-                          <button
-                            type="button"
-                            phx-click="toggle_block_type"
-                            phx-value-index={idx}
-                            title={"Click to toggle type (currently #{block["type"]})"}
-                            class={[
-                              "px-1.5 py-0.5 text-[10px] font-semibold rounded cursor-pointer transition-colors",
-                              if(block["type"] == "toggle",
-                                do: "bg-violet-200 text-violet-700 hover:bg-violet-300",
-                                else: "bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
-                              )
-                            ]}
-                          >
-                            {if block["type"] == "toggle", do: "TGL", else: "TXT"}
-                          </button>
-                        </div>
-
-                        <%!-- Text input --%>
-                        <div class="flex-1 min-w-0">
-                          <%= if block["type"] == "toggle" do %>
-                            <input
-                              type="text"
-                              value={block["text"] || ""}
-                              phx-keyup="update_block_text"
-                              phx-value-index={idx}
-                              placeholder="Toggle title..."
-                              class="w-full px-2.5 py-1.5 text-sm border border-zinc-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                            <div class="mt-1 ml-2">
-                              <span class="text-[10px] text-violet-500 italic">
-                                Children: empty (paste images in Notion after push)
-                              </span>
-                            </div>
-                          <% else %>
-                            <textarea
-                              phx-keyup="update_block_text"
-                              phx-value-index={idx}
-                              placeholder="Paragraph text... (empty = blank line)"
-                              rows="2"
-                              class="w-full px-2.5 py-1.5 text-sm border border-zinc-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
-                            ><%= block["text"] || "" %></textarea>
-                          <% end %>
-                        </div>
-
-                        <%!-- Action buttons --%>
-                        <div class="flex items-center gap-0.5 shrink-0 pt-1">
-                          <button
-                            type="button"
-                            phx-click="move_block_up"
-                            phx-value-index={idx}
-                            disabled={idx == 0}
-                            class="p-1 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                            title="Move up"
-                          >
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            phx-click="move_block_down"
-                            phx-value-index={idx}
-                            disabled={idx == length(@blocks) - 1}
-                            class="p-1 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                            title="Move down"
-                          >
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </button>
-                          <%!-- Add block after --%>
-                          <div class="relative group">
-                            <button
-                              type="button"
-                              class="p-1 rounded text-zinc-400 hover:text-green-600 hover:bg-green-50 transition-colors"
-                              title="Add block after"
-                            >
-                              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                              </svg>
-                            </button>
-                            <div class="hidden group-hover:flex absolute right-0 top-full mt-0.5 bg-white border border-zinc-200 rounded-md shadow-lg z-10 flex-col py-1 min-w-[160px]">
-                              <button
-                                type="button"
-                                phx-click="add_block"
-                                phx-value-type="paragraph"
-                                phx-value-after={idx}
-                                class="px-3 py-1.5 text-xs text-left hover:bg-zinc-50 text-zinc-700"
-                              >
-                                + Paragraph
-                              </button>
-                              <button
-                                type="button"
-                                phx-click="add_block"
-                                phx-value-type="toggle"
-                                phx-value-after={idx}
-                                class="px-3 py-1.5 text-xs text-left hover:bg-zinc-50 text-violet-700"
-                              >
-                                + Toggle
-                              </button>
-                              <%= if @preset_blocks != [] do %>
-                                <div class="border-t border-zinc-100 my-1"></div>
-                                <p class="px-3 py-1 text-[10px] font-semibold text-zinc-400 uppercase">Preset Blocks</p>
-                                <%= for pb <- @preset_blocks do %>
-                                  <button
-                                    type="button"
-                                    phx-click="insert_preset_block_at"
-                                    phx-value-id={pb.id}
-                                    phx-value-after={idx}
-                                    class="px-3 py-1.5 text-xs text-left hover:bg-violet-50 text-violet-600 truncate"
-                                  >
-                                    + {pb.name} <span class="text-zinc-400">({length(pb.blocks)})</span>
-                                  </button>
-                                <% end %>
-                              <% end %>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            phx-click="delete_block"
-                            phx-value-index={idx}
-                            class="p-1 rounded text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                            title="Delete block"
-                          >
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    <% end %>
-                  </div>
-
-                  <%!-- Add block at end --%>
-                  <div class="mt-3 flex items-center justify-center gap-2">
-                    <button
-                      type="button"
-                      phx-click="add_block_end"
-                      phx-value-type="paragraph"
-                      class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
-                    >
-                      + Paragraph
-                    </button>
-                    <button
-                      type="button"
-                      phx-click="add_block_end"
-                      phx-value-type="toggle"
-                      class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors"
-                    >
-                      + Toggle
-                    </button>
-                  </div>
-                <% end %>
+                <JournalexWeb.BlockEditor.block_editor blocks={@blocks} preset_blocks={@preset_blocks} />
               </div>
 
               <%!-- Save button --%>
@@ -1530,227 +1084,6 @@ defmodule JournalexWeb.WriteupDraftLive do
           </div>
         </div>
       </div>
-    </div>
-
-    <%!-- ═══════ Combined Drafts Management ═══════ --%>
-    <div class="mt-8 bg-white rounded-lg border border-sky-200 shadow-sm overflow-hidden">
-      <div class="px-5 py-3 bg-sky-50 border-b border-sky-100 flex items-center justify-between">
-        <div>
-          <h2 class="text-sm font-semibold text-sky-800 uppercase tracking-wide">Combined Drafts</h2>
-          <p class="text-xs text-sky-600 mt-0.5">Pair a metadata draft + writeup draft for one-click apply on Trades Dump.</p>
-        </div>
-        <div class="flex items-center gap-2">
-          <button
-            :if={!@cd_bulk_mode}
-            phx-click="cd_toggle_bulk"
-            class="text-xs px-2 py-1 rounded-md border border-sky-200 bg-sky-100 text-sky-700 hover:bg-sky-200 font-medium transition-colors"
-          >
-            Bulk create
-          </button>
-          <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-sky-200 text-sky-700">
-            {length(@combined_drafts)}
-          </span>
-        </div>
-      </div>
-
-      <%!-- Bulk create form --%>
-      <div :if={@cd_bulk_mode} class="px-5 py-4 border-b border-sky-100 bg-sky-50/50">
-        <div class="flex items-center justify-between mb-3">
-          <h4 class="text-xs font-semibold text-sky-700">Bulk Create Combined Drafts</h4>
-          <button phx-click="cd_toggle_bulk" class="text-xs text-sky-600 hover:text-sky-800">Cancel</button>
-        </div>
-        <%!-- Auto-create options --%>
-        <div class="flex flex-wrap items-center gap-4 mb-3 px-3 py-2 bg-white rounded-md border border-sky-200">
-          <span class="text-[10px] font-semibold text-sky-700 uppercase tracking-wide">Auto-create:</span>
-          <label class="inline-flex items-center gap-1.5 cursor-pointer">
-            <button
-              type="button"
-              phx-click="cd_bulk_toggle_auto_meta"
-              class={[
-                "relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors",
-                if(@cd_bulk_auto_meta, do: "bg-amber-500", else: "bg-zinc-300")
-              ]}
-            >
-              <span class={[
-                "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform",
-                if(@cd_bulk_auto_meta, do: "translate-x-4", else: "translate-x-0")
-              ]} />
-            </button>
-            <span class="text-xs font-medium text-amber-700">Metadata Draft</span>
-          </label>
-          <label class="inline-flex items-center gap-1.5 cursor-pointer">
-            <button
-              type="button"
-              phx-click="cd_bulk_toggle_auto_writeup"
-              class={[
-                "relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors",
-                if(@cd_bulk_auto_writeup, do: "bg-violet-500", else: "bg-zinc-300")
-              ]}
-            >
-              <span class={[
-                "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform",
-                if(@cd_bulk_auto_writeup, do: "translate-x-4", else: "translate-x-0")
-              ]} />
-            </button>
-            <span class="text-xs font-medium text-violet-700">Writeup Draft</span>
-          </label>
-          <div :if={@cd_bulk_auto_meta} class="inline-flex items-center gap-1.5">
-            <span class="text-[10px] text-amber-600 font-medium">Version:</span>
-            <select
-              phx-change="cd_bulk_set_version"
-              class="px-1.5 py-0.5 text-xs border border-amber-200 rounded focus:outline-none focus:ring-1 focus:ring-amber-400"
-            >
-              <option value="1" selected={@cd_bulk_version == 1}>V1</option>
-              <option value="2" selected={@cd_bulk_version == 2}>V2</option>
-            </select>
-          </div>
-        </div>
-        <div class="space-y-2">
-          <%= for {name, i} <- Enum.with_index(@cd_bulk_names) do %>
-            <div class="flex items-center gap-2">
-              <span class="text-[10px] text-sky-500 font-mono w-4 text-right shrink-0">{i + 1}</span>
-              <input
-                type="text"
-                value={name}
-                phx-keyup="cd_bulk_update_name"
-                phx-value-index={i}
-                placeholder="Combined draft name..."
-                class="flex-1 px-2 py-1.5 text-sm border border-sky-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-              />
-            </div>
-          <% end %>
-        </div>
-        <div class="flex items-center justify-between mt-3">
-          <div class="flex items-center gap-2">
-            <button
-              phx-click="cd_bulk_add_row"
-              class="text-xs px-2 py-1 rounded border border-sky-200 text-sky-600 hover:bg-sky-100"
-            >
-              + Row
-            </button>
-            <button
-              :if={length(@cd_bulk_names) > 1}
-              phx-click="cd_bulk_remove_row"
-              class="text-xs px-2 py-1 rounded border border-sky-200 text-sky-600 hover:bg-sky-100"
-            >
-              − Row
-            </button>
-          </div>
-          <button
-            phx-click="cd_bulk_create"
-            class="px-3 py-1.5 text-xs font-medium bg-sky-600 text-white rounded-md hover:bg-sky-700 transition-colors shadow-sm"
-          >
-            Create {length(@cd_bulk_names)} combined draft(s)
-          </button>
-        </div>
-      </div>
-
-      <%!-- Inline create / edit form --%>
-      <div class="px-5 py-4 border-b border-sky-100">
-        <div class="flex items-center gap-2 mb-2">
-          <h4 class="text-xs font-semibold text-sky-700">
-            {if @cd_editing, do: "Edit Combined Draft", else: "New Combined Draft"}
-          </h4>
-          <button :if={@cd_editing} phx-click="cd_cancel_edit" class="text-xs text-sky-600 hover:text-sky-800">Cancel</button>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label class="text-[10px] font-medium text-sky-600 uppercase tracking-wide">Name</label>
-            <input
-              type="text"
-              value={@cd_name}
-              phx-keyup="cd_update_name"
-              placeholder="Combined draft name..."
-              class="w-full mt-0.5 px-2 py-1.5 text-sm border border-sky-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-            />
-          </div>
-          <div>
-            <label class="text-[10px] font-medium text-amber-600 uppercase tracking-wide">Metadata Draft</label>
-            <select
-              phx-change="cd_select_metadata_draft"
-              class="w-full mt-0.5 px-2 py-1.5 text-sm border border-sky-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-            >
-              <option value="">— None —</option>
-              <%= for {version, version_drafts} <- Enum.group_by(@all_metadata_drafts, & &1.metadata_version) |> Enum.sort_by(&elem(&1, 0)) do %>
-                <optgroup label={"V#{version}"}>
-                  <%= for md <- version_drafts do %>
-                    <option value={md.id} selected={@cd_metadata_draft_id == md.id}>{md.name}</option>
-                  <% end %>
-                </optgroup>
-              <% end %>
-            </select>
-          </div>
-          <div>
-            <label class="text-[10px] font-medium text-violet-600 uppercase tracking-wide">Writeup Draft</label>
-            <select
-              phx-change="cd_select_writeup_draft"
-              class="w-full mt-0.5 px-2 py-1.5 text-sm border border-sky-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-            >
-              <option value="">— None —</option>
-              <%= for wd <- @all_writeup_drafts do %>
-                <option value={wd.id} selected={@cd_writeup_draft_id == wd.id}>{wd.name} ({length(wd.blocks || [])} blocks)</option>
-              <% end %>
-            </select>
-          </div>
-        </div>
-        <div class="mt-3 flex justify-end">
-          <button
-            phx-click="cd_save"
-            class="px-4 py-1.5 text-xs font-medium bg-sky-600 text-white rounded-md hover:bg-sky-700 transition-colors shadow-sm"
-          >
-            {if @cd_editing, do: "Update", else: "Create"}
-          </button>
-        </div>
-      </div>
-
-      <%!-- List --%>
-      <div :if={@combined_drafts == []} class="px-5 py-6 text-center text-sm text-sky-400">
-        No combined drafts yet. Create one above.
-      </div>
-      <ul :if={@combined_drafts != []} class="divide-y divide-sky-100">
-        <%= for cd <- @combined_drafts do %>
-          <li class="px-5 py-3 flex items-center justify-between gap-3 hover:bg-sky-50/50 transition-colors">
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-medium text-zinc-900 truncate">{cd.name}</p>
-              <div class="flex items-center gap-2 mt-0.5">
-                <span :if={cd.metadata_draft} class="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
-                  <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                  {cd.metadata_draft.name} (V{cd.metadata_draft.metadata_version})
-                </span>
-                <span :if={is_nil(cd.metadata_draft)} class="text-[10px] text-zinc-400 italic">no metadata</span>
-                <span :if={cd.writeup_draft} class="inline-flex items-center gap-1 text-[10px] font-medium text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded">
-                  <span class="w-1.5 h-1.5 rounded-full bg-violet-400"></span>
-                  {cd.writeup_draft.name} ({length(cd.writeup_draft.blocks || [])} blk)
-                </span>
-                <span :if={is_nil(cd.writeup_draft)} class="text-[10px] text-zinc-400 italic">no writeup</span>
-              </div>
-            </div>
-            <div class="flex items-center gap-1 shrink-0">
-              <button
-                phx-click="cd_edit"
-                phx-value-id={cd.id}
-                class="p-1.5 rounded text-zinc-400 hover:text-sky-600 hover:bg-sky-50 transition-colors"
-                title="Edit"
-              >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              </button>
-              <button
-                phx-click="cd_delete"
-                phx-value-id={cd.id}
-                class="p-1.5 rounded text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                title="Delete"
-                data-confirm={"Delete combined draft \"#{cd.name}\"?"}
-              >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            </div>
-          </li>
-        <% end %>
-      </ul>
     </div>
 
     <%!-- Import Preview Modal --%>

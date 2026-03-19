@@ -15,6 +15,7 @@ defmodule JournalexWeb.MetadataForm do
   attr :drafts, :list, default: []
   attr :on_apply_draft_event, :string, default: nil
   attr :draft_name, :string, default: ""
+  attr :save_label, :string, default: "Save Metadata"
 
   def v1(assigns) do
     ~H"""
@@ -211,7 +212,7 @@ defmodule JournalexWeb.MetadataForm do
             type="submit"
             class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded hover:bg-indigo-700 transition"
           >
-            Save Metadata
+            {@save_label}
           </button>
         </div>
       </form>
@@ -229,6 +230,7 @@ defmodule JournalexWeb.MetadataForm do
   attr :drafts, :list, default: []
   attr :on_apply_draft_event, :string, default: nil
   attr :draft_name, :string, default: ""
+  attr :save_label, :string, default: "Save Metadata"
 
   def v2(assigns) do
     ~H"""
@@ -539,7 +541,7 @@ defmodule JournalexWeb.MetadataForm do
             type="submit"
             class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition"
           >
-            Save Metadata
+            {@save_label}
           </button>
         </div>
       </form>

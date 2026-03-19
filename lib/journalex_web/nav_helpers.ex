@@ -13,8 +13,9 @@ defmodule JournalexWeb.NavHelpers do
   # Registry of all navigable pages: {key, label, path}
   @all_pages [
     {"trade_dump",         "Trades Dump",        "/trade/dump"},
-    {"metadata_drafts",    "Metadata Drafts",    "/trade/drafts"},
-    {"writeup_drafts",     "Writeup Drafts",     "/trade/writeups"},
+    {"trade_drafts",       "Trade Drafts",       "/trade/drafts"},
+    {"metadata_drafts",    "Metadata Drafts",    "/trade/drafts/metadata"},
+    {"writeup_drafts",     "Writeup Drafts",     "/trade/drafts/writeups"},
     {"all_trades",         "All Trades",         "/trade/all"},
     {"trades_by_date",     "Trades by Date",     "/trade/dates"},
     {"all_statements",     "All Statements",     "/activity_statement/all"},

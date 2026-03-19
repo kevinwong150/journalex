@@ -11,7 +11,7 @@ defmodule Journalex.WriteupDrafts do
   List all writeup drafts, ordered by creation time ascending (oldest first).
   """
   def list_drafts do
-    from(d in Draft, order_by: [asc: d.inserted_at])
+    from(d in Draft, order_by: [desc: d.is_preset, asc: d.inserted_at])
     |> Repo.all()
   end
 

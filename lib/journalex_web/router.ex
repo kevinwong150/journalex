@@ -33,11 +33,14 @@ defmodule JournalexWeb.Router do
     # Trades dump page
     live "/trade/dump", TradesDumpLive
 
+    # Trade drafts (combined) management page
+    live "/trade/drafts", TradeDraftLive
+
     # Metadata drafts management page
-    live "/trade/drafts", MetadataDraftLive
+    live "/trade/drafts/metadata", MetadataDraftLive
 
     # Writeup drafts management page
-    live "/trade/writeups", WriteupDraftLive
+    live "/trade/drafts/writeups", WriteupDraftLive
 
     # Settings page
     live "/settings", SettingsLive
