@@ -26,6 +26,7 @@ defmodule JournalexWeb.TradeDraftLive do
       socket
       # Combined draft list
       |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+      |> assign(:selected_cd_ids, MapSet.new())
       # Inline create/edit form
       |> assign(:cd_editing, nil)
       |> assign(:cd_name, "")
@@ -47,6 +48,9 @@ defmodule JournalexWeb.TradeDraftLive do
       |> assign(:preset_blocks, WriteupDrafts.list_preset_blocks())
       |> assign(:preset_writeup_drafts, WriteupDrafts.list_preset_drafts())
       |> assign(:active_block_index, nil)
+      |> assign(:metadata_dirty, false)
+      |> assign(:writeup_dirty, false)
+      |> assign(:modified_draft_ids, MapSet.new())
 
     {:ok, socket}
   end
@@ -71,8 +75,14 @@ defmodule JournalexWeb.TradeDraftLive do
         {:noreply,
          socket
          |> assign(:blocks, draft.blocks || [])
+         |> assign(:writeup_dirty, true)
          |> put_toast(:info, "Applied \"#{draft.name}\" as template")}
     end
+  end
+
+  @impl true
+  def handle_event("metadata_changed", _params, socket) do
+    {:noreply, assign(socket, :metadata_dirty, true)}
   end
 
   # ── Combined draft selection ────────────────────────────────────────
@@ -155,6 +165,70 @@ defmodule JournalexWeb.TradeDraftLive do
   @impl true
   def handle_event("cd_cancel_edit", _params, socket) do
     {:noreply, socket |> assign(:cd_editing, nil) |> assign(:cd_name, "")}
+  end
+
+  @impl true
+  def handle_event("cd_toggle_select", %{"id" => id_str}, socket) do
+    {id, _} = Integer.parse(id_str)
+    ids = socket.assigns.selected_cd_ids
+    new_ids = if MapSet.member?(ids, id), do: MapSet.delete(ids, id), else: MapSet.put(ids, id)
+    {:noreply, assign(socket, :selected_cd_ids, new_ids)}
+  end
+
+  @impl true
+  def handle_event("cd_select_all", _params, socket) do
+    all_ids = MapSet.new(socket.assigns.combined_drafts, & &1.id)
+    {:noreply, assign(socket, :selected_cd_ids, all_ids)}
+  end
+
+  @impl true
+  def handle_event("cd_deselect_all", _params, socket) do
+    {:noreply, assign(socket, :selected_cd_ids, MapSet.new())}
+  end
+
+  @impl true
+  def handle_event("cd_bulk_delete", _params, socket) do
+    ids = MapSet.to_list(socket.assigns.selected_cd_ids)
+    selected_id = socket.assigns.selected_draft && socket.assigns.selected_draft.id
+
+    case CombinedDrafts.delete_drafts(ids) do
+      {:ok, count} ->
+        socket =
+          socket
+          |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+          |> assign(:selected_cd_ids, MapSet.new())
+          |> put_toast(:info, "Deleted #{count} draft(s)")
+
+        socket =
+          if selected_id && selected_id in ids, do: clear_editor(socket), else: socket
+
+        {:noreply, socket}
+
+      {:error, _} ->
+        {:noreply, put_toast(socket, :error, "Failed to delete")}
+    end
+  end
+
+  @impl true
+  def handle_event("cd_delete_all", _params, socket) do
+    all_ids = Enum.map(socket.assigns.combined_drafts, & &1.id)
+    selected_id = socket.assigns.selected_draft && socket.assigns.selected_draft.id
+
+    case CombinedDrafts.delete_drafts(all_ids) do
+      {:ok, count} ->
+        socket =
+          socket
+          |> assign(:combined_drafts, [])
+          |> assign(:selected_cd_ids, MapSet.new())
+          |> put_toast(:info, "Deleted all #{count} draft(s)")
+
+        socket = if selected_id, do: clear_editor(socket), else: socket
+
+        {:noreply, socket}
+
+      {:error, _} ->
+        {:noreply, put_toast(socket, :error, "Failed to delete all")}
+    end
   end
 
   @impl true
@@ -305,7 +379,7 @@ defmodule JournalexWeb.TradeDraftLive do
     {version, _} = Integer.parse(version_str)
 
     if version in @supported_versions do
-      {:noreply, assign(socket, :form_version, version)}
+      {:noreply, socket |> assign(:form_version, version) |> assign(:metadata_dirty, true)}
     else
       {:noreply, socket}
     end
@@ -355,6 +429,7 @@ defmodule JournalexWeb.TradeDraftLive do
            socket
            |> assign(:combined_drafts, CombinedDrafts.list_drafts())
            |> load_selected_draft(selected.id)
+           |> update(:modified_draft_ids, &MapSet.put(&1, selected.id))
            |> put_toast(:info, "Metadata saved")}
 
         {:error, changeset} ->
@@ -399,6 +474,7 @@ defmodule JournalexWeb.TradeDraftLive do
            socket
            |> assign(:combined_drafts, CombinedDrafts.list_drafts())
            |> load_selected_draft(selected.id)
+           |> update(:modified_draft_ids, &MapSet.put(&1, selected.id))
            |> put_toast(:info, "Writeup saved")}
 
         {:error, changeset} ->
@@ -414,44 +490,44 @@ defmodule JournalexWeb.TradeDraftLive do
   def handle_event("add_block", %{"type" => type, "after" => after_str}, socket) do
     {after_idx, _} = Integer.parse(after_str)
     blocks = BlockHelpers.add_after(socket.assigns.blocks, type, after_idx)
-    {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, after_idx + 1)}
+    {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, after_idx + 1) |> assign(:writeup_dirty, true)}
   end
 
   @impl true
   def handle_event("add_block_end", %{"type" => type}, socket) do
     blocks = BlockHelpers.add_end(socket.assigns.blocks, type)
-    {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, length(blocks) - 1)}
+    {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, length(blocks) - 1) |> assign(:writeup_dirty, true)}
   end
 
   @impl true
   def handle_event("delete_block", %{"index" => idx_str}, socket) do
     {idx, _} = Integer.parse(idx_str)
-    {:noreply, assign(socket, :blocks, BlockHelpers.delete(socket.assigns.blocks, idx))}
+    {:noreply, socket |> assign(:blocks, BlockHelpers.delete(socket.assigns.blocks, idx)) |> assign(:writeup_dirty, true)}
   end
 
   @impl true
   def handle_event("move_block_up", %{"index" => idx_str}, socket) do
     {idx, _} = Integer.parse(idx_str)
-    {:noreply, assign(socket, :blocks, BlockHelpers.move_up(socket.assigns.blocks, idx))}
+    {:noreply, socket |> assign(:blocks, BlockHelpers.move_up(socket.assigns.blocks, idx)) |> assign(:writeup_dirty, true)}
   end
 
   @impl true
   def handle_event("move_block_down", %{"index" => idx_str}, socket) do
     {idx, _} = Integer.parse(idx_str)
-    {:noreply, assign(socket, :blocks, BlockHelpers.move_down(socket.assigns.blocks, idx))}
+    {:noreply, socket |> assign(:blocks, BlockHelpers.move_down(socket.assigns.blocks, idx)) |> assign(:writeup_dirty, true)}
   end
 
   @impl true
   def handle_event("update_block_text", %{"index" => idx_str, "value" => value}, socket) do
     {idx, _} = Integer.parse(idx_str)
     blocks = BlockHelpers.update_text(socket.assigns.blocks, idx, value)
-    {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, idx)}
+    {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, idx) |> assign(:writeup_dirty, true)}
   end
 
   @impl true
   def handle_event("toggle_block_type", %{"index" => idx_str}, socket) do
     {idx, _} = Integer.parse(idx_str)
-    {:noreply, assign(socket, :blocks, BlockHelpers.toggle_type(socket.assigns.blocks, idx))}
+    {:noreply, socket |> assign(:blocks, BlockHelpers.toggle_type(socket.assigns.blocks, idx)) |> assign(:writeup_dirty, true)}
   end
 
   @impl true
@@ -469,6 +545,7 @@ defmodule JournalexWeb.TradeDraftLive do
      socket
      |> assign(:blocks, blocks)
      |> assign(:active_block_index, if(new_active >= 0, do: new_active, else: nil))
+     |> assign(:writeup_dirty, true)
      |> put_toast(:info, "Inserted #{length(pb.blocks || [])} block(s) from \"#{pb.name}\"")}
   end
 
@@ -483,6 +560,8 @@ defmodule JournalexWeb.TradeDraftLive do
     |> assign(:draft_metadata, %{})
     |> assign(:blocks, [])
     |> assign(:active_block_index, nil)
+    |> assign(:metadata_dirty, false)
+    |> assign(:writeup_dirty, false)
   end
 
   defp load_selected_draft(socket, draft_id) do
@@ -496,6 +575,8 @@ defmodule JournalexWeb.TradeDraftLive do
     |> assign(:draft_metadata, if(md, do: md.metadata || %{}, else: %{}))
     |> assign(:blocks, if(wd, do: wd.blocks || [], else: []))
     |> assign(:active_block_index, nil)
+    |> assign(:metadata_dirty, false)
+    |> assign(:writeup_dirty, false)
   end
 
   defp create_combined_draft_with_children(name, version) do
@@ -545,6 +626,14 @@ defmodule JournalexWeb.TradeDraftLive do
                 <p class="text-xs text-sky-600 mt-0.5">Combined metadata + writeup templates.</p>
               </div>
               <div class="flex items-center gap-2">
+                <button
+                  :if={!@bulk_mode && @combined_drafts != []}
+                  phx-click="cd_delete_all"
+                  class="text-xs px-2 py-1 rounded-md border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 font-medium transition-colors"
+                  data-confirm="Delete ALL trade drafts? This cannot be undone."
+                >
+                  Delete all
+                </button>
                 <button
                   :if={!@bulk_mode}
                   phx-click="toggle_bulk"
@@ -679,20 +768,42 @@ defmodule JournalexWeb.TradeDraftLive do
             <div :if={@combined_drafts == []} class="px-5 py-6 text-center text-sm text-sky-400">
               No trade drafts yet. Create one above.
             </div>
+            <div :if={@combined_drafts != [] && MapSet.size(@selected_cd_ids) > 0} class="px-5 py-2 bg-red-50 border-b border-red-100 flex items-center justify-between gap-2">
+              <span class="text-xs text-red-700 font-medium">{MapSet.size(@selected_cd_ids)} selected</span>
+              <div class="flex items-center gap-2">
+                <button phx-click="cd_deselect_all" class="text-xs text-zinc-500 hover:text-zinc-700">Deselect all</button>
+                <button
+                  phx-click="cd_bulk_delete"
+                  class="text-xs px-2.5 py-1 rounded-md bg-red-600 text-white hover:bg-red-700 font-medium transition-colors"
+                  data-confirm={"Delete #{MapSet.size(@selected_cd_ids)} selected draft(s)?"}
+                >
+                  Delete selected
+                </button>
+              </div>
+            </div>
             <ul :if={@combined_drafts != []} class="divide-y divide-sky-100">
               <%= for cd <- @combined_drafts do %>
                 <li
                   class={[
-                    "px-5 py-3 flex items-center justify-between gap-3 cursor-pointer transition-colors",
+                    "px-5 py-3 flex items-center justify-between gap-3 transition-colors",
                     if(@selected_draft && @selected_draft.id == cd.id,
                       do: "bg-sky-100 border-l-4 border-sky-500",
                       else: "hover:bg-sky-50/50"
                     )
                   ]}
-                  phx-click="select_draft"
-                  phx-value-id={cd.id}
                 >
-                  <div class="min-w-0 flex-1">
+                  <input
+                    type="checkbox"
+                    checked={MapSet.member?(@selected_cd_ids, cd.id)}
+                    phx-click="cd_toggle_select"
+                    phx-value-id={cd.id}
+                    class="w-4 h-4 shrink-0 rounded border-zinc-300 text-red-600 cursor-pointer"
+                  />
+                  <div
+                    class="min-w-0 flex-1 cursor-pointer"
+                    phx-click="select_draft"
+                    phx-value-id={cd.id}
+                  >
                     <p class="text-sm font-medium text-zinc-900 truncate">{cd.name}</p>
                     <div class="flex items-center gap-2 mt-0.5">
                       <span :if={cd.metadata_draft} class="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
@@ -705,6 +816,15 @@ defmodule JournalexWeb.TradeDraftLive do
                         {length(cd.writeup_draft.blocks || [])} blk
                       </span>
                       <span :if={is_nil(cd.writeup_draft)} class="text-[10px] text-zinc-400 italic">no writeup</span>
+                      <svg
+                        :if={MapSet.member?(@modified_draft_ids, cd.id) || (@selected_draft && @selected_draft.id == cd.id && (@metadata_dirty || @writeup_dirty))}
+                        class="w-3 h-3 shrink-0 text-orange-400"
+                        fill="currentColor"
+                        viewBox="0 0 24 24"
+                        title="Unsaved changes"
+                      >
+                        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                      </svg>
                     </div>
                   </div>
                   <div class="flex items-center gap-1 shrink-0">
@@ -767,9 +887,12 @@ defmodule JournalexWeb.TradeDraftLive do
                     )
                   ]}
                 >
-                  Metadata
-                  <span :if={@selected_draft.metadata_draft} class="ml-1 text-[10px] text-amber-600">
-                    (V{@selected_draft.metadata_draft.metadata_version})
+                  <span class="inline-flex items-center gap-1 justify-center">
+                    Metadata
+                    <span :if={@selected_draft.metadata_draft} class="text-[10px] text-amber-600">
+                      (V{@selected_draft.metadata_draft.metadata_version})
+                    </span>
+                    <span :if={@metadata_dirty} class="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="Unsaved changes"></span>
                   </span>
                 </button>
                 <button
@@ -783,9 +906,12 @@ defmodule JournalexWeb.TradeDraftLive do
                     )
                   ]}
                 >
-                  Writeup
-                  <span :if={@selected_draft.writeup_draft} class="ml-1 text-[10px] text-violet-600">
-                    ({length(@selected_draft.writeup_draft.blocks || [])} blk)
+                  <span class="inline-flex items-center gap-1 justify-center">
+                    Writeup
+                    <span :if={@selected_draft.writeup_draft} class="text-[10px] text-violet-600">
+                      ({length(@selected_draft.writeup_draft.blocks || [])} blk)
+                    </span>
+                    <span :if={@writeup_dirty} class="w-2 h-2 rounded-full bg-violet-500 shrink-0" title="Unsaved changes"></span>
                   </span>
                 </button>
               </div>
@@ -831,6 +957,7 @@ defmodule JournalexWeb.TradeDraftLive do
                         item={synthetic_item}
                         idx={0}
                         on_save_event="save_metadata"
+                        on_change_event="metadata_changed"
                         save_label="Save Metadata"
                       />
                     <% 2 -> %>
@@ -838,6 +965,7 @@ defmodule JournalexWeb.TradeDraftLive do
                         item={synthetic_item}
                         idx={0}
                         on_save_event="save_metadata"
+                        on_change_event="metadata_changed"
                         save_label="Save Metadata"
                       />
                     <% _ -> %>

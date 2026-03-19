@@ -16,6 +16,7 @@ defmodule JournalexWeb.MetadataForm do
   attr :on_apply_draft_event, :string, default: nil
   attr :draft_name, :string, default: ""
   attr :save_label, :string, default: "Save Metadata"
+  attr :on_change_event, :string, default: nil
 
   def v1(assigns) do
     ~H"""
@@ -38,7 +39,7 @@ defmodule JournalexWeb.MetadataForm do
         </div>
       </div>
 
-      <form phx-submit={@on_save_event} phx-value-index={@idx} class="space-y-4">
+      <form phx-submit={@on_save_event} phx-change={@on_change_event} phx-value-index={@idx} class="space-y-4">
         <input type="hidden" id={"hidden-draft-name-#{@idx}"} name="draft_name" value={@draft_name} />
         <% metadata = Map.get(@item, :metadata) || %{} %>
 
@@ -231,6 +232,7 @@ defmodule JournalexWeb.MetadataForm do
   attr :on_apply_draft_event, :string, default: nil
   attr :draft_name, :string, default: ""
   attr :save_label, :string, default: "Save Metadata"
+  attr :on_change_event, :string, default: nil
 
   def v2(assigns) do
     ~H"""
@@ -253,7 +255,7 @@ defmodule JournalexWeb.MetadataForm do
         </div>
       </div>
 
-      <form phx-submit={@on_save_event} phx-value-index={@idx} class="space-y-4">
+      <form phx-submit={@on_save_event} phx-change={@on_change_event} phx-value-index={@idx} class="space-y-4">
         <input type="hidden" id={"hidden-draft-name-#{@idx}"} name="draft_name" value={@draft_name} />
         <% metadata = Map.get(@item, :metadata) || %{} %>
 

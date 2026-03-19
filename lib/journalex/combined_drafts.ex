@@ -69,4 +69,13 @@ defmodule Journalex.CombinedDrafts do
   def delete_draft(%Draft{} = draft) do
     Repo.delete(draft)
   end
+
+  @doc """
+  Delete all combined drafts by a list of ids.
+  Returns `{:ok, count}` with the number of deleted rows.
+  """
+  def delete_drafts(ids) when is_list(ids) do
+    {count, _} = from(d in Draft, where: d.id in ^ids) |> Repo.delete_all()
+    {:ok, count}
+  end
 end
