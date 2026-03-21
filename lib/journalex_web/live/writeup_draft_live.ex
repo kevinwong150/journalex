@@ -39,6 +39,10 @@ defmodule JournalexWeb.WriteupDraftLive do
       |> assign(:selected_ids, MapSet.new())
       |> assign(:preset_blocks, preset_blocks)
       |> assign(:preset_block_groups, preset_block_groups)
+      |> assign(:preset_writeup_drafts, WriteupDrafts.list_preset_drafts())
+      |> assign(:bulk_mode, false)
+      |> assign(:bulk_names, List.duplicate("", 2))
+      |> assign(:bulk_template_id, nil)
       |> assign(:drawer_open, false)
       |> assign(:drawer_mode, :list)
       |> assign(:editing_preset_block, nil)
@@ -242,6 +246,97 @@ defmodule JournalexWeb.WriteupDraftLive do
   @impl true
   def handle_event("update_draft_name", %{"value" => name}, socket) do
     {:noreply, assign(socket, :draft_name, name)}
+  end
+
+  # ── Bulk create ─────────────────────────────────────────────────────
+
+  @impl true
+  def handle_event("toggle_bulk", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:bulk_mode, !socket.assigns.bulk_mode)
+     |> assign(:bulk_names, List.duplicate("", 2))
+     |> assign(:bulk_template_id, nil)}
+  end
+
+  @impl true
+  def handle_event("bulk_update_name", %{"value" => value, "index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    names = List.replace_at(socket.assigns.bulk_names, idx, value)
+    {:noreply, assign(socket, :bulk_names, names)}
+  end
+
+  @impl true
+  def handle_event("bulk_add_row", _params, socket) do
+    {:noreply, assign(socket, :bulk_names, socket.assigns.bulk_names ++ [""])}
+  end
+
+  @impl true
+  def handle_event("bulk_remove_row", _params, socket) do
+    names = socket.assigns.bulk_names
+    {:noreply, assign(socket, :bulk_names, Enum.take(names, max(length(names) - 1, 1)))}
+  end
+
+  @impl true
+  def handle_event("bulk_set_template", %{"value" => v}, socket) do
+    template_id = case v do
+      "none" -> nil
+      str -> String.to_integer(str)
+    end
+    {:noreply, assign(socket, :bulk_template_id, template_id)}
+  end
+
+  @impl true
+  def handle_event("bulk_create_drafts", _params, socket) do
+    names =
+      socket.assigns.bulk_names
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+
+    if names == [] do
+      {:noreply, put_toast(socket, :error, "Please enter at least one name")}
+    else
+      template_id = socket.assigns.bulk_template_id
+
+      # Fetch template blocks once before the loop
+      template_blocks =
+        if template_id do
+          case WriteupDrafts.get_draft(template_id) do
+            nil -> []
+            draft -> draft.blocks || []
+          end
+        else
+          []
+        end
+
+      results =
+        Enum.map(names, fn name ->
+          WriteupDrafts.create_draft(%{name: name, blocks: template_blocks})
+        end)
+
+      created = Enum.count(results, &match?({:ok, _}, &1))
+      failed_names =
+        names
+        |> Enum.zip(results)
+        |> Enum.filter(fn {_name, result} -> match?({:error, _}, result) end)
+        |> Enum.map(fn {name, _} -> name end)
+
+      socket =
+        if failed_names == [] do
+          socket
+          |> assign(:drafts, WriteupDrafts.list_drafts())
+          |> assign(:bulk_mode, false)
+          |> assign(:bulk_names, List.duplicate("", 2))
+          |> assign(:bulk_template_id, nil)
+          |> put_toast(:info, "Created #{created} writeup draft(s)")
+        else
+          socket
+          |> assign(:drafts, WriteupDrafts.list_drafts())
+          |> put_toast(:error, "Created #{created}, failed: #{Enum.join(failed_names, ", ")}")
+        end
+
+      {:noreply, socket}
+    end
   end
 
   # ── Block editing events ────────────────────────────────────────────
@@ -821,10 +916,18 @@ defmodule JournalexWeb.WriteupDraftLive do
                 Saved Drafts
               </h3>
               <div class="flex items-center gap-2">
+                <button
+                  :if={!@bulk_mode && !@select_mode}
+                  phx-click="toggle_bulk"
+                  class="text-xs px-2 py-0.5 rounded-md border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 font-medium transition-colors"
+                >
+                  Bulk create
+                </button>
                 <span :if={@select_mode && @drafts != []} class="text-xs text-zinc-500 cursor-pointer hover:text-zinc-800" phx-click="toggle_select_all">
                   {if MapSet.size(@selected_ids) == length(@drafts), do: "Deselect all", else: "Select all"}
                 </span>
                 <button
+                  :if={!@bulk_mode}
                   phx-click="toggle_select_mode"
                   class={[
                     "text-xs px-2 py-0.5 rounded-md border font-medium transition-colors",
@@ -839,6 +942,68 @@ defmodule JournalexWeb.WriteupDraftLive do
                 <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-200 text-zinc-600">
                   {length(@drafts)}
                 </span>
+              </div>
+            </div>
+
+            <%!-- Bulk create panel --%>
+            <div :if={@bulk_mode} class="px-4 py-4 border-b border-zinc-100 bg-violet-50/40">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-xs font-semibold text-violet-700">Bulk Create Writeup Drafts</h4>
+                <button phx-click="toggle_bulk" class="text-xs text-violet-600 hover:text-violet-800">Cancel</button>
+              </div>
+              <%!-- Template selector --%>
+              <div class="flex items-center gap-2 mb-3">
+                <span class="text-[10px] text-violet-600 font-medium shrink-0">Template:</span>
+                <select
+                  phx-change="bulk_set_template"
+                  class="flex-1 px-1.5 py-1 text-xs border border-violet-200 rounded focus:outline-none focus:ring-1 focus:ring-violet-400"
+                >
+                  <option value="none" selected={is_nil(@bulk_template_id)}>None (empty)</option>
+                  <%= for draft <- @preset_writeup_drafts do %>
+                    <option value={draft.id} selected={@bulk_template_id == draft.id}>
+                      {draft.name} ({length(draft.blocks || [])} blocks)
+                    </option>
+                  <% end %>
+                </select>
+              </div>
+              <%!-- Names list --%>
+              <div class="space-y-2">
+                <%= for {name, i} <- Enum.with_index(@bulk_names) do %>
+                  <div class="flex items-center gap-2">
+                    <span class="text-[10px] text-violet-400 font-mono w-4 text-right shrink-0">{i + 1}</span>
+                    <input
+                      type="text"
+                      value={name}
+                      phx-keyup="bulk_update_name"
+                      phx-value-index={i}
+                      placeholder="Draft name..."
+                      class="flex-1 px-2 py-1.5 text-sm border border-violet-200 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                    />
+                  </div>
+                <% end %>
+              </div>
+              <div class="flex items-center justify-between mt-3">
+                <div class="flex items-center gap-2">
+                  <button
+                    phx-click="bulk_add_row"
+                    class="text-xs px-2 py-1 rounded border border-violet-200 text-violet-600 hover:bg-violet-100"
+                  >
+                    + Row
+                  </button>
+                  <button
+                    :if={length(@bulk_names) > 1}
+                    phx-click="bulk_remove_row"
+                    class="text-xs px-2 py-1 rounded border border-violet-200 text-violet-600 hover:bg-violet-100"
+                  >
+                    − Row
+                  </button>
+                </div>
+                <button
+                  phx-click="bulk_create_drafts"
+                  class="px-3 py-1.5 text-xs font-medium bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors shadow-sm"
+                >
+                  Create {length(@bulk_names)} draft(s)
+                </button>
               </div>
             </div>
 

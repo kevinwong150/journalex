@@ -37,6 +37,7 @@ defmodule JournalexWeb.TradeDraftLive do
       |> assign(:bulk_auto_meta, true)
       |> assign(:bulk_auto_writeup, true)
       |> assign(:bulk_version, default_version)
+      |> assign(:bulk_writeup_template_id, nil)
       # Editor state
       |> assign(:active_tab, :metadata)
       |> assign(:selected_draft, nil)
@@ -269,7 +270,8 @@ defmodule JournalexWeb.TradeDraftLive do
      |> assign(:bulk_names, List.duplicate("", 2))
      |> assign(:bulk_auto_meta, true)
      |> assign(:bulk_auto_writeup, true)
-     |> assign(:bulk_version, Settings.get_default_metadata_version())}
+     |> assign(:bulk_version, Settings.get_default_metadata_version())
+     |> assign(:bulk_writeup_template_id, nil)}
   end
 
   @impl true
@@ -285,6 +287,15 @@ defmodule JournalexWeb.TradeDraftLive do
   @impl true
   def handle_event("bulk_set_version", %{"value" => v}, socket) do
     {:noreply, assign(socket, :bulk_version, String.to_integer(v))}
+  end
+
+  @impl true
+  def handle_event("bulk_set_writeup_template", %{"value" => v}, socket) do
+    template_id = case v do
+      "none" -> nil
+      str -> String.to_integer(str)
+    end
+    {:noreply, assign(socket, :bulk_writeup_template_id, template_id)}
   end
 
   @impl true
@@ -318,34 +329,57 @@ defmodule JournalexWeb.TradeDraftLive do
       auto_meta = socket.assigns.bulk_auto_meta
       auto_writeup = socket.assigns.bulk_auto_writeup
       version = socket.assigns.bulk_version
+      template_id = socket.assigns.bulk_writeup_template_id
+
+      # Fetch template blocks once before the loop
+      template_blocks =
+        if auto_writeup && template_id do
+          case WriteupDrafts.get_draft(template_id) do
+            nil -> []
+            draft -> draft.blocks || []
+          end
+        else
+          []
+        end
 
       results =
         Enum.map(names, fn name ->
-          md_id =
-            if auto_meta do
-              case MetadataDrafts.create_draft(%{name: name, metadata_version: version, metadata: %{}}) do
-                {:ok, md} -> md.id
-                {:error, _} -> nil
-              end
-            end
+          # Create combined draft first to prevent orphaned children on failure
+          case CombinedDrafts.create_draft(%{name: name}) do
+            {:ok, cd} ->
+              md_id =
+                if auto_meta do
+                  case MetadataDrafts.create_draft(%{name: name, metadata_version: version, metadata: %{}}) do
+                    {:ok, md} -> md.id
+                    {:error, _} -> nil
+                  end
+                end
 
-          wd_id =
-            if auto_writeup do
-              case WriteupDrafts.create_draft(%{name: name, blocks: []}) do
-                {:ok, wd} -> wd.id
-                {:error, _} -> nil
-              end
-            end
+              wd_id =
+                if auto_writeup do
+                  case WriteupDrafts.create_draft(%{name: name, blocks: template_blocks}) do
+                    {:ok, wd} -> wd.id
+                    {:error, _} -> nil
+                  end
+                end
 
-          CombinedDrafts.create_draft(%{
-            name: name,
-            metadata_draft_id: md_id,
-            writeup_draft_id: wd_id
-          })
+              if md_id || wd_id do
+                CombinedDrafts.update_draft(cd, %{metadata_draft_id: md_id, writeup_draft_id: wd_id})
+              else
+                {:ok, cd}
+              end
+
+            {:error, _} = err ->
+              err
+          end
         end)
 
       created = Enum.count(results, &match?({:ok, _}, &1))
-      errors = Enum.filter(results, &match?({:error, _}, &1))
+      failed_names =
+        names
+        |> Enum.zip(results)
+        |> Enum.filter(fn {_name, result} -> match?({:error, _}, result) end)
+        |> Enum.map(fn {name, _} -> name end)
 
       parts =
         [if(auto_meta, do: "metadata V#{version}"), if(auto_writeup, do: "writeup")]
@@ -355,18 +389,16 @@ defmodule JournalexWeb.TradeDraftLive do
       suffix = if parts != "", do: " with #{parts} drafts", else: ""
 
       socket =
-        if errors == [] do
+        if failed_names == [] do
           socket
           |> assign(:combined_drafts, CombinedDrafts.list_drafts())
           |> assign(:bulk_mode, false)
           |> assign(:bulk_names, List.duplicate("", 2))
           |> put_toast(:info, "Created #{created} trade draft(s)#{suffix}")
         else
-          failed = length(errors)
-
           socket
           |> assign(:combined_drafts, CombinedDrafts.list_drafts())
-          |> put_toast(:error, "Created #{created}, failed #{failed}")
+          |> put_toast(:error, "Created #{created}, failed: #{Enum.join(failed_names, ", ")}")
         end
 
       {:noreply, socket}
@@ -744,10 +776,10 @@ defmodule JournalexWeb.TradeDraftLive do
                 <h4 class="text-xs font-semibold text-sky-700">Bulk Create</h4>
                 <button phx-click="toggle_bulk" class="text-xs text-sky-600 hover:text-sky-800">Cancel</button>
               </div>
-              <%!-- Auto-create options --%>
-              <div class="flex flex-wrap items-center gap-4 mb-3 px-3 py-2 bg-white rounded-md border border-sky-200">
-                <span class="text-[10px] font-semibold text-sky-700 uppercase tracking-wide">Auto-create:</span>
-                <label class="inline-flex items-center gap-1.5 cursor-pointer">
+              <%!-- Auto-create options: two-row layout --%>
+              <div class="mb-3 bg-white rounded-md border border-sky-200 overflow-hidden">
+                <%!-- Metadata row --%>
+                <div class="flex flex-wrap items-center gap-3 px-3 py-2 bg-amber-50/40 border-b border-sky-100">
                   <button
                     type="button"
                     phx-click="bulk_toggle_auto_meta"
@@ -762,8 +794,19 @@ defmodule JournalexWeb.TradeDraftLive do
                     ]} />
                   </button>
                   <span class="text-xs font-medium text-amber-700">Metadata Draft</span>
-                </label>
-                <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                  <div :if={@bulk_auto_meta} class="inline-flex items-center gap-1.5">
+                    <span class="text-[10px] text-amber-600 font-medium">Version:</span>
+                    <select
+                      phx-change="bulk_set_version"
+                      class="px-1.5 py-0.5 text-xs border border-amber-200 rounded focus:outline-none focus:ring-1 focus:ring-amber-400"
+                    >
+                      <option value="1" selected={@bulk_version == 1}>V1</option>
+                      <option value="2" selected={@bulk_version == 2}>V2</option>
+                    </select>
+                  </div>
+                </div>
+                <%!-- Writeup row --%>
+                <div class="flex flex-wrap items-center gap-3 px-3 py-2">
                   <button
                     type="button"
                     phx-click="bulk_toggle_auto_writeup"
@@ -778,16 +821,20 @@ defmodule JournalexWeb.TradeDraftLive do
                     ]} />
                   </button>
                   <span class="text-xs font-medium text-violet-700">Writeup Draft</span>
-                </label>
-                <div :if={@bulk_auto_meta} class="inline-flex items-center gap-1.5">
-                  <span class="text-[10px] text-amber-600 font-medium">Version:</span>
-                  <select
-                    phx-change="bulk_set_version"
-                    class="px-1.5 py-0.5 text-xs border border-amber-200 rounded focus:outline-none focus:ring-1 focus:ring-amber-400"
-                  >
-                    <option value="1" selected={@bulk_version == 1}>V1</option>
-                    <option value="2" selected={@bulk_version == 2}>V2</option>
-                  </select>
+                  <div :if={@bulk_auto_writeup} class="inline-flex items-center gap-1.5">
+                    <span class="text-[10px] text-violet-600 font-medium">Template:</span>
+                    <select
+                      phx-change="bulk_set_writeup_template"
+                      class="px-1.5 py-0.5 text-xs border border-violet-200 rounded focus:outline-none focus:ring-1 focus:ring-violet-400"
+                    >
+                      <option value="none" selected={is_nil(@bulk_writeup_template_id)}>None (empty)</option>
+                      <%= for draft <- @preset_writeup_drafts do %>
+                        <option value={draft.id} selected={@bulk_writeup_template_id == draft.id}>
+                          {draft.name} ({length(draft.blocks || [])} blocks)
+                        </option>
+                      <% end %>
+                    </select>
+                  </div>
                 </div>
               </div>
               <div class="space-y-2">
