@@ -3,7 +3,9 @@ defmodule Journalex.Notion do
   High-level helpers to interact with Notion for Journalex workflows.
   """
 
+  alias Journalex.Notion.BlockBuilder
   alias Journalex.Notion.Client
+  alias Journalex.Notion.DataSources
 
   @doc """
   Checks whether a page exists in the data source matching the given timestamp.
@@ -152,6 +154,60 @@ defmodule Journalex.Notion do
           {:ok, map} -> {:ok, map}
           {:error, reason} -> {:error, reason}
         end
+    end
+  end
+
+  @doc """
+  Creates a Notion placeholder page with a draft title and optional toggle blocks.
+
+  The page title is formatted as `"DRAFT_NAME_DRAFT"`. After creation, if blocks are
+  provided they are appended as children (typically screenshot toggle blocks).
+
+  ## Options
+
+    * `:metadata_version` — metadata version (default 2), used to resolve the data source
+    * `:data_source_id` — override data source ID directly
+
+  Returns `{:ok, page_map}` or `{:error, reason}`.
+  """
+  def create_placeholder_page(draft_name, blocks \\ [], opts \\ []) when is_binary(draft_name) do
+    conf = Application.get_env(:journalex, __MODULE__, [])
+
+    data_source_id =
+      Keyword.get(opts, :data_source_id) ||
+        DataSources.get_data_source_id(Keyword.get(opts, :metadata_version, 2)) ||
+        conf[:trades_data_source_id] ||
+        conf[:trades_v2_data_source_id]
+
+    title_prop = conf[:title_property] || "Trademark"
+    title = draft_name <> "_DRAFT"
+
+    if is_nil(data_source_id) do
+      {:error, :missing_data_source_id}
+    else
+      payload = %{
+        "parent" => %{"data_source_id" => data_source_id},
+        "properties" => %{
+          title_prop => %{title: [%{text: %{content: title}}]}
+        }
+      }
+
+      with {:ok, page} <- Client.create_page(payload),
+           page_id <- Map.get(page, "id"),
+           :ok <- append_placeholder_blocks(page_id, blocks) do
+        {:ok, page}
+      end
+    end
+  end
+
+  defp append_placeholder_blocks(_page_id, []), do: :ok
+
+  defp append_placeholder_blocks(page_id, blocks) do
+    notion_blocks = BlockBuilder.to_notion_blocks(blocks)
+
+    case Client.append_block_children(page_id, notion_blocks) do
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -412,7 +468,22 @@ defmodule Journalex.Notion do
     # Add metadata fields if present
     metadata_props = build_metadata_properties(row)
 
-    payload = %{"properties" => base_props |> Map.merge(extra_props) |> Map.merge(metadata_props)}
+    # Add relation links (TickerLink, DateLink) if page IDs provided via opts
+    ticker_page_id = Keyword.get(opts, :ticker_page_id)
+    date_page_id = Keyword.get(opts, :date_page_id)
+
+    relation_props =
+      %{}
+      |> maybe_put_relation("TickerLink", ticker_page_id)
+      |> maybe_put_relation("DateLink", date_page_id)
+
+    payload = %{
+      "properties" =>
+        base_props
+        |> Map.merge(extra_props)
+        |> Map.merge(relation_props)
+        |> Map.merge(metadata_props)
+    }
 
     Client.update_page(page_id, payload)
   end

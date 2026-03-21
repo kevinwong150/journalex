@@ -10,6 +10,7 @@ defmodule JournalexWeb.TradeDraftLive do
 
   alias Journalex.CombinedDrafts
   alias Journalex.MetadataDrafts
+  alias Journalex.Notion
   alias Journalex.WriteupDrafts
   alias Journalex.Settings
   alias JournalexWeb.BlockHelpers
@@ -46,7 +47,7 @@ defmodule JournalexWeb.TradeDraftLive do
       # Writeup editor
       |> assign(:blocks, [])
       |> assign(:preset_blocks, WriteupDrafts.list_preset_blocks())
-      |> assign(:preset_writeup_drafts, WriteupDrafts.list_preset_drafts())
+      |> assign(:preset_writeup_drafts, list_preset_writeup_drafts())
       |> assign(:active_block_index, nil)
       |> assign(:metadata_dirty, false)
       |> assign(:writeup_dirty, false)
@@ -484,6 +485,87 @@ defmodule JournalexWeb.TradeDraftLive do
     end
   end
 
+  # ── Notion placeholder ──────────────────────────────────────────────
+
+  @impl true
+  def handle_event("create_placeholder", _params, socket) do
+    selected = socket.assigns.selected_draft
+
+    cond do
+      is_nil(selected) ->
+        {:noreply, put_toast(socket, :error, "No trade draft selected")}
+
+      not is_nil(selected.notion_page_id) ->
+        {:noreply, put_toast(socket, :error, "Placeholder already exists — use Recreate to replace")}
+
+      true ->
+        blocks = CombinedDrafts.placeholder_blocks()
+        version = socket.assigns.form_version
+
+        case Notion.create_placeholder_page(selected.name, blocks, metadata_version: version) do
+          {:ok, page} ->
+            page_id = Map.get(page, "id")
+
+            case CombinedDrafts.set_notion_page_id(selected, page_id) do
+              {:ok, _} ->
+                notion_url = notion_page_url(page_id)
+
+                {:noreply,
+                 socket
+                 |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+                 |> load_selected_draft(selected.id)
+                 |> put_toast(:info, "Placeholder created — #{notion_url}")}
+
+              {:error, _} ->
+                {:noreply, put_toast(socket, :error, "Page created but failed to save link")}
+            end
+
+          {:error, reason} ->
+            {:noreply, put_toast(socket, :error, "Failed to create placeholder: #{inspect(reason)}")}
+        end
+    end
+  end
+
+  @impl true
+  def handle_event("recreate_placeholder", _params, socket) do
+    selected = socket.assigns.selected_draft
+
+    if is_nil(selected) do
+      {:noreply, put_toast(socket, :error, "No trade draft selected")}
+    else
+      case CombinedDrafts.clear_notion_page_id(selected) do
+        {:ok, _} ->
+          blocks = CombinedDrafts.placeholder_blocks()
+          version = socket.assigns.form_version
+
+          case Notion.create_placeholder_page(selected.name, blocks, metadata_version: version) do
+            {:ok, page} ->
+              page_id = Map.get(page, "id")
+
+              case CombinedDrafts.set_notion_page_id(selected, page_id) do
+                {:ok, _} ->
+                  notion_url = notion_page_url(page_id)
+
+                  {:noreply,
+                   socket
+                   |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+                   |> load_selected_draft(selected.id)
+                   |> put_toast(:info, "Placeholder recreated — old one orphaned — #{notion_url}")}
+
+                {:error, _} ->
+                  {:noreply, put_toast(socket, :error, "Page created but failed to save link")}
+              end
+
+            {:error, reason} ->
+              {:noreply, put_toast(socket, :error, "Failed to recreate placeholder: #{inspect(reason)}")}
+          end
+
+        {:error, _} ->
+          {:noreply, put_toast(socket, :error, "Failed to clear old placeholder link")}
+      end
+    end
+  end
+
   # ── Block editor events ─────────────────────────────────────────────
 
   @impl true
@@ -604,6 +686,15 @@ defmodule JournalexWeb.TradeDraftLive do
     changeset.errors
     |> Enum.map(fn {field, {msg, _}} -> "#{field}: #{msg}" end)
     |> Enum.join(", ")
+  end
+
+  defp notion_page_url(page_id) when is_binary(page_id) do
+    "https://notion.so/" <> String.replace(page_id, "-", "")
+  end
+
+  defp list_preset_writeup_drafts do
+    WriteupDrafts.ensure_preset_draft()
+    WriteupDrafts.list_preset_drafts()
   end
 
   # ── Render ──────────────────────────────────────────────────────────
@@ -816,6 +907,23 @@ defmodule JournalexWeb.TradeDraftLive do
                         {length(cd.writeup_draft.blocks || [])} blk
                       </span>
                       <span :if={is_nil(cd.writeup_draft)} class="text-[10px] text-zinc-400 italic">no writeup</span>
+                      <span
+                        :if={cd.applied_at}
+                        class="inline-flex items-center gap-0.5 text-[10px] font-medium text-green-700 bg-green-50 px-1.5 py-0.5 rounded"
+                        title={"Applied #{Calendar.strftime(cd.applied_at, "%Y-%m-%d %H:%M")}"}
+                      >
+                        <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        N
+                      </span>
+                      <span
+                        :if={cd.notion_page_id && is_nil(cd.applied_at)}
+                        class="inline-flex items-center gap-0.5 text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded"
+                        title="Notion placeholder created"
+                      >
+                        N
+                      </span>
                       <svg
                         :if={MapSet.member?(@modified_draft_ids, cd.id) || (@selected_draft && @selected_draft.id == cd.id && (@metadata_dirty || @writeup_dirty))}
                         class="w-3 h-3 shrink-0 text-orange-400"
@@ -866,12 +974,53 @@ defmodule JournalexWeb.TradeDraftLive do
                   <h2 class="text-sm font-semibold text-zinc-800">{@selected_draft.name}</h2>
                   <p class="text-xs text-zinc-500 mt-0.5">Edit metadata and writeup for this trade draft.</p>
                 </div>
-                <button
-                  phx-click="deselect_draft"
-                  class="text-xs text-zinc-500 hover:text-zinc-700 transition-colors"
-                >
-                  Close
-                </button>
+                <div class="flex items-center gap-2">
+                  <%!-- Notion placeholder status --%>
+                  <%= cond do %>
+                    <% @selected_draft.applied_at != nil -> %>
+                      <span class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold bg-green-100 text-green-700 border border-green-200">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Applied {Calendar.strftime(@selected_draft.applied_at, "%Y-%m-%d %H:%M")}
+                      </span>
+                    <% @selected_draft.notion_page_id != nil -> %>
+                      <a
+                        href={"https://notion.so/" <> String.replace(@selected_draft.notion_page_id, "-", "")}
+                        target="_blank"
+                        class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold bg-blue-100 text-blue-700 border border-blue-200 hover:bg-blue-200 transition-colors"
+                        title="Open placeholder in Notion"
+                      >
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                        Placeholder
+                      </a>
+                      <button
+                        phx-click="recreate_placeholder"
+                        class="text-[10px] px-2 py-1 rounded-md border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 font-medium transition-colors"
+                        data-confirm="This will create a new placeholder and orphan the old one. Continue?"
+                      >
+                        Recreate
+                      </button>
+                    <% true -> %>
+                      <button
+                        phx-click="create_placeholder"
+                        class="inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-medium transition-colors shadow-sm"
+                      >
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                        </svg>
+                        Create Placeholder
+                      </button>
+                  <% end %>
+                  <button
+                    phx-click="deselect_draft"
+                    class="text-xs text-zinc-500 hover:text-zinc-700 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
 
               <%!-- Tabs --%>

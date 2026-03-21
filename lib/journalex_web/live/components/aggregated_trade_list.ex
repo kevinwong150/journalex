@@ -168,6 +168,10 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: nil,
     doc: "Event name to emit when a combined draft is applied to a trade row"
 
+  attr :on_apply_to_placeholder_event, :string,
+    default: nil,
+    doc: "Event name to emit when applying a draft to its Notion placeholder"
+
   def aggregated_trade_list(assigns) do
     ~H"""
     <% chain_key = @action_chain_key %>
@@ -591,6 +595,24 @@ defmodule JournalexWeb.AggregatedTradeList do
                         >
                           {cd.name} <span class="text-[10px] text-sky-500 ml-0.5">({parts})</span>
                         </button>
+                        <button
+                          :if={@on_apply_to_placeholder_event && cd.notion_page_id && is_nil(cd.applied_at)}
+                          type="button"
+                          phx-click={@on_apply_to_placeholder_event}
+                          phx-value-index={idx}
+                          phx-value-draft-id={cd.id}
+                          class="px-2 py-1 text-[10px] font-medium rounded-md bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors border border-blue-200"
+                          title={"Apply \"#{cd.name}\" to Notion placeholder page"}
+                        >
+                          → Notion
+                        </button>
+                        <span
+                          :if={cd.applied_at}
+                          class="px-2 py-1 text-[10px] font-medium rounded-md bg-green-100 text-green-700 border border-green-200"
+                          title={"Applied on #{Calendar.strftime(cd.applied_at, "%Y-%m-%d %H:%M")}"}
+                        >
+                          ✓ Applied
+                        </span>
                       <% end %>
                     </div>
                     <%!-- Tab bar --%>

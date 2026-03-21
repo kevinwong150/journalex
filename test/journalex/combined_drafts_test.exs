@@ -198,4 +198,52 @@ defmodule Journalex.CombinedDraftsTest do
       assert is_nil(refreshed.writeup_draft)
     end
   end
+
+  describe "set_notion_page_id/2" do
+    test "sets the notion_page_id on a draft" do
+      assert {:ok, draft} = CombinedDrafts.create_draft(%{name: "Test"})
+      assert {:ok, updated} = CombinedDrafts.set_notion_page_id(draft, "abc-123-def")
+      assert updated.notion_page_id == "abc-123-def"
+    end
+
+    test "enforces unique constraint on notion_page_id" do
+      assert {:ok, d1} = CombinedDrafts.create_draft(%{name: "Draft1"})
+      assert {:ok, d2} = CombinedDrafts.create_draft(%{name: "Draft2"})
+      assert {:ok, _} = CombinedDrafts.set_notion_page_id(d1, "unique-id-123")
+      assert {:error, changeset} = CombinedDrafts.set_notion_page_id(d2, "unique-id-123")
+      assert %{notion_page_id: ["another draft is already linked to this Notion page"]} = errors_on(changeset)
+    end
+  end
+
+  describe "clear_notion_page_id/1" do
+    test "clears notion_page_id and applied_at" do
+      assert {:ok, draft} = CombinedDrafts.create_draft(%{name: "Test"})
+      assert {:ok, linked} = CombinedDrafts.set_notion_page_id(draft, "page-id-456")
+      assert {:ok, marked} = CombinedDrafts.mark_applied(linked)
+      assert not is_nil(marked.applied_at)
+
+      assert {:ok, cleared} = CombinedDrafts.clear_notion_page_id(marked)
+      assert is_nil(cleared.notion_page_id)
+      assert is_nil(cleared.applied_at)
+    end
+  end
+
+  describe "mark_applied/1" do
+    test "sets applied_at timestamp" do
+      assert {:ok, draft} = CombinedDrafts.create_draft(%{name: "Test"})
+      assert {:ok, linked} = CombinedDrafts.set_notion_page_id(draft, "page-id-789")
+      assert {:ok, applied} = CombinedDrafts.mark_applied(linked)
+      assert %DateTime{} = applied.applied_at
+    end
+  end
+
+  describe "placeholder_blocks/0" do
+    test "returns the hardcoded toggle blocks" do
+      blocks = CombinedDrafts.placeholder_blocks()
+      assert length(blocks) == 5
+      assert Enum.all?(blocks, &(&1["type"] == "toggle"))
+      texts = Enum.map(blocks, & &1["text"])
+      assert texts == ["1min:", "2min:", "5min:", "15min:", "daily:"]
+    end
+  end
 end

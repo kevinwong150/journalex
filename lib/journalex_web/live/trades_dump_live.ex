@@ -736,6 +736,111 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   @impl true
+  def handle_event("apply_to_placeholder", %{"index" => idx_str, "draft-id" => draft_id_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    {draft_id, _} = Integer.parse(draft_id_str)
+
+    trade = Enum.at(socket.assigns.trades, idx)
+    combined = CombinedDrafts.get_draft(draft_id)
+
+    cond do
+      is_nil(trade) ->
+        {:noreply, put_toast(socket, :error, "Trade not found")}
+
+      is_nil(combined) ->
+        {:noreply, put_toast(socket, :error, "Combined draft not found")}
+
+      is_nil(combined.notion_page_id) ->
+        {:noreply, put_toast(socket, :error, "No placeholder — create one from Trade Drafts first")}
+
+      not is_nil(combined.applied_at) ->
+        {:noreply, put_toast(socket, :error, "Already applied on #{Calendar.strftime(combined.applied_at, "%Y-%m-%d %H:%M")}")}
+
+      true ->
+        page_id = combined.notion_page_id
+        ticker = trade.ticker || trade.symbol
+        date_key = trade_date_key(trade)
+        ticker_page_id = Map.get(socket.assigns.ticker_id_cache, ticker)
+        date_page_id = Map.get(socket.assigns.date_id_cache, date_key)
+
+        # Build the row with metadata from draft if available
+        md = combined.metadata_draft
+        wd = combined.writeup_draft
+
+        row_with_draft =
+          trade
+          |> then(fn r ->
+            if md do
+              metadata_attrs = preserve_readonly_fields(md.metadata || %{}, trade.metadata)
+              %{r | metadata: metadata_attrs, metadata_version: md.metadata_version}
+            else
+              r
+            end
+          end)
+
+        # Update Notion page properties (title, datetime, ticker, metadata, relations)
+        case Notion.update_trade_page(page_id, row_with_draft,
+               ticker_page_id: ticker_page_id,
+               date_page_id: date_page_id
+             ) do
+          {:ok, _} ->
+            # Append writeup blocks if the draft has them
+            writeup_result =
+              if wd && is_list(wd.blocks) && wd.blocks != [] do
+                notion_blocks = Journalex.Notion.BlockBuilder.to_notion_blocks(wd.blocks)
+                NotionClient.append_block_children(page_id, notion_blocks)
+              else
+                {:ok, :no_writeup}
+              end
+
+            case writeup_result do
+              {:ok, _} ->
+                # Mark applied to prevent double-apply
+                CombinedDrafts.mark_applied(combined)
+
+                # Also apply locally to the trade
+                local_attrs =
+                  %{}
+                  |> then(fn attrs ->
+                    if md do
+                      metadata_attrs = preserve_readonly_fields(md.metadata || %{}, trade.metadata)
+                      Map.merge(attrs, %{metadata: metadata_attrs, metadata_version: md.metadata_version})
+                    else
+                      attrs
+                    end
+                  end)
+                  |> then(fn attrs ->
+                    if wd, do: Map.put(attrs, :writeup, wd.blocks || []), else: attrs
+                  end)
+
+                trades =
+                  case Journalex.Trades.update_trade(trade, local_attrs) do
+                    {:ok, updated} ->
+                      socket.assigns.trades
+                      |> Enum.with_index()
+                      |> Enum.map(fn {t, i} -> if i == idx, do: updated, else: t end)
+
+                    {:error, _} ->
+                      socket.assigns.trades
+                  end
+
+                {:noreply,
+                 socket
+                 |> assign(:trades, trades)
+                 |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+                 |> put_toast(:info, "Applied \"#{combined.name}\" to Notion placeholder")}
+
+              {:error, reason} ->
+                {:noreply, put_toast(socket, :error, "Properties updated but writeup failed: #{inspect(reason)}")}
+            end
+
+          {:error, reason} ->
+            {:noreply, put_toast(socket, :error, "Failed to apply to placeholder: #{inspect(reason)}")}
+        end
+    end
+  end
+
+  @impl true
   def handle_event("reset_metadata", %{"index" => idx_str}, socket) do
     {idx, _} = Integer.parse(idx_str)
     trade = Enum.at(socket.assigns.trades, idx)
@@ -1770,6 +1875,7 @@ defmodule JournalexWeb.TradesDumpLive do
         on_apply_writeup_draft_event="apply_writeup_draft"
         combined_drafts={@combined_drafts}
         on_apply_combined_draft_event="apply_combined_draft"
+        on_apply_to_placeholder_event="apply_to_placeholder"
         on_clear_writeup_event="clear_writeup"
         on_sync_writeup_event="sync_writeup_from_notion"
         on_open_writeup_modal_event="open_writeup_modal"

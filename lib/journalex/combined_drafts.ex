@@ -8,6 +8,19 @@ defmodule Journalex.CombinedDrafts do
   alias Journalex.Repo
   alias Journalex.CombinedDrafts.Draft
 
+  @placeholder_blocks [
+    %{"type" => "toggle", "text" => "1min:", "children" => []},
+    %{"type" => "toggle", "text" => "2min:", "children" => []},
+    %{"type" => "toggle", "text" => "5min:", "children" => []},
+    %{"type" => "toggle", "text" => "15min:", "children" => []},
+    %{"type" => "toggle", "text" => "daily:", "children" => []}
+  ]
+
+  @doc """
+  Returns the hardcoded placeholder toggle blocks used when creating Notion placeholder pages.
+  """
+  def placeholder_blocks, do: @placeholder_blocks
+
   @doc """
   List all combined drafts with preloaded associations, ordered by creation time ascending.
   """
@@ -77,5 +90,32 @@ defmodule Journalex.CombinedDrafts do
   def delete_drafts(ids) when is_list(ids) do
     {count, _} = from(d in Draft, where: d.id in ^ids) |> Repo.delete_all()
     {:ok, count}
+  end
+
+  @doc """
+  Set the Notion page ID on a combined draft.
+  """
+  def set_notion_page_id(%Draft{} = draft, page_id) when is_binary(page_id) do
+    draft
+    |> Draft.changeset(%{notion_page_id: page_id})
+    |> Repo.update()
+  end
+
+  @doc """
+  Clear the Notion page ID from a combined draft.
+  """
+  def clear_notion_page_id(%Draft{} = draft) do
+    draft
+    |> Draft.changeset(%{notion_page_id: nil, applied_at: nil})
+    |> Repo.update()
+  end
+
+  @doc """
+  Mark a combined draft as applied by setting `applied_at` to now.
+  """
+  def mark_applied(%Draft{} = draft) do
+    draft
+    |> Draft.changeset(%{applied_at: DateTime.utc_now()})
+    |> Repo.update()
   end
 end
