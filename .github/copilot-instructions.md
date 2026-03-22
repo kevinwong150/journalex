@@ -206,3 +206,60 @@ The `MetadataForm` component renders V1 or V2 forms via separate function compon
 8. Do not use `Map.merge/2` to combine atom-keyed and string-keyed maps without converting first
 9. Do not reference `get_rich_text/2` or `maybe_put_rich_text/3` — they have been removed from `Journalex.Notion`
 10. Do not hardcode Notion property name strings when adding new fields — check the actual property name in the relevant `extract_v1/v2_metadata_from_properties` and `build_v1/v2_metadata_properties` functions in `lib/journalex/notion.ex`
+
+---
+
+## Agent routing
+
+For every **non-trivial development task**, present an agent selection menu before starting work. Skip the menu only for purely conversational messages, quick factual questions, or single-line lookups.
+
+**Trigger the menu when the request involves any of:**
+- Implementing a feature, change, or bug fix
+- Reviewing code for correctness or convention violations
+- Running or interpreting tests
+- Planning or scoping work
+- UI/UX analysis or accessibility review
+
+**Menu format** — always present exactly this before acting:
+
+```
+Which mode for this task?
+
+0. Default — handle here (no specialist)
+1. Reviewer — convention audit (read-only)
+2. Verifier — run tests and check compilation
+3. Planner-Lite — quick focused plan
+4. UI/UX Advisor — accessibility and design review
+
+Reply with a number, or just describe what you need.
+```
+
+**After the user replies:**
+- **0** or no number given — proceed in the current agent
+- **1** → delegate to `journalex-reviewer`
+- **2** → delegate to `journalex-verifier`
+- **3** → delegate to `planner-lite`
+- **4** → delegate to `journalex-ux`
+- **Anything else** — treat as clarification of the task, re-evaluate which option fits, then proceed
+
+---
+
+## Session memory and knowledge curation
+
+**During every non-trivial session**, write notable learnings to `/memories/session/` as they arise. Things worth noting:
+- New patterns established or agreed upon
+- New pitfalls discovered (mistakes made, wrong assumptions corrected)
+- Verified facts about the codebase (confirmed baselines, module signatures, working commands)
+- Decisions made about architecture or conventions
+- User preferences or habits observed
+
+Keep notes short — bullet points or single facts. Create `/memories/session/learnings.md` if it doesn't exist; append to it if it does.
+
+**At the end of every non-trivial session** (when the user signals they're wrapping up, or the main work is complete), offer:
+
+```
+Session complete. Run the curator to persist learnings to permanent files?
+(Invoke @journalex-curator — it will read session notes and decide what to keep.)
+```
+
+Only offer once. Do not repeat if the user declines.
