@@ -164,13 +164,25 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: [],
     doc: "List of combined draft templates (preloaded metadata_draft + writeup_draft)"
 
-  attr :on_apply_combined_draft_event, :string,
-    default: nil,
-    doc: "Event name to emit when a combined draft is applied to a trade row"
+  attr :bound_drafts_map, :map,
+    default: %{},
+    doc: "Map of trade_id => bound combined draft for quick row-level lookup"
 
-  attr :on_apply_to_placeholder_event, :string,
+  attr :on_bind_combined_draft_event, :string,
     default: nil,
-    doc: "Event name to emit when applying a draft to its Notion placeholder"
+    doc: "Event name to emit when binding a combined draft to a trade"
+
+  attr :on_unbind_combined_draft_event, :string,
+    default: nil,
+    doc: "Event name to emit when unbinding a combined draft from a trade"
+
+  attr :on_push_to_notion_event, :string,
+    default: nil,
+    doc: "Event name to emit when pushing a bound draft to Notion"
+
+  attr :on_create_placeholder_event, :string,
+    default: nil,
+    doc: "Event name to emit when creating a Notion placeholder for a bound draft that has none"
 
   def aggregated_trade_list(assigns) do
     ~H"""
@@ -561,6 +573,18 @@ defmodule JournalexWeb.AggregatedTradeList do
                       {length(item.writeup)}
                     </span>
                   </div>
+                  <% row_bound_draft = Map.get(@bound_drafts_map, Map.get(item, :id)) %>
+                  <div :if={row_bound_draft} class="mt-1 flex justify-center">
+                    <%= if row_bound_draft.applied_at do %>
+                      <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700" title={"Pushed: #{row_bound_draft.name}"}>
+                        ✓ {row_bound_draft.name}
+                      </span>
+                    <% else %>
+                      <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-100 text-sky-700" title={"Bound: #{row_bound_draft.name}"}>
+                        ⬡ {row_bound_draft.name}
+                      </span>
+                    <% end %>
+                  </div>
                 </td>
               </tr>
               <tr
@@ -578,41 +602,86 @@ defmodule JournalexWeb.AggregatedTradeList do
                   <% trade_title = item_ticker(item) <> "@" <> item_datetime_value(item) %>
                   <% notion_page_id_for_row = Map.get(@page_ids_map || %{}, trade_title) %>
                   <div id={"tabs-" <> row_id} phx-hook="DetailTabs">
-                    <%!-- Combined draft quick-apply bar --%>
-                    <div :if={@combined_drafts != [] and @on_apply_combined_draft_event} class="flex flex-wrap items-center gap-1.5 px-4 py-2 bg-sky-50/60 border-b border-sky-100">
-                      <span class="text-[10px] text-sky-700 font-semibold uppercase tracking-wide mr-0.5">Combined:</span>
-                      <%= for cd <- @combined_drafts do %>
-                        <% has_meta = not is_nil(cd.metadata_draft) %>
-                        <% has_writeup = not is_nil(cd.writeup_draft) %>
-                        <% parts = [if(has_meta, do: "M"), if(has_writeup, do: "W")] |> Enum.reject(&is_nil/1) |> Enum.join("+") %>
-                        <button
-                          type="button"
-                          phx-click={@on_apply_combined_draft_event}
-                          phx-value-index={idx}
-                          phx-value-draft-id={cd.id}
-                          class="px-2.5 py-1 text-xs font-medium rounded-md bg-sky-100 text-sky-700 hover:bg-sky-200 transition-colors"
-                          title={"#{cd.name}: #{if(has_meta, do: "metadata V#{cd.metadata_draft.metadata_version}", else: "no metadata")} + #{if(has_writeup, do: "#{length(cd.writeup_draft.blocks || [])} writeup blocks", else: "no writeup")}"}
-                        >
-                          {cd.name} <span class="text-[10px] text-sky-500 ml-0.5">({parts})</span>
-                        </button>
-                        <button
-                          :if={@on_apply_to_placeholder_event && cd.notion_page_id && is_nil(cd.applied_at)}
-                          type="button"
-                          phx-click={@on_apply_to_placeholder_event}
-                          phx-value-index={idx}
-                          phx-value-draft-id={cd.id}
-                          class="px-2 py-1 text-[10px] font-medium rounded-md bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors border border-blue-200"
-                          title={"Apply \"#{cd.name}\" to Notion placeholder page"}
-                        >
-                          → Notion
-                        </button>
-                        <span
-                          :if={cd.applied_at}
-                          class="px-2 py-1 text-[10px] font-medium rounded-md bg-green-100 text-green-700 border border-green-200"
-                          title={"Applied on #{Calendar.strftime(cd.applied_at, "%Y-%m-%d %H:%M")}"}
-                        >
-                          ✓ Applied
+                    <%!-- Combined draft bind/push bar --%>
+                    <% bound_draft = Map.get(@bound_drafts_map, Map.get(item, :id)) %>
+                    <div :if={@combined_drafts != [] and @on_bind_combined_draft_event} class="flex flex-wrap items-center gap-1.5 px-4 py-2 bg-sky-50/60 border-b border-sky-100">
+                      <%= if bound_draft do %>
+                        <%!-- Bound state: show bound draft info + unbind/push controls --%>
+                        <span class="text-[10px] text-sky-700 font-semibold uppercase tracking-wide mr-0.5">Bound:</span>
+                        <span class="px-2.5 py-1 text-xs font-medium rounded-md bg-sky-200 text-sky-800">
+                          {bound_draft.name}
                         </span>
+                        <%= if bound_draft.applied_at do %>
+                          <span
+                            class="px-2 py-1 text-[10px] font-medium rounded-md bg-green-100 text-green-700 border border-green-200"
+                            title={"Pushed on #{Calendar.strftime(bound_draft.applied_at, "%Y-%m-%d %H:%M")}"}
+                          >
+                            ✓ Pushed
+                          </span>
+                        <% else %>
+                          <button
+                            :if={@on_unbind_combined_draft_event}
+                            type="button"
+                            phx-click={@on_unbind_combined_draft_event}
+                            phx-value-index={idx}
+                            phx-value-draft-id={bound_draft.id}
+                            class="px-2 py-1 text-[10px] font-medium rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors border border-slate-200"
+                            title="Unbind draft (does not revert trade data)"
+                          >
+                            Unbind
+                          </button>
+                          <button
+                            :if={@on_push_to_notion_event && bound_draft.notion_page_id}
+                            type="button"
+                            phx-click={@on_push_to_notion_event}
+                            phx-value-index={idx}
+                            phx-value-draft-id={bound_draft.id}
+                            class="px-2 py-1 text-[10px] font-medium rounded-md bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors border border-blue-200"
+                            title={"Push trade data to Notion placeholder page"}
+                          >
+                            ↑ Notion
+                          </button>
+                          <button
+                            :if={is_nil(bound_draft.notion_page_id) and @on_create_placeholder_event}
+                            type="button"
+                            phx-click={@on_create_placeholder_event}
+                            phx-value-draft-id={bound_draft.id}
+                            class="px-2 py-1 text-[10px] font-medium rounded-md bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors border border-amber-200"
+                            title="Create a Notion placeholder page for this draft"
+                          >
+                            + Placeholder
+                          </button>
+                          <span
+                            :if={is_nil(bound_draft.notion_page_id) and is_nil(@on_create_placeholder_event)}
+                            class="text-[10px] text-amber-600"
+                            title="Create a placeholder from Trade Drafts first"
+                          >
+                            (no placeholder)
+                          </span>
+                        <% end %>
+                      <% else %>
+                        <%!-- Unbound state: show available drafts to bind --%>
+                        <span class="text-[10px] text-sky-700 font-semibold uppercase tracking-wide mr-0.5">Bind:</span>
+                        <% available_drafts = Enum.filter(@combined_drafts, fn cd -> is_nil(cd.trade_id) and is_nil(cd.applied_at) end) %>
+                        <%= if available_drafts == [] do %>
+                          <span class="text-[10px] text-slate-400 italic">No available drafts</span>
+                        <% else %>
+                          <%= for cd <- available_drafts do %>
+                            <% has_meta = not is_nil(cd.metadata_draft) %>
+                            <% has_writeup = not is_nil(cd.writeup_draft) %>
+                            <% parts = [if(has_meta, do: "M"), if(has_writeup, do: "W")] |> Enum.reject(&is_nil/1) |> Enum.join("+") %>
+                            <button
+                              type="button"
+                              phx-click={@on_bind_combined_draft_event}
+                              phx-value-index={idx}
+                              phx-value-draft-id={cd.id}
+                              class="px-2.5 py-1 text-xs font-medium rounded-md bg-sky-100 text-sky-700 hover:bg-sky-200 transition-colors"
+                              title={"Bind \"#{cd.name}\": #{if(has_meta, do: "metadata V#{cd.metadata_draft.metadata_version}", else: "no metadata")} + #{if(has_writeup, do: "#{length(cd.writeup_draft.blocks || [])} writeup blocks", else: "no writeup")}"}
+                            >
+                              {cd.name} <span class="text-[10px] text-sky-500 ml-0.5">({parts})</span>
+                            </button>
+                          <% end %>
+                        <% end %>
                       <% end %>
                     </div>
                     <%!-- Tab bar --%>

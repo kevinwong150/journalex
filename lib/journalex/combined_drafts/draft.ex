@@ -17,12 +17,13 @@ defmodule Journalex.CombinedDrafts.Draft do
 
     belongs_to :metadata_draft, Journalex.MetadataDrafts.Draft
     belongs_to :writeup_draft, Journalex.WriteupDrafts.Draft
+    belongs_to :trade, Journalex.Trades.Trade
 
     timestamps(type: :utc_datetime_usec)
   end
 
   @required ~w(name)a
-  @optional ~w(metadata_draft_id writeup_draft_id notion_page_id applied_at)a
+  @optional ~w(metadata_draft_id writeup_draft_id notion_page_id applied_at trade_id)a
 
   def changeset(draft, attrs) do
     draft
@@ -35,6 +36,11 @@ defmodule Journalex.CombinedDrafts.Draft do
     )
     |> foreign_key_constraint(:metadata_draft_id)
     |> foreign_key_constraint(:writeup_draft_id)
+    |> foreign_key_constraint(:trade_id)
+    |> unique_constraint(:trade_id,
+      name: :combined_drafts_trade_id_index,
+      message: "another draft is already bound to this trade"
+    )
     |> unique_constraint(:notion_page_id,
       name: :combined_drafts_notion_page_id_index,
       message: "another draft is already linked to this Notion page"

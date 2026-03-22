@@ -296,4 +296,31 @@ defmodule JournalexWeb.ActivityStatementUploadResultLiveTest do
       assert is_binary(html)
     end
   end
+
+  # ── Regression: KeyError on item.id for CSV-parsed rows ─────────────
+
+  describe "page renders without KeyError for plain-map trade rows" do
+    setup do
+      stage_uploads([single_ticker_csv()])
+      :ok
+    end
+
+    test "mounts without error (aggregated_trade_list handles rows without :id)", %{conn: conn} do
+      # Regression for KeyError: key :id not found in plain CSV-parsed maps passed to
+      # AggregatedTradeList via ActivityStatementSummary. Map.get(item, :id) must be used
+      # instead of item.id to handle both Trade structs and plain maps.
+      {:ok, _view, html} = live(conn, ~p"/activity_statement/upload/result")
+
+      assert html =~ "COIN"
+      refute html =~ "KeyError"
+    end
+
+    test "flat aggregated list section renders for CSV trades", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/activity_statement/upload/result")
+
+      # The flat list is rendered by AggregatedTradeList with plain maps — must not crash
+      assert html =~ "COIN"
+      assert is_binary(html)
+    end
+  end
 end

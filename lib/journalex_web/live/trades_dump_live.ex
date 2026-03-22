@@ -104,8 +104,9 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:drafts, MetadataDrafts.list_drafts())
       # Writeup drafts for applying block content to trades
       |> assign(:writeup_drafts, WriteupDrafts.list_drafts())
-      # Combined drafts for one-click metadata + writeup apply
+      # Combined drafts for bind + push workflow
       |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+      |> assign(:bound_drafts_map, build_bound_drafts_map(CombinedDrafts.list_drafts()))
       # Writeup detail modal state
       |> assign(:writeup_modal_trade, nil)
 
@@ -675,7 +676,7 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   @impl true
-  def handle_event("apply_combined_draft", %{"index" => idx_str, "draft-id" => draft_id_str}, socket) do
+  def handle_event("bind_combined_draft", %{"index" => idx_str, "draft-id" => draft_id_str}, socket) do
     {idx, _} = Integer.parse(idx_str)
     {draft_id, _} = Integer.parse(draft_id_str)
 
@@ -688,6 +689,18 @@ defmodule JournalexWeb.TradesDumpLive do
 
       is_nil(combined) ->
         {:noreply, put_toast(socket, :error, "Combined draft not found")}
+
+      not is_nil(combined.trade_id) ->
+        bound_trade = combined.trade
+        bound_title = if bound_trade, do: "#{bound_trade.ticker}@#{DateTime.to_iso8601(bound_trade.datetime)}", else: "another trade"
+        {:noreply, put_toast(socket, :error, "Draft \"#{combined.name}\" is already bound to #{bound_title}")}
+
+      not is_nil(combined.applied_at) ->
+        {:noreply, put_toast(socket, :error, "Draft \"#{combined.name}\" was already pushed to Notion")}
+
+      not is_nil(Map.get(socket.assigns.bound_drafts_map, trade.id)) ->
+        existing = Map.get(socket.assigns.bound_drafts_map, trade.id)
+        {:noreply, put_toast(socket, :error, "Trade already has bound draft \"#{existing.name}\"")}
 
       true ->
         md = combined.metadata_draft
@@ -696,47 +709,51 @@ defmodule JournalexWeb.TradesDumpLive do
         # Build update attrs from whichever references exist
         attrs =
           %{}
-          |> then(fn attrs ->
+          |> then(fn a ->
             if md do
               metadata_attrs = preserve_readonly_fields(md.metadata || %{}, trade.metadata)
-              Map.merge(attrs, %{metadata: metadata_attrs, metadata_version: md.metadata_version})
+              Map.merge(a, %{metadata: metadata_attrs, metadata_version: md.metadata_version})
             else
-              attrs
+              a
             end
           end)
-          |> then(fn attrs ->
-            if wd, do: Map.put(attrs, :writeup, wd.blocks || []), else: attrs
+          |> then(fn a ->
+            if wd, do: Map.put(a, :writeup, wd.blocks || []), else: a
           end)
 
-        if attrs == %{} do
-          {:noreply, put_toast(socket, :info, "Combined draft \"#{combined.name}\" has no references — nothing applied")}
+        # Copy data to trade, then bind
+        with {:ok, updated_trade} <- (if attrs == %{}, do: {:ok, trade}, else: Journalex.Trades.update_trade(trade, attrs)),
+             {:ok, bound_draft} <- CombinedDrafts.bind_to_trade(combined, trade.id) do
+          trades =
+            socket.assigns.trades
+            |> Enum.with_index()
+            |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+          parts =
+            [if(md, do: "metadata V#{md.metadata_version}"), if(wd, do: "#{length(wd.blocks || [])} writeup blocks")]
+            |> Enum.reject(&is_nil/1)
+            |> Enum.join(" + ")
+
+          suffix = if parts != "", do: " (#{parts})", else: ""
+
+          {:noreply,
+           socket
+           |> assign(:trades, trades)
+           |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+           |> assign(:bound_drafts_map, Map.put(socket.assigns.bound_drafts_map, trade.id, bound_draft))
+           |> put_toast(:info, "Bound \"#{combined.name}\" to #{trade.ticker}@#{DateTime.to_iso8601(trade.datetime)}#{suffix}")}
         else
-          case Journalex.Trades.update_trade(trade, attrs) do
-            {:ok, updated_trade} ->
-              trades =
-                socket.assigns.trades
-                |> Enum.with_index()
-                |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+          {:error, %Ecto.Changeset{} = cs} ->
+            {:noreply, put_toast(socket, :error, "Failed to bind: #{inspect(cs.errors)}")}
 
-              parts =
-                [if(md, do: "metadata V#{md.metadata_version}"), if(wd, do: "#{length(wd.blocks || [])} writeup blocks")]
-                |> Enum.reject(&is_nil/1)
-                |> Enum.join(" + ")
-
-              {:noreply,
-               socket
-               |> assign(:trades, trades)
-               |> put_toast(:info, "Applied \"#{combined.name}\" (#{parts})")}
-
-            {:error, changeset} ->
-              {:noreply, put_toast(socket, :error, "Failed to apply combined draft: #{inspect(changeset.errors)}")}
-          end
+          {:error, reason} ->
+            {:noreply, put_toast(socket, :error, "Failed to bind: #{inspect(reason)}")}
         end
     end
   end
 
   @impl true
-  def handle_event("apply_to_placeholder", %{"index" => idx_str, "draft-id" => draft_id_str}, socket) do
+  def handle_event("unbind_combined_draft", %{"index" => idx_str, "draft-id" => draft_id_str}, socket) do
     {idx, _} = Integer.parse(idx_str)
     {draft_id, _} = Integer.parse(draft_id_str)
 
@@ -750,93 +767,244 @@ defmodule JournalexWeb.TradesDumpLive do
       is_nil(combined) ->
         {:noreply, put_toast(socket, :error, "Combined draft not found")}
 
+      not is_nil(combined.applied_at) ->
+        {:noreply, put_toast(socket, :error, "Cannot unbind — already pushed to Notion")}
+
+      true ->
+        case CombinedDrafts.unbind_from_trade(combined) do
+          {:ok, _unbound_draft} ->
+            {:noreply,
+             socket
+             |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+             |> assign(:bound_drafts_map, Map.delete(socket.assigns.bound_drafts_map, trade.id))
+             |> put_toast(:info, "Unbound \"#{combined.name}\"")}
+
+          {:error, :already_pushed} ->
+            {:noreply, put_toast(socket, :error, "Cannot unbind — already pushed to Notion")}
+
+          {:error, reason} ->
+            {:noreply, put_toast(socket, :error, "Failed to unbind: #{inspect(reason)}")}
+        end
+    end
+  end
+
+  @impl true
+  def handle_event("push_to_notion", %{"index" => idx_str, "draft-id" => draft_id_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    {draft_id, _} = Integer.parse(draft_id_str)
+
+    trade = Enum.at(socket.assigns.trades, idx)
+    combined = CombinedDrafts.get_draft(draft_id)
+
+    cond do
+      is_nil(trade) ->
+        {:noreply, put_toast(socket, :error, "Trade not found")}
+
+      is_nil(combined) ->
+        {:noreply, put_toast(socket, :error, "Combined draft not found")}
+
+      combined.trade_id != trade.id ->
+        {:noreply, put_toast(socket, :error, "Draft is not bound to this trade")}
+
       is_nil(combined.notion_page_id) ->
         {:noreply, put_toast(socket, :error, "No placeholder — create one from Trade Drafts first")}
 
       not is_nil(combined.applied_at) ->
-        {:noreply, put_toast(socket, :error, "Already applied on #{Calendar.strftime(combined.applied_at, "%Y-%m-%d %H:%M")}")}
+        {:noreply, put_toast(socket, :error, "Already pushed on #{Calendar.strftime(combined.applied_at, "%Y-%m-%d %H:%M")}")}
+
+      socket.assigns.ticker_id_cache == %{} ->
+        {:noreply, put_toast(socket, :error, "Run \"Check Notion\" first to populate relation caches")}
 
       true ->
-        page_id = combined.notion_page_id
-        ticker = trade.ticker || trade.symbol
-        date_key = trade_date_key(trade)
-        ticker_page_id = Map.get(socket.assigns.ticker_id_cache, ticker)
-        date_page_id = Map.get(socket.assigns.date_id_cache, date_key)
+        push_single_to_notion(socket, idx, trade, combined)
+    end
+  end
 
-        # Build the row with metadata from draft if available
-        md = combined.metadata_draft
-        wd = combined.writeup_draft
+  @impl true
+  def handle_event("create_placeholder_for_draft", %{"draft-id" => draft_id_str}, socket) do
+    {draft_id, _} = Integer.parse(draft_id_str)
+    combined = CombinedDrafts.get_draft(draft_id)
 
-        row_with_draft =
-          trade
-          |> then(fn r ->
-            if md do
-              metadata_attrs = preserve_readonly_fields(md.metadata || %{}, trade.metadata)
-              %{r | metadata: metadata_attrs, metadata_version: md.metadata_version}
-            else
-              r
-            end
-          end)
+    cond do
+      is_nil(combined) ->
+        {:noreply, put_toast(socket, :error, "Combined draft not found")}
 
-        # Update Notion page properties (title, datetime, ticker, metadata, relations)
-        case Notion.update_trade_page(page_id, row_with_draft,
-               ticker_page_id: ticker_page_id,
-               date_page_id: date_page_id
-             ) do
-          {:ok, _} ->
-            # Append writeup blocks if the draft has them
-            writeup_result =
-              if wd && is_list(wd.blocks) && wd.blocks != [] do
-                notion_blocks = Journalex.Notion.BlockBuilder.to_notion_blocks(wd.blocks)
-                NotionClient.append_block_children(page_id, notion_blocks)
-              else
-                {:ok, :no_writeup}
-              end
+      not is_nil(combined.notion_page_id) ->
+        {:noreply, put_toast(socket, :error, "Placeholder already exists")}
 
-            case writeup_result do
+      true ->
+        blocks = CombinedDrafts.placeholder_blocks()
+        version = if combined.metadata_draft, do: combined.metadata_draft.metadata_version, else: socket.assigns.global_metadata_version
+
+        case Notion.create_placeholder_page(combined.name, blocks, metadata_version: version) do
+          {:ok, page} ->
+            page_id = Map.get(page, "id")
+
+            case CombinedDrafts.set_notion_page_id(combined, page_id) do
               {:ok, _} ->
-                # Mark applied to prevent double-apply
-                CombinedDrafts.mark_applied(combined)
-
-                # Also apply locally to the trade
-                local_attrs =
-                  %{}
-                  |> then(fn attrs ->
-                    if md do
-                      metadata_attrs = preserve_readonly_fields(md.metadata || %{}, trade.metadata)
-                      Map.merge(attrs, %{metadata: metadata_attrs, metadata_version: md.metadata_version})
-                    else
-                      attrs
-                    end
-                  end)
-                  |> then(fn attrs ->
-                    if wd, do: Map.put(attrs, :writeup, wd.blocks || []), else: attrs
-                  end)
-
-                trades =
-                  case Journalex.Trades.update_trade(trade, local_attrs) do
-                    {:ok, updated} ->
-                      socket.assigns.trades
-                      |> Enum.with_index()
-                      |> Enum.map(fn {t, i} -> if i == idx, do: updated, else: t end)
-
-                    {:error, _} ->
-                      socket.assigns.trades
-                  end
+                refreshed_drafts = CombinedDrafts.list_drafts()
+                notion_url = "https://notion.so/" <> String.replace(page_id, "-", "")
 
                 {:noreply,
                  socket
-                 |> assign(:trades, trades)
-                 |> assign(:combined_drafts, CombinedDrafts.list_drafts())
-                 |> put_toast(:info, "Applied \"#{combined.name}\" to Notion placeholder")}
+                 |> assign(:combined_drafts, refreshed_drafts)
+                 |> assign(:bound_drafts_map, build_bound_drafts_map(refreshed_drafts))
+                 |> put_toast(:info, "Placeholder created — #{notion_url}")}
 
-              {:error, reason} ->
-                {:noreply, put_toast(socket, :error, "Properties updated but writeup failed: #{inspect(reason)}")}
+              {:error, _} ->
+                {:noreply, put_toast(socket, :error, "Page created but failed to save link")}
             end
 
           {:error, reason} ->
-            {:noreply, put_toast(socket, :error, "Failed to apply to placeholder: #{inspect(reason)}")}
+            {:noreply, put_toast(socket, :error, "Failed to create placeholder: #{inspect(reason)}")}
         end
+    end
+  end
+
+  @impl true
+  def handle_event("bulk_push_to_notion", _params, socket) do
+    if socket.assigns.ticker_id_cache == %{} do
+      {:noreply, put_toast(socket, :error, "Run \"Check Notion\" first to populate relation caches")}
+    else
+      # Collect eligible trades: selected, have bound draft with notion_page_id, not yet pushed
+      eligible =
+        socket.assigns.selected_idx
+        |> MapSet.to_list()
+        |> Enum.sort()
+        |> Enum.map(fn idx ->
+          trade = Enum.at(socket.assigns.trades, idx)
+          draft = if trade, do: Map.get(socket.assigns.bound_drafts_map, trade.id)
+
+          cond do
+            is_nil(trade) -> nil
+            is_nil(draft) -> nil
+            is_nil(draft.notion_page_id) -> nil
+            not is_nil(draft.applied_at) -> nil
+            true -> {idx, trade, draft}
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
+
+      if eligible == [] do
+        {:noreply, put_toast(socket, :info, "No eligible trades to push (need bound draft with placeholder, not yet pushed)")}
+      else
+        {socket, pushed, skipped} =
+          Enum.reduce(eligible, {socket, 0, 0}, fn {idx, trade, draft}, {sock, ok, skip} ->
+            # Re-fetch draft to get latest state
+            fresh_draft = CombinedDrafts.get_draft(draft.id)
+
+            if fresh_draft && is_nil(fresh_draft.applied_at) do
+              case push_single_to_notion_quiet(sock, idx, trade, fresh_draft) do
+                {:ok, updated_socket} -> {updated_socket, ok + 1, skip}
+                {:error, updated_socket} -> {updated_socket, ok, skip + 1}
+              end
+            else
+              {sock, ok, skip + 1}
+            end
+          end)
+
+        msg =
+          cond do
+            skipped == 0 -> "Pushed #{pushed} trade(s) to Notion"
+            pushed == 0 -> "#{skipped} trade(s) skipped (missing relations or errors)"
+            true -> "Pushed #{pushed} trade(s) to Notion. #{skipped} skipped."
+          end
+
+        {:noreply,
+         socket
+         |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+         |> assign(:bound_drafts_map, build_bound_drafts_map(CombinedDrafts.list_drafts()))
+         |> put_toast(:info, msg)}
+      end
+    end
+  end
+
+  # Push a single bound draft to Notion. Returns {:noreply, socket} for use in single-push handler.
+  defp push_single_to_notion(socket, _idx, trade, combined) do
+    page_id = combined.notion_page_id
+    ticker = trade.ticker || trade.symbol
+    date_key = trade_date_key(trade)
+    ticker_page_id = Map.get(socket.assigns.ticker_id_cache, ticker)
+    date_page_id = Map.get(socket.assigns.date_id_cache, date_key)
+
+    missing_relations = build_missing_relations_message(ticker, ticker_page_id, date_key, date_page_id)
+
+    if missing_relations do
+      {:noreply, put_toast(socket, :error, missing_relations)}
+    else
+      # Push reads from trade (source of truth after bind)
+      case Notion.update_trade_page(page_id, trade,
+             ticker_page_id: ticker_page_id,
+             date_page_id: date_page_id
+           ) do
+        {:ok, _} ->
+          writeup_result =
+            if is_list(trade.writeup) && trade.writeup != [] do
+              notion_blocks = Journalex.Notion.BlockBuilder.to_notion_blocks(trade.writeup)
+              NotionClient.append_block_children(page_id, notion_blocks)
+            else
+              {:ok, :no_writeup}
+            end
+
+          case writeup_result do
+            {:ok, _} ->
+              CombinedDrafts.mark_applied(combined)
+              refreshed_drafts = CombinedDrafts.list_drafts()
+
+              {:noreply,
+               socket
+               |> assign(:combined_drafts, refreshed_drafts)
+               |> assign(:bound_drafts_map, build_bound_drafts_map(refreshed_drafts))
+               |> put_toast(:info, "Pushed \"#{combined.name}\" to Notion")}
+
+            {:error, reason} ->
+              {:noreply, put_toast(socket, :error, "Properties updated but writeup failed: #{inspect(reason)}")}
+          end
+
+        {:error, reason} ->
+          {:noreply, put_toast(socket, :error, "Failed to push to Notion: #{inspect(reason)}")}
+      end
+    end
+  end
+
+  # Silent version for bulk push — returns {:ok, socket} or {:error, socket} without toasts.
+  defp push_single_to_notion_quiet(socket, _idx, trade, combined) do
+    page_id = combined.notion_page_id
+    ticker = trade.ticker || trade.symbol
+    date_key = trade_date_key(trade)
+    ticker_page_id = Map.get(socket.assigns.ticker_id_cache, ticker)
+    date_page_id = Map.get(socket.assigns.date_id_cache, date_key)
+
+    missing_relations = build_missing_relations_message(ticker, ticker_page_id, date_key, date_page_id)
+
+    if missing_relations do
+      {:error, socket}
+    else
+      case Notion.update_trade_page(page_id, trade,
+             ticker_page_id: ticker_page_id,
+             date_page_id: date_page_id
+           ) do
+        {:ok, _} ->
+          writeup_result =
+            if is_list(trade.writeup) && trade.writeup != [] do
+              notion_blocks = Journalex.Notion.BlockBuilder.to_notion_blocks(trade.writeup)
+              NotionClient.append_block_children(page_id, notion_blocks)
+            else
+              {:ok, :no_writeup}
+            end
+
+          case writeup_result do
+            {:ok, _} ->
+              CombinedDrafts.mark_applied(combined)
+              {:ok, socket}
+
+            {:error, _} ->
+              {:error, socket}
+          end
+
+        {:error, _} ->
+          {:error, socket}
+      end
     end
   end
 
@@ -1693,6 +1861,14 @@ defmodule JournalexWeb.TradesDumpLive do
               Sync Writeup
             </button>
             <button
+              phx-click="bulk_push_to_notion"
+              class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"
+              disabled={MapSet.size(@selected_idx) == 0 or @dump_in_progress? or @check_in_progress?}
+              phx-disable-with="Pushing..."
+            >
+              Push Bound
+            </button>
+            <button
               phx-click="insert_missing_notion"
               class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
               disabled={MapSet.size(@selected_idx) == 0 or @dump_in_progress? or @check_in_progress?}
@@ -1874,8 +2050,11 @@ defmodule JournalexWeb.TradesDumpLive do
         writeup_drafts={@writeup_drafts}
         on_apply_writeup_draft_event="apply_writeup_draft"
         combined_drafts={@combined_drafts}
-        on_apply_combined_draft_event="apply_combined_draft"
-        on_apply_to_placeholder_event="apply_to_placeholder"
+        bound_drafts_map={@bound_drafts_map}
+        on_bind_combined_draft_event="bind_combined_draft"
+        on_unbind_combined_draft_event="unbind_combined_draft"
+        on_push_to_notion_event="push_to_notion"
+        on_create_placeholder_event="create_placeholder_for_draft"
         on_clear_writeup_event="clear_writeup"
         on_sync_writeup_event="sync_writeup_from_notion"
         on_open_writeup_modal_event="open_writeup_modal"
@@ -2170,4 +2349,11 @@ defmodule JournalexWeb.TradesDumpLive do
     end)
   end
   defp preserve_readonly_fields(attrs, _), do: attrs
+
+  # Build %{trade_id => draft} map from list of combined drafts for quick lookup
+  defp build_bound_drafts_map(drafts) do
+    drafts
+    |> Enum.filter(& &1.trade_id)
+    |> Map.new(& {&1.trade_id, &1})
+  end
 end

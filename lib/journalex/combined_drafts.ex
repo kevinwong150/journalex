@@ -24,10 +24,12 @@ defmodule Journalex.CombinedDrafts do
   @doc """
   List all combined drafts with preloaded associations, ordered by creation time ascending.
   """
+  @preloads [:metadata_draft, :writeup_draft, :trade]
+
   def list_drafts do
     from(d in Draft,
       order_by: [asc: d.inserted_at],
-      preload: [:metadata_draft, :writeup_draft]
+      preload: ^@preloads
     )
     |> Repo.all()
   end
@@ -38,7 +40,7 @@ defmodule Journalex.CombinedDrafts do
   def get_draft(id) do
     Draft
     |> Repo.get(id)
-    |> Repo.preload([:metadata_draft, :writeup_draft])
+    |> Repo.preload(@preloads)
   end
 
   @doc """
@@ -47,7 +49,7 @@ defmodule Journalex.CombinedDrafts do
   def get_draft!(id) do
     Draft
     |> Repo.get!(id)
-    |> Repo.preload([:metadata_draft, :writeup_draft])
+    |> Repo.preload(@preloads)
   end
 
   @doc """
@@ -58,7 +60,7 @@ defmodule Journalex.CombinedDrafts do
     |> Draft.changeset(attrs)
     |> Repo.insert()
     |> case do
-      {:ok, draft} -> {:ok, Repo.preload(draft, [:metadata_draft, :writeup_draft])}
+      {:ok, draft} -> {:ok, Repo.preload(draft, @preloads)}
       error -> error
     end
   end
@@ -71,7 +73,7 @@ defmodule Journalex.CombinedDrafts do
     |> Draft.changeset(attrs)
     |> Repo.update()
     |> case do
-      {:ok, draft} -> {:ok, Repo.preload(draft, [:metadata_draft, :writeup_draft], force: true)}
+      {:ok, draft} -> {:ok, Repo.preload(draft, @preloads, force: true)}
       error -> error
     end
   end
@@ -117,5 +119,52 @@ defmodule Journalex.CombinedDrafts do
     draft
     |> Draft.changeset(%{applied_at: DateTime.utc_now()})
     |> Repo.update()
+  end
+
+  @doc """
+  Bind a combined draft to a trade. Fails if the draft has already been pushed (applied_at set).
+  """
+  def bind_to_trade(%Draft{} = draft, trade_id) when is_integer(trade_id) do
+    if draft.applied_at do
+      {:error, :already_pushed}
+    else
+      draft
+      |> Draft.changeset(%{trade_id: trade_id})
+      |> Repo.update()
+      |> case do
+        {:ok, draft} -> {:ok, Repo.preload(draft, @preloads, force: true)}
+        error -> error
+      end
+    end
+  end
+
+  @doc """
+  Unbind a combined draft from its trade. Fails if the draft has been pushed (applied_at set).
+  Does NOT revert the trade's metadata/writeup data.
+  """
+  def unbind_from_trade(%Draft{} = draft) do
+    if draft.applied_at do
+      {:error, :already_pushed}
+    else
+      draft
+      |> Draft.changeset(%{trade_id: nil})
+      |> Repo.update()
+      |> case do
+        {:ok, draft} -> {:ok, Repo.preload(draft, @preloads, force: true)}
+        error -> error
+      end
+    end
+  end
+
+  @doc """
+  Find the combined draft bound to a given trade. Returns nil if none.
+  """
+  def draft_for_trade(trade_id) when is_integer(trade_id) do
+    from(d in Draft, where: d.trade_id == ^trade_id)
+    |> Repo.one()
+    |> case do
+      nil -> nil
+      draft -> Repo.preload(draft, @preloads)
+    end
   end
 end

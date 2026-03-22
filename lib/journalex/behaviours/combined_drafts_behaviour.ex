@@ -10,4 +10,7 @@ defmodule Journalex.CombinedDraftsBehaviour do
   @callback create_draft(map()) :: {:ok, %Draft{}} | {:error, Ecto.Changeset.t()}
   @callback update_draft(%Draft{}, map()) :: {:ok, %Draft{}} | {:error, Ecto.Changeset.t()}
   @callback delete_draft(%Draft{}) :: {:ok, %Draft{}} | {:error, Ecto.Changeset.t()}
+  @callback bind_to_trade(%Draft{}, integer()) :: {:ok, %Draft{}} | {:error, :already_pushed} | {:error, Ecto.Changeset.t()}
+  @callback unbind_from_trade(%Draft{}) :: {:ok, %Draft{}} | {:error, :already_pushed} | {:error, Ecto.Changeset.t()}
+  @callback draft_for_trade(integer()) :: %Draft{} | nil
 end
