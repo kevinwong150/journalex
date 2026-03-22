@@ -342,41 +342,40 @@ defmodule JournalexWeb.TradesDumpLive do
 
   @impl true
   def handle_event("cancel_dump", _params, socket) do
-    if socket.assigns.dump_in_progress? do
-      if socket.assigns.dump_timer_ref, do: Process.cancel_timer(socket.assigns.dump_timer_ref)
+    {:noreply, do_cancel_dump(socket)}
+  end
 
-      now = System.monotonic_time(:millisecond)
+  @impl true
+  def handle_event("cancel_check", _params, socket) do
+    {:noreply, do_cancel_check(socket)}
+  end
 
-      socket =
-        socket
-        |> assign(:dump_cancel_requested?, true)
-        |> assign(:dump_in_progress?, false)
-        |> assign(:dump_queue, [])
-        |> assign(:dump_current, nil)
-        |> assign(:dump_timer_ref, nil)
-        |> assign(:dump_finished_at_mono, now)
-        |> assign(
-          :dump_elapsed_ms,
-          if socket.assigns.dump_started_at_mono do
-            now - socket.assigns.dump_started_at_mono
-          else
-            0
-          end
-        )
-        |> assign(
-          :dump_report_text,
-          build_dump_report(
-            socket.assigns.dump_results,
-            socket.assigns.dump_total,
-            socket.assigns.dump_processed,
-            0
-          )
-        )
+  @impl true
+  def handle_event("cancel_update", _params, socket) do
+    {:noreply, do_cancel_update(socket)}
+  end
 
-      {:noreply, socket}
-    else
-      {:noreply, socket}
-    end
+  @impl true
+  def handle_event("cancel_sync", _params, socket) do
+    {:noreply, do_cancel_sync(socket)}
+  end
+
+  @impl true
+  def handle_event("cancel_wsync", _params, socket) do
+    {:noreply, do_cancel_wsync(socket)}
+  end
+
+  @impl true
+  def handle_event("cancel_all", _params, socket) do
+    socket =
+      socket
+      |> do_cancel_check()
+      |> do_cancel_dump()
+      |> do_cancel_update()
+      |> do_cancel_sync()
+      |> do_cancel_wsync()
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -1725,51 +1724,21 @@ defmodule JournalexWeb.TradesDumpLive do
     ~H"""
     <div class="space-y-4">
       <div class="space-y-2">
+        <%!-- A. Header Row: Title + Version pills + Status badges --%>
         <div class="flex items-center justify-between gap-3 flex-wrap">
-          <h1 class="text-xl font-semibold">Trades Dump</h1>
-
-          <div class="flex items-center gap-2 flex-wrap">
-            <button
-              phx-click="toggle_select_all"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white text-gray-800 hover:bg-gray-50"
-            >
-              {if @all_selected?, do: "Clear All", else: "Select All"}
-            </button>
-
-            <button
-              phx-click="clear_row_statuses"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-red-300 text-sm bg-white text-red-600 hover:bg-red-50"
-            >
-              Clear Highlights
-            </button>
-
-            <button
-              phx-click="toggle_hide_exists"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white text-gray-800 hover:bg-gray-50"
-            >
-              {if @hide_exists?, do: "Show All", else: "Hide Existing"}
-            </button>
-          </div>
-        </div>
-
-        <!-- Global Metadata Version Selector -->
-        <div class="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-          <div class="flex items-center justify-between">
-            <div>
-              <h3 class="text-sm font-semibold text-gray-700">Metadata Form Version</h3>
-              <p class="text-xs text-gray-500 mt-1">Select which version form to display for all trades</p>
-            </div>
-            <div class="flex items-center gap-2">
+          <div class="flex items-center gap-3">
+            <h1 class="text-xl font-semibold">Trades Dump</h1>
+            <div class="flex items-center rounded-md border border-gray-200 overflow-hidden">
               <%= for version <- @supported_versions do %>
                 <button
                   type="button"
                   phx-click="change_global_version"
                   phx-value-version={version}
                   class={[
-                    "px-4 py-2 text-sm font-medium rounded-md transition-colors",
+                    "px-3 py-1 text-xs font-medium transition-colors",
                     if(@global_metadata_version == version,
-                      do: "bg-blue-600 text-white shadow-sm",
-                      else: "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      do: "bg-blue-600 text-white",
+                      else: "bg-white text-gray-600 hover:bg-gray-50"
                     )
                   ]}
                 >
@@ -1778,9 +1747,7 @@ defmodule JournalexWeb.TradesDumpLive do
               <% end %>
             </div>
           </div>
-        </div>
 
-        <div class="flex items-center justify-between gap-3 flex-wrap">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
               Selected: {MapSet.size(@selected_idx)}
@@ -1818,11 +1785,36 @@ defmodule JournalexWeb.TradesDumpLive do
               Notion: Checking…
             </span>
           </div>
+        </div>
 
+        <%!-- B. Toolbar Card: grouped action buttons in 2 rows --%>
+        <div class="bg-white rounded-lg border border-gray-200 px-4 py-3 shadow-sm space-y-2">
+          <%!-- Row 1: View & Notion --%>
           <div class="flex items-center gap-2 flex-wrap">
             <button
+              phx-click="toggle_select_all"
+              class="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 text-sm bg-white text-gray-800 hover:bg-gray-50"
+            >
+              {if @all_selected?, do: "Clear All", else: "Select All"}
+            </button>
+            <button
+              phx-click="clear_row_statuses"
+              class="inline-flex items-center px-3 py-1.5 rounded-md border border-red-300 text-sm bg-white text-red-600 hover:bg-red-50"
+            >
+              Clear Highlights
+            </button>
+            <button
+              phx-click="toggle_hide_exists"
+              class="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 text-sm bg-white text-gray-800 hover:bg-gray-50"
+            >
+              {if @hide_exists?, do: "Show All", else: "Hide Existing"}
+            </button>
+
+            <div class="w-px h-5 bg-gray-200 mx-1"></div>
+
+            <button
               phx-click="check_notion_connection"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm bg-white text-gray-800 hover:bg-gray-50"
+              class="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 text-sm bg-white text-gray-800 hover:bg-gray-50"
               phx-disable-with="Checking..."
               disabled={@dump_in_progress?}
             >
@@ -1830,15 +1822,20 @@ defmodule JournalexWeb.TradesDumpLive do
             </button>
             <button
               phx-click="check_notion"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              class="inline-flex items-center px-3 py-1.5 rounded-md border border-transparent text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
               disabled={MapSet.size(@selected_idx) == 0 or @dump_in_progress? or @check_in_progress?}
               phx-disable-with="Checking..."
             >
               Check Notion
             </button>
+            <span class="text-xs text-gray-400 ml-1">Bulk actions apply to selected rows</span>
+          </div>
+
+          <%!-- Row 2: Actions & Control --%>
+          <div class="flex items-center gap-2 flex-wrap">
             <button
               phx-click="update_all_selected"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+              class="inline-flex items-center px-3 py-1.5 rounded-md border border-transparent text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
               disabled={MapSet.size(@selected_idx) == 0 or @dump_in_progress? or @update_in_progress? or @check_in_progress?}
               phx-disable-with="Updating..."
             >
@@ -1846,7 +1843,7 @@ defmodule JournalexWeb.TradesDumpLive do
             </button>
             <button
               phx-click="bulk_sync_from_notion"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
+              class="inline-flex items-center px-3 py-1.5 rounded-md border border-transparent text-sm bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
               disabled={MapSet.size(@selected_idx) == 0 or @dump_in_progress? or @update_in_progress? or @check_in_progress? or @sync_in_progress?}
               phx-disable-with="Starting..."
             >
@@ -1854,15 +1851,18 @@ defmodule JournalexWeb.TradesDumpLive do
             </button>
             <button
               phx-click="bulk_sync_writeup_from_notion"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50"
+              class="inline-flex items-center px-3 py-1.5 rounded-md border border-transparent text-sm bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50"
               disabled={MapSet.size(@selected_idx) == 0 or @dump_in_progress? or @update_in_progress? or @check_in_progress? or @wsync_in_progress?}
               phx-disable-with="Starting..."
             >
               Sync Writeup
             </button>
+
+            <div class="w-px h-5 bg-gray-200 mx-1"></div>
+
             <button
               phx-click="bulk_push_to_notion"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"
+              class="inline-flex items-center px-3 py-1.5 rounded-md border border-transparent text-sm bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"
               disabled={MapSet.size(@selected_idx) == 0 or @dump_in_progress? or @check_in_progress?}
               phx-disable-with="Pushing..."
             >
@@ -1870,16 +1870,22 @@ defmodule JournalexWeb.TradesDumpLive do
             </button>
             <button
               phx-click="insert_missing_notion"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-transparent text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+              class="inline-flex items-center px-3 py-1.5 rounded-md border border-transparent text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
               disabled={MapSet.size(@selected_idx) == 0 or @dump_in_progress? or @check_in_progress?}
               phx-disable-with="Starting..."
             >
               Insert Missing
             </button>
+
+            <div
+              :if={@check_in_progress? or @dump_in_progress? or @update_in_progress? or @sync_in_progress? or @wsync_in_progress?}
+              class="w-px h-5 bg-gray-200 mx-1"
+            >
+            </div>
             <button
-              :if={@dump_in_progress?}
-              phx-click="cancel_dump"
-              class="inline-flex items-center px-3 py-2 rounded-md border border-red-300 text-sm bg-white text-red-600 hover:bg-red-50"
+              :if={@check_in_progress? or @dump_in_progress? or @update_in_progress? or @sync_in_progress? or @wsync_in_progress?}
+              phx-click="cancel_all"
+              class="inline-flex items-center px-3 py-1.5 rounded-md border border-red-300 text-sm bg-white text-red-600 hover:bg-red-50"
               phx-disable-with="Stopping..."
             >
               Stop
@@ -1887,128 +1893,126 @@ defmodule JournalexWeb.TradesDumpLive do
           </div>
         </div>
 
-        <DumpProgress.progress
-          :if={@check_total > 0}
-          id="check-progress"
-          title="Check progress"
-          processed={@check_processed}
-          total={@check_total}
-          in_progress?={@check_in_progress?}
-          elapsed_ms={@check_elapsed_ms}
-          current_text={
-            @check_current &&
-              (@check_current.ticker || @check_current.symbol) <>
-                " @ " <> DateTime.to_iso8601(@check_current.datetime)
-          }
-          metrics={%{remaining: length(@check_queue || [])}}
-          labels={%{remaining: "Remaining"}}
-        />
-
-        <DumpProgress.progress
-          :if={@dump_total > 0}
-          id="insert-progress"
-          title="Insert progress"
-          processed={@dump_processed}
-          total={@dump_total}
-          in_progress?={@dump_in_progress?}
-          elapsed_ms={@dump_elapsed_ms}
-          current_text={
-            @dump_current &&
-              (@dump_current.ticker || @dump_current.symbol) <>
-                " @ " <> DateTime.to_iso8601(@dump_current.datetime)
-          }
-          metrics={dump_metrics(@dump_results, @dump_queue)}
-          labels={
-            %{
-              created: "Created",
-              skipped: "Skipped",
-              retrying: "Retrying",
-              errors: "Errors",
-              remaining: "Remaining"
-            }
-          }
-        />
-
-        <details
-          :if={length(@dump_errors) > 0}
-          class="rounded-lg border border-red-200 bg-red-50 text-sm"
-        >
-          <summary class="cursor-pointer select-none px-4 py-2 font-medium text-red-700">
-            Insert errors ({length(@dump_errors)}) — click to expand
-          </summary>
-          <div class="px-4 pb-3 pt-1 space-y-1">
-            <div :for={entry <- @dump_errors} class="flex gap-2 text-xs text-red-800 font-mono">
-              <span class="font-semibold shrink-0">{entry.label}:</span>
-              <span class="break-all">{entry.reason}</span>
-            </div>
-          </div>
-        </details>
-
-        <DumpProgress.progress
-          :if={@update_total > 0}
-          id="update-progress"
-          title="Update progress"
-          processed={@update_processed}
-          total={@update_total}
-          in_progress?={@update_in_progress?}
-          elapsed_ms={@update_elapsed_ms}
-          current_text={
-            @update_current &&
-              (@update_current.ticker || @update_current.symbol) <>
-                " @ " <> DateTime.to_iso8601(@update_current.datetime)
-          }
-          metrics={%{remaining: length(@update_queue || [])}}
-          labels={%{remaining: "Remaining"}}
-        />
-
-        <DumpProgress.progress
-          :if={@sync_total > 0}
-          id="sync-progress"
-          title="Sync from Notion progress"
-          processed={@sync_processed}
-          total={@sync_total}
-          in_progress?={@sync_in_progress?}
-          elapsed_ms={@sync_elapsed_ms}
-          current_text={
-            @sync_current &&
-              (@sync_current.ticker || @sync_current.symbol) <>
-                " @ " <> DateTime.to_iso8601(@sync_current.datetime)
-          }
-          metrics={%{
-            synced: Enum.count(@sync_results, fn {_, v} -> v == :synced end),
-            errors: Enum.count(@sync_results, fn {_, v} -> v == :error end),
-            remaining: length(@sync_queue || [])
-          }}
-          labels={%{synced: "Synced", errors: "Errors", remaining: "Remaining"}}
-        />
-
-        <DumpProgress.progress
-          :if={@wsync_total > 0}
-          id="wsync-progress"
-          title="Sync Writeup from Notion progress"
-          processed={@wsync_processed}
-          total={@wsync_total}
-          in_progress?={@wsync_in_progress?}
-          elapsed_ms={@wsync_elapsed_ms}
-          current_text={
-            @wsync_current &&
-              (@wsync_current.ticker || @wsync_current.symbol) <>
-                " @ " <> DateTime.to_iso8601(@wsync_current.datetime)
-          }
-          metrics={%{
-            synced: Enum.count(@wsync_results, fn {_, v} -> v == :synced end),
-            errors: Enum.count(@wsync_results, fn {_, v} -> v == :error end),
-            remaining: length(@wsync_queue || [])
-          }}
-          labels={%{synced: "Synced", errors: "Errors", remaining: "Remaining"}}
-        />
-
+        <%!-- C. Progress Container --%>
         <div
-          :if={@auto_check_pending?}
-          class="flex items-center gap-3 px-4 py-3 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-700"
+          :if={@check_total > 0 or @dump_total > 0 or @update_total > 0 or @sync_total > 0 or @wsync_total > 0}
+          class="rounded-lg border border-gray-100 bg-gray-50 p-3 space-y-2"
         >
-          <div class="animate-spin rounded-full h-4 w-4 shrink-0 border-2 border-blue-400 border-t-transparent"></div>
-          <span>Connecting to Notion and fetching trade statuses…</span>
+          <DumpProgress.progress
+            :if={@check_total > 0}
+            id="check-progress"
+            title="Check progress"
+            processed={@check_processed}
+            total={@check_total}
+            in_progress?={@check_in_progress?}
+            elapsed_ms={@check_elapsed_ms}
+            current_text={
+              @check_current &&
+                (@check_current.ticker || @check_current.symbol) <>
+                  " @ " <> DateTime.to_iso8601(@check_current.datetime)
+            }
+            metrics={%{remaining: length(@check_queue || [])}}
+            labels={%{remaining: "Remaining"}}
+          />
+
+          <DumpProgress.progress
+            :if={@dump_total > 0}
+            id="insert-progress"
+            title="Insert progress"
+            processed={@dump_processed}
+            total={@dump_total}
+            in_progress?={@dump_in_progress?}
+            elapsed_ms={@dump_elapsed_ms}
+            current_text={
+              @dump_current &&
+                (@dump_current.ticker || @dump_current.symbol) <>
+                  " @ " <> DateTime.to_iso8601(@dump_current.datetime)
+            }
+            metrics={dump_metrics(@dump_results, @dump_queue)}
+            labels={
+              %{
+                created: "Created",
+                skipped: "Skipped",
+                retrying: "Retrying",
+                errors: "Errors",
+                remaining: "Remaining"
+              }
+            }
+          />
+
+          <details
+            :if={length(@dump_errors) > 0}
+            class="rounded-lg border border-red-200 bg-red-50 text-sm"
+          >
+            <summary class="cursor-pointer select-none px-4 py-2 font-medium text-red-700">
+              Insert errors ({length(@dump_errors)}) — click to expand
+            </summary>
+            <div class="px-4 pb-3 pt-1 space-y-1">
+              <div :for={entry <- @dump_errors} class="flex gap-2 text-xs text-red-800 font-mono">
+                <span class="font-semibold shrink-0">{entry.label}:</span>
+                <span class="break-all">{entry.reason}</span>
+              </div>
+            </div>
+          </details>
+
+          <DumpProgress.progress
+            :if={@update_total > 0}
+            id="update-progress"
+            title="Update progress"
+            processed={@update_processed}
+            total={@update_total}
+            in_progress?={@update_in_progress?}
+            elapsed_ms={@update_elapsed_ms}
+            current_text={
+              @update_current &&
+                (@update_current.ticker || @update_current.symbol) <>
+                  " @ " <> DateTime.to_iso8601(@update_current.datetime)
+            }
+            metrics={%{remaining: length(@update_queue || [])}}
+            labels={%{remaining: "Remaining"}}
+          />
+
+          <DumpProgress.progress
+            :if={@sync_total > 0}
+            id="sync-progress"
+            title="Sync from Notion progress"
+            processed={@sync_processed}
+            total={@sync_total}
+            in_progress?={@sync_in_progress?}
+            elapsed_ms={@sync_elapsed_ms}
+            current_text={
+              @sync_current &&
+                (@sync_current.ticker || @sync_current.symbol) <>
+                  " @ " <> DateTime.to_iso8601(@sync_current.datetime)
+            }
+            metrics={%{
+              synced: Enum.count(@sync_results, fn {_, v} -> v == :synced end),
+              errors: Enum.count(@sync_results, fn {_, v} -> v == :error end),
+              remaining: length(@sync_queue || [])
+            }}
+            labels={%{synced: "Synced", errors: "Errors", remaining: "Remaining"}}
+          />
+
+          <DumpProgress.progress
+            :if={@wsync_total > 0}
+            id="wsync-progress"
+            title="Sync Writeup from Notion progress"
+            processed={@wsync_processed}
+            total={@wsync_total}
+            in_progress?={@wsync_in_progress?}
+            elapsed_ms={@wsync_elapsed_ms}
+            current_text={
+              @wsync_current &&
+                (@wsync_current.ticker || @wsync_current.symbol) <>
+                  " @ " <> DateTime.to_iso8601(@wsync_current.datetime)
+            }
+            metrics={%{
+              synced: Enum.count(@wsync_results, fn {_, v} -> v == :synced end),
+              errors: Enum.count(@wsync_results, fn {_, v} -> v == :error end),
+              remaining: length(@wsync_queue || [])
+            }}
+            labels={%{synced: "Synced", errors: "Errors", remaining: "Remaining"}}
+          />
         </div>
       </div>
 
@@ -2355,5 +2359,142 @@ defmodule JournalexWeb.TradesDumpLive do
     drafts
     |> Enum.filter(& &1.trade_id)
     |> Map.new(& {&1.trade_id, &1})
+  end
+
+  # --- Cancel helpers (shared by individual cancel_* handlers and cancel_all) ---
+
+  defp do_cancel_check(socket) do
+    if socket.assigns.check_in_progress? do
+      if socket.assigns.check_timer_ref, do: Process.cancel_timer(socket.assigns.check_timer_ref)
+
+      now = System.monotonic_time(:millisecond)
+
+      socket
+      |> assign(:check_in_progress?, false)
+      |> assign(:check_queue, [])
+      |> assign(:check_current, nil)
+      |> assign(:check_timer_ref, nil)
+      |> assign(:check_finished_at_mono, now)
+      |> assign(
+        :check_elapsed_ms,
+        if socket.assigns.check_started_at_mono do
+          now - socket.assigns.check_started_at_mono
+        else
+          0
+        end
+      )
+    else
+      socket
+    end
+  end
+
+  defp do_cancel_dump(socket) do
+    if socket.assigns.dump_in_progress? do
+      if socket.assigns.dump_timer_ref, do: Process.cancel_timer(socket.assigns.dump_timer_ref)
+
+      now = System.monotonic_time(:millisecond)
+
+      socket
+      |> assign(:dump_cancel_requested?, true)
+      |> assign(:dump_in_progress?, false)
+      |> assign(:dump_queue, [])
+      |> assign(:dump_current, nil)
+      |> assign(:dump_timer_ref, nil)
+      |> assign(:dump_finished_at_mono, now)
+      |> assign(
+        :dump_elapsed_ms,
+        if socket.assigns.dump_started_at_mono do
+          now - socket.assigns.dump_started_at_mono
+        else
+          0
+        end
+      )
+      |> assign(
+        :dump_report_text,
+        build_dump_report(
+          socket.assigns.dump_results,
+          socket.assigns.dump_total,
+          socket.assigns.dump_processed,
+          0
+        )
+      )
+    else
+      socket
+    end
+  end
+
+  defp do_cancel_update(socket) do
+    if socket.assigns.update_in_progress? do
+      if socket.assigns.update_timer_ref, do: Process.cancel_timer(socket.assigns.update_timer_ref)
+
+      now = System.monotonic_time(:millisecond)
+
+      socket
+      |> assign(:update_in_progress?, false)
+      |> assign(:update_queue, [])
+      |> assign(:update_current, nil)
+      |> assign(:update_timer_ref, nil)
+      |> assign(:update_finished_at_mono, now)
+      |> assign(
+        :update_elapsed_ms,
+        if socket.assigns.update_started_at_mono do
+          now - socket.assigns.update_started_at_mono
+        else
+          0
+        end
+      )
+    else
+      socket
+    end
+  end
+
+  defp do_cancel_sync(socket) do
+    if socket.assigns.sync_in_progress? do
+      if socket.assigns.sync_timer_ref, do: Process.cancel_timer(socket.assigns.sync_timer_ref)
+
+      now = System.monotonic_time(:millisecond)
+
+      socket
+      |> assign(:sync_in_progress?, false)
+      |> assign(:sync_queue, [])
+      |> assign(:sync_current, nil)
+      |> assign(:sync_timer_ref, nil)
+      |> assign(:sync_finished_at_mono, now)
+      |> assign(
+        :sync_elapsed_ms,
+        if socket.assigns.sync_started_at_mono do
+          now - socket.assigns.sync_started_at_mono
+        else
+          0
+        end
+      )
+    else
+      socket
+    end
+  end
+
+  defp do_cancel_wsync(socket) do
+    if socket.assigns.wsync_in_progress? do
+      if socket.assigns.wsync_timer_ref, do: Process.cancel_timer(socket.assigns.wsync_timer_ref)
+
+      now = System.monotonic_time(:millisecond)
+
+      socket
+      |> assign(:wsync_in_progress?, false)
+      |> assign(:wsync_queue, [])
+      |> assign(:wsync_current, nil)
+      |> assign(:wsync_timer_ref, nil)
+      |> assign(:wsync_finished_at_mono, now)
+      |> assign(
+        :wsync_elapsed_ms,
+        if socket.assigns.wsync_started_at_mono do
+          now - socket.assigns.wsync_started_at_mono
+        else
+          0
+        end
+      )
+    else
+      socket
+    end
   end
 end
