@@ -322,7 +322,9 @@ defmodule Journalex.Notion do
 
   Returns a map like `%{field => %{expected: v1, actual: v2}}` or `%{}` if no diffs.
   """
-  def diff_trade_vs_page(row, page, opts \\ []) when is_map(row) and is_map(page) do
+  def diff_trade_vs_page(row, page, opts \\ [])
+
+  def diff_trade_vs_page(row, page, opts) when is_map(row) and is_map(page) do
     conf = Application.get_env(:journalex, __MODULE__, [])
     ts_prop = Keyword.get(opts, :datetime_property, conf[:datetime_property] || "Datetime")
     tk_prop = Keyword.get(opts, :ticker_property, conf[:ticker_property] || "Ticker")
@@ -406,6 +408,18 @@ defmodule Journalex.Notion do
     end)
   end
 
+  @doc """
+  Retrieve a Notion page by its ID and compute diffs against a trade row.
+
+  Returns `{:ok, diffs_map}` where diffs_map may be empty, or `{:error, reason}`.
+  """
+  def retrieve_and_diff(page_id, row) when is_binary(page_id) and is_map(row) do
+    case Client.retrieve_page(page_id) do
+      {:ok, page} -> {:ok, diff_trade_vs_page(row, page)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @spec update_trade_page(binary(), map()) ::
           {:error,
            :missing_notion_api_token
@@ -486,6 +500,21 @@ defmodule Journalex.Notion do
     }
 
     Client.update_page(page_id, payload)
+  end
+
+  @doc """
+  Push a trade's writeup blocks to a Notion page.
+
+  If the writeup is a non-empty list, converts it to Notion blocks and appends
+  them to the page. Returns `{:ok, :no_writeup}` if the writeup is empty/nil.
+  """
+  def push_trade_writeup(page_id, writeup) when is_binary(page_id) do
+    if is_list(writeup) && writeup != [] do
+      notion_blocks = BlockBuilder.to_notion_blocks(writeup)
+      Client.append_block_children(page_id, notion_blocks)
+    else
+      {:ok, :no_writeup}
+    end
   end
 
   @doc """
@@ -1377,6 +1406,50 @@ defmodule Journalex.Notion do
         acc
       end
     end)
+  end
+
+  @doc """
+  Check connectivity to the Notion API by verifying the token and optionally
+  the configured trades data source.
+
+  Returns `{:ok, message}` on success or `{:error, message}` on failure.
+  """
+  def check_connection do
+    user_res = Client.me()
+
+    conf = Application.get_env(:journalex, __MODULE__, [])
+
+    ds_id =
+      conf[:trades_data_source_id] || conf[:activity_statements_data_source_id]
+
+    db_res = if ds_id, do: Client.retrieve_database(ds_id), else: {:ok, :no_db_configured}
+
+    case {user_res, db_res} do
+      {{:ok, _user}, {:ok, :no_db_configured}} ->
+        {:ok, "No data source configured; token valid"}
+
+      {{:ok, _user}, {:ok, _db}} ->
+        {:ok, nil}
+
+      {err1, err2} ->
+        {:error, format_conn_error(err1, err2)}
+    end
+  end
+
+  defp format_conn_error(user_res, db_res) do
+    ur =
+      case user_res do
+        {:ok, _} -> nil
+        {:error, reason} -> "user: #{inspect(reason)}"
+      end
+
+    dr =
+      case db_res do
+        {:ok, _} -> nil
+        {:error, reason} -> "db: #{inspect(reason)}"
+      end
+
+    [ur, dr] |> Enum.reject(&is_nil/1) |> Enum.join("; ")
   end
 
   # --- Data source resolution ---

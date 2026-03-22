@@ -1,14 +1,12 @@
 defmodule JournalexWeb.TradesDumpLive do
   use JournalexWeb, :live_view
 
-  import Ecto.Query, only: [from: 2]
-  alias Journalex.Repo
-  alias Journalex.Trades.Trade
   alias Journalex.Activity
   alias JournalexWeb.AggregatedTradeList
   alias JournalexWeb.DumpProgress
+  alias JournalexWeb.QueueProcessor
+  alias JournalexWeb.StatusBadge
   alias Journalex.Notion
-  alias Journalex.Notion.Client, as: NotionClient
   alias Journalex.Notion.DataSources
   alias Journalex.MetadataDrafts
   alias Journalex.WriteupDrafts
@@ -33,32 +31,18 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:notion_conn_status, :unknown)
       |> assign(:notion_conn_message, nil)
       # Check (auto) progress state
-      |> assign(:check_queue, [])
-      |> assign(:check_total, 0)
-      |> assign(:check_processed, 0)
-      |> assign(:check_in_progress?, false)
-      |> assign(:check_current, nil)
-      |> assign(:check_started_at_mono, nil)
-      |> assign(:check_finished_at_mono, nil)
-      |> assign(:check_elapsed_ms, 0)
-      |> assign(:check_timer_ref, nil)
-      |> assign(:check_trademark_set, nil)
-      |> assign(:check_id_map, nil)
+      |> QueueProcessor.init_assigns(:check,
+        check_trademark_set: nil,
+        check_id_map: nil
+      )
       # Dump queue/progress state
-      |> assign(:dump_queue, [])
-      |> assign(:dump_total, 0)
-      |> assign(:dump_processed, 0)
-      |> assign(:dump_in_progress?, false)
-      |> assign(:dump_current, nil)
-      |> assign(:dump_results, %{})
-      |> assign(:dump_started_at_mono, nil)
-      |> assign(:dump_finished_at_mono, nil)
-      |> assign(:dump_elapsed_ms, 0)
-      |> assign(:dump_retry_counts, %{})
-      |> assign(:dump_cancel_requested?, false)
-      |> assign(:dump_timer_ref, nil)
-      |> assign(:dump_report_text, nil)
-      |> assign(:dump_errors, [])
+      |> QueueProcessor.init_assigns(:dump,
+        dump_results: %{},
+        dump_retry_counts: %{},
+        dump_cancel_requested?: false,
+        dump_report_text: nil,
+        dump_errors: []
+      )
       |> assign(:hide_exists?, false)
       # Notion page ids per row title ("TICKER@ISO")
       |> assign(:notion_page_ids, %{})
@@ -66,37 +50,11 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:ticker_id_cache, %{})
       |> assign(:date_id_cache, %{})
       # Update (bulk) progress state
-      |> assign(:update_queue, [])
-      |> assign(:update_total, 0)
-      |> assign(:update_processed, 0)
-      |> assign(:update_in_progress?, false)
-      |> assign(:update_current, nil)
-      |> assign(:update_started_at_mono, nil)
-      |> assign(:update_finished_at_mono, nil)
-      |> assign(:update_elapsed_ms, 0)
-      |> assign(:update_timer_ref, nil)
+      |> QueueProcessor.init_assigns(:update)
       # Sync-from-Notion (bulk) progress state
-      |> assign(:sync_queue, [])
-      |> assign(:sync_total, 0)
-      |> assign(:sync_processed, 0)
-      |> assign(:sync_in_progress?, false)
-      |> assign(:sync_current, nil)
-      |> assign(:sync_results, %{})
-      |> assign(:sync_started_at_mono, nil)
-      |> assign(:sync_finished_at_mono, nil)
-      |> assign(:sync_elapsed_ms, 0)
-      |> assign(:sync_timer_ref, nil)
+      |> QueueProcessor.init_assigns(:sync, sync_results: %{})
       # Bulk writeup sync-from-Notion progress state
-      |> assign(:wsync_queue, [])
-      |> assign(:wsync_total, 0)
-      |> assign(:wsync_processed, 0)
-      |> assign(:wsync_in_progress?, false)
-      |> assign(:wsync_current, nil)
-      |> assign(:wsync_results, %{})
-      |> assign(:wsync_started_at_mono, nil)
-      |> assign(:wsync_finished_at_mono, nil)
-      |> assign(:wsync_elapsed_ms, 0)
-      |> assign(:wsync_timer_ref, nil)
+      |> QueueProcessor.init_assigns(:wsync, wsync_results: %{})
       # Global metadata version for all forms — DB wins, app config is fallback
       |> assign(:global_metadata_version, Journalex.Settings.get_default_metadata_version())
       |> assign(:supported_versions, @supported_versions)
@@ -121,8 +79,7 @@ defmodule JournalexWeb.TradesDumpLive do
   # Load aggregated trades, preferring the DB 'trades' table. If the DB has no
   # records yet, fall back to deriving close trades from parsed activity statements.
   defp load_aggregated_trades do
-    db_rows =
-      Repo.all(from t in Trade, order_by: [desc: t.datetime])
+    db_rows = Journalex.Trades.list_all_trades()
 
     case db_rows do
       rows when is_list(rows) and rows != [] ->
@@ -194,30 +151,12 @@ defmodule JournalexWeb.TradesDumpLive do
 
   @impl true
   def handle_event("check_notion_connection", _params, socket) do
-    user_res = NotionClient.me()
+    case Notion.check_connection() do
+      {:ok, message} ->
+        {:noreply, assign(socket, notion_conn_status: :ok, notion_conn_message: message)}
 
-    notion_conf = Application.get_env(:journalex, Journalex.Notion, [])
-
-    ds_id =
-      Keyword.get(notion_conf, :trades_data_source_id) ||
-        Keyword.get(notion_conf, :activity_statements_data_source_id)
-
-    db_res = if ds_id, do: NotionClient.retrieve_database(ds_id), else: {:ok, :no_db_configured}
-
-    case {user_res, db_res} do
-      {{:ok, _user}, {:ok, :no_db_configured}} ->
-        {:noreply,
-         assign(socket,
-           notion_conn_status: :ok,
-           notion_conn_message: "No data source configured; token valid"
-         )}
-
-      {{:ok, _user}, {:ok, _db}} ->
-        {:noreply, assign(socket, notion_conn_status: :ok, notion_conn_message: nil)}
-
-      {err1, err2} ->
-        msg = format_conn_error(err1, err2)
-        {:noreply, assign(socket, notion_conn_status: :error, notion_conn_message: msg)}
+      {:error, message} ->
+        {:noreply, assign(socket, notion_conn_status: :error, notion_conn_message: message)}
     end
   end
 
@@ -254,33 +193,24 @@ defmodule JournalexWeb.TradesDumpLive do
 
     case list_all_trade_trademarks_with_ids(socket.assigns.global_metadata_version) do
       {:ok, {trademark_set, id_map}} ->
-        now = System.monotonic_time(:millisecond)
-
         socket =
-          socket
-          |> assign(:check_queue, selected_pairs)
-          |> assign(:check_total, length(selected_pairs))
-          |> assign(:check_processed, 0)
-          |> assign(:check_in_progress?, true)
-          |> assign(:check_current, nil)
-          |> assign(:check_started_at_mono, now)
-          |> assign(:check_finished_at_mono, nil)
-          |> assign(:check_elapsed_ms, 0)
-          |> assign(:check_trademark_set, trademark_set)
-          |> assign(:check_id_map, id_map)
-          |> assign(:notion_conn_status, :ok)
-          |> assign(:notion_conn_message, nil)
-          |> assign(:notion_page_ids, id_map)
-          |> assign(:ticker_id_cache, ticker_id_cache)
-          |> assign(:date_id_cache, date_id_cache)
-          # reset counters for this run
-          |> assign(:notion_exists_count, 0)
-          |> assign(:notion_missing_count, 0)
+          QueueProcessor.start_operation(socket, :check, selected_pairs, :process_next_check, fn s ->
+            s
+            |> assign(:check_trademark_set, trademark_set)
+            |> assign(:check_id_map, id_map)
+            |> assign(:notion_conn_status, :ok)
+            |> assign(:notion_conn_message, nil)
+            |> assign(:notion_page_ids, id_map)
+            |> assign(:ticker_id_cache, ticker_id_cache)
+            |> assign(:date_id_cache, date_id_cache)
+            # reset counters for this run
+            |> assign(:notion_exists_count, 0)
+            |> assign(:notion_missing_count, 0)
+          end)
 
         socket = if cache_warning, do: put_toast(socket, :error, cache_warning), else: socket
 
-        timer_ref = Process.send_after(self(), :process_next_check, 0)
-        {:noreply, assign(socket, :check_timer_ref, timer_ref)}
+        {:noreply, socket}
 
       {:error, reason} ->
         {row_statuses, exists_count, missing_count} =
@@ -319,61 +249,52 @@ defmodule JournalexWeb.TradesDumpLive do
 
       queue = if missing_pairs == [], do: selected_pairs, else: missing_pairs
 
-      socket =
-        socket
-        |> assign(:dump_queue, queue)
-        |> assign(:dump_total, length(queue))
-        |> assign(:dump_processed, 0)
-        |> assign(:dump_in_progress?, true)
-        |> assign(:dump_current, nil)
-        |> assign(:dump_results, %{})
-        |> assign(:dump_started_at_mono, System.monotonic_time(:millisecond))
-        |> assign(:dump_finished_at_mono, nil)
-        |> assign(:dump_elapsed_ms, 0)
-        |> assign(:dump_retry_counts, %{})
-        |> assign(:dump_cancel_requested?, false)
-        |> assign(:dump_report_text, nil)
-        |> assign(:dump_errors, [])
-
-      timer_ref = Process.send_after(self(), :process_next_dump, 0)
-      {:noreply, assign(socket, :dump_timer_ref, timer_ref)}
+      {:noreply,
+       QueueProcessor.start_operation(socket, :dump, queue, :process_next_dump, fn s ->
+         s
+         |> assign(:dump_results, %{})
+         |> assign(:dump_retry_counts, %{})
+         |> assign(:dump_cancel_requested?, false)
+         |> assign(:dump_report_text, nil)
+         |> assign(:dump_errors, [])
+       end)}
     end
   end
 
   @impl true
   def handle_event("cancel_dump", _params, socket) do
-    {:noreply, do_cancel_dump(socket)}
+    {:noreply, cancel_dump(socket)}
   end
 
   @impl true
   def handle_event("cancel_check", _params, socket) do
-    {:noreply, do_cancel_check(socket)}
+    {:noreply, QueueProcessor.cancel_operation(socket, :check)}
   end
 
   @impl true
   def handle_event("cancel_update", _params, socket) do
-    {:noreply, do_cancel_update(socket)}
+    {:noreply, QueueProcessor.cancel_operation(socket, :update)}
   end
 
   @impl true
   def handle_event("cancel_sync", _params, socket) do
-    {:noreply, do_cancel_sync(socket)}
+    {:noreply, QueueProcessor.cancel_operation(socket, :sync)}
   end
 
   @impl true
   def handle_event("cancel_wsync", _params, socket) do
-    {:noreply, do_cancel_wsync(socket)}
+    {:noreply, QueueProcessor.cancel_operation(socket, :wsync)}
   end
 
   @impl true
   def handle_event("cancel_all", _params, socket) do
     socket =
       socket
-      |> do_cancel_check()
-      |> do_cancel_dump()
-      |> do_cancel_update()
-      |> do_cancel_sync()
-      |> do_cancel_wsync()
+      |> QueueProcessor.cancel_operation(:check)
+      |> cancel_dump()
+      |> QueueProcessor.cancel_operation(:update)
+      |> QueueProcessor.cancel_operation(:sync)
+      |> QueueProcessor.cancel_operation(:wsync)
 
     {:noreply, socket}
   end
@@ -421,19 +342,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
     queue = Enum.map(idx_with_diffs, fn idx -> {Enum.at(rows, idx), idx} end)
 
-    socket =
-      socket
-      |> assign(:update_queue, queue)
-      |> assign(:update_total, length(queue))
-      |> assign(:update_processed, 0)
-      |> assign(:update_in_progress?, true)
-      |> assign(:update_current, nil)
-      |> assign(:update_started_at_mono, System.monotonic_time(:millisecond))
-      |> assign(:update_finished_at_mono, nil)
-      |> assign(:update_elapsed_ms, 0)
-
-    timer_ref = Process.send_after(self(), :process_next_update, 0)
-    {:noreply, assign(socket, :update_timer_ref, timer_ref)}
+    {:noreply, QueueProcessor.start_operation(socket, :update, queue, :process_next_update)}
   end
 
   @impl true
@@ -457,20 +366,10 @@ defmodule JournalexWeb.TradesDumpLive do
          "No selected trades with known Notion pages. Run \"Check Notion\" first."
        )}
     else
-      socket =
-        socket
-        |> assign(:sync_queue, queue)
-        |> assign(:sync_total, length(queue))
-        |> assign(:sync_processed, 0)
-        |> assign(:sync_in_progress?, true)
-        |> assign(:sync_current, nil)
-        |> assign(:sync_results, %{})
-        |> assign(:sync_started_at_mono, System.monotonic_time(:millisecond))
-        |> assign(:sync_finished_at_mono, nil)
-        |> assign(:sync_elapsed_ms, 0)
-
-      timer_ref = Process.send_after(self(), :process_next_sync, 0)
-      {:noreply, assign(socket, :sync_timer_ref, timer_ref)}
+      {:noreply,
+       QueueProcessor.start_operation(socket, :sync, queue, :process_next_sync, fn s ->
+         assign(s, :sync_results, %{})
+       end)}
     end
   end
 
@@ -495,20 +394,10 @@ defmodule JournalexWeb.TradesDumpLive do
          "No selected trades with known Notion pages. Run \"Check Notion\" first."
        )}
     else
-      socket =
-        socket
-        |> assign(:wsync_queue, queue)
-        |> assign(:wsync_total, length(queue))
-        |> assign(:wsync_processed, 0)
-        |> assign(:wsync_in_progress?, true)
-        |> assign(:wsync_current, nil)
-        |> assign(:wsync_results, %{})
-        |> assign(:wsync_started_at_mono, System.monotonic_time(:millisecond))
-        |> assign(:wsync_finished_at_mono, nil)
-        |> assign(:wsync_elapsed_ms, 0)
-
-      timer_ref = Process.send_after(self(), :process_next_writeup_sync, 0)
-      {:noreply, assign(socket, :wsync_timer_ref, timer_ref)}
+      {:noreply,
+       QueueProcessor.start_operation(socket, :wsync, queue, :process_next_writeup_sync, fn s ->
+         assign(s, :wsync_results, %{})
+       end)}
     end
   end
 
@@ -939,8 +828,7 @@ defmodule JournalexWeb.TradesDumpLive do
         {:ok, _} ->
           writeup_result =
             if is_list(trade.writeup) && trade.writeup != [] do
-              notion_blocks = Journalex.Notion.BlockBuilder.to_notion_blocks(trade.writeup)
-              NotionClient.append_block_children(page_id, notion_blocks)
+              Notion.push_trade_writeup(page_id, trade.writeup)
             else
               {:ok, :no_writeup}
             end
@@ -986,8 +874,7 @@ defmodule JournalexWeb.TradesDumpLive do
         {:ok, _} ->
           writeup_result =
             if is_list(trade.writeup) && trade.writeup != [] do
-              notion_blocks = Journalex.Notion.BlockBuilder.to_notion_blocks(trade.writeup)
-              NotionClient.append_block_children(page_id, notion_blocks)
+              Notion.push_trade_writeup(page_id, trade.writeup)
             else
               {:ok, :no_writeup}
             end
@@ -1151,33 +1038,24 @@ defmodule JournalexWeb.TradesDumpLive do
       {:ok, {trademark_set, id_map}} ->
         pairs = Enum.with_index(rows)
 
-        now = System.monotonic_time(:millisecond)
-
         socket =
-          socket
-          |> assign(:check_queue, pairs)
-          |> assign(:check_total, length(pairs))
-          |> assign(:check_processed, 0)
-          |> assign(:check_in_progress?, true)
-          |> assign(:check_current, nil)
-          |> assign(:check_started_at_mono, now)
-          |> assign(:check_finished_at_mono, nil)
-          |> assign(:check_elapsed_ms, 0)
-          |> assign(:check_trademark_set, trademark_set)
-          |> assign(:check_id_map, id_map)
-          |> assign(:notion_conn_status, :ok)
-          |> assign(:notion_conn_message, nil)
-          |> assign(:notion_page_ids, id_map)
-          |> assign(:ticker_id_cache, ticker_id_cache)
-          |> assign(:date_id_cache, date_id_cache)
-          # reset counters for this run
-          |> assign(:notion_exists_count, 0)
-          |> assign(:notion_missing_count, 0)
+          QueueProcessor.start_operation(socket, :check, pairs, :process_next_check, fn s ->
+            s
+            |> assign(:check_trademark_set, trademark_set)
+            |> assign(:check_id_map, id_map)
+            |> assign(:notion_conn_status, :ok)
+            |> assign(:notion_conn_message, nil)
+            |> assign(:notion_page_ids, id_map)
+            |> assign(:ticker_id_cache, ticker_id_cache)
+            |> assign(:date_id_cache, date_id_cache)
+            # reset counters for this run
+            |> assign(:notion_exists_count, 0)
+            |> assign(:notion_missing_count, 0)
+          end)
 
         socket = if cache_warning, do: put_toast(socket, :error, cache_warning), else: socket
 
-        timer_ref = Process.send_after(self(), :process_next_check, 0)
-        {:noreply, assign(socket, :check_timer_ref, timer_ref)}
+        {:noreply, socket}
 
       {:error, reason} ->
         row_statuses =
@@ -1200,25 +1078,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
     case queue do
       [] ->
-        now = System.monotonic_time(:millisecond)
-
-        socket =
-          socket
-          |> assign(:check_in_progress?, false)
-          |> assign(:check_current, nil)
-          |> assign(:check_finished_at_mono, socket.assigns.check_finished_at_mono || now)
-          |> assign(
-            :check_elapsed_ms,
-            if(socket.assigns.check_started_at_mono,
-              do:
-                (socket.assigns.check_finished_at_mono || now) -
-                  socket.assigns.check_started_at_mono,
-              else: 0
-            )
-          )
-          |> assign(:check_timer_ref, nil)
-
-        {:noreply, socket}
+        {:noreply, QueueProcessor.finish_operation(socket, :check)}
 
       [{row, idx} | rest] ->
         socket = assign(socket, check_current: row)
@@ -1243,14 +1103,7 @@ defmodule JournalexWeb.TradesDumpLive do
         row_incons =
           case {status, Map.get(id_map, title)} do
             {:exists, page_id} when is_binary(page_id) ->
-              case NotionClient.retrieve_page(page_id) do
-                {:ok, page} ->
-                  diffs = Notion.diff_trade_vs_page(row, page)
-                  if map_size(diffs) > 0, do: Map.put(row_incons, idx, diffs), else: Map.delete(row_incons, idx)
-
-                _ ->
-                  row_incons
-              end
+              recompute_row_diffs(row_incons, page_id, idx, row)
 
             _ ->
               row_incons
@@ -1281,33 +1134,10 @@ defmodule JournalexWeb.TradesDumpLive do
   @impl true
   def handle_info(:process_next_dump, socket) do
     if socket.assigns.dump_cancel_requested? do
-      now = System.monotonic_time(:millisecond)
-
       socket =
         socket
-        |> assign(:dump_in_progress?, false)
-        |> assign(:dump_current, nil)
         |> assign(:dump_queue, [])
-        |> assign(:dump_finished_at_mono, socket.assigns.dump_finished_at_mono || now)
-        |> assign(
-          :dump_elapsed_ms,
-          if(socket.assigns.dump_started_at_mono,
-            do:
-              (socket.assigns.dump_finished_at_mono || now) -
-                socket.assigns.dump_started_at_mono,
-            else: 0
-          )
-        )
-        |> assign(:dump_timer_ref, nil)
-        |> assign(
-          :dump_report_text,
-          build_dump_report(
-            socket.assigns.dump_results,
-            socket.assigns.dump_total,
-            socket.assigns.dump_processed,
-            0
-          )
-        )
+        |> QueueProcessor.finish_operation(:dump, &dump_finish_extras/1)
 
       {:noreply, socket}
     else
@@ -1315,34 +1145,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
       case queue do
         [] ->
-          now = System.monotonic_time(:millisecond)
-
-          socket =
-            socket
-            |> assign(:dump_in_progress?, false)
-            |> assign(:dump_current, nil)
-            |> assign(:dump_finished_at_mono, socket.assigns.dump_finished_at_mono || now)
-            |> assign(
-              :dump_elapsed_ms,
-              if(socket.assigns.dump_started_at_mono,
-                do:
-                  (socket.assigns.dump_finished_at_mono || now) -
-                    socket.assigns.dump_started_at_mono,
-                else: 0
-              )
-            )
-            |> assign(:dump_timer_ref, nil)
-            |> assign(
-              :dump_report_text,
-              build_dump_report(
-                socket.assigns.dump_results,
-                socket.assigns.dump_total,
-                socket.assigns.dump_processed,
-                0
-              )
-            )
-
-          {:noreply, socket}
+          {:noreply, QueueProcessor.finish_operation(socket, :dump, &dump_finish_extras/1)}
 
         [{row, idx} | rest] ->
           socket = assign(socket, dump_current: row)
@@ -1390,8 +1193,7 @@ defmodule JournalexWeb.TradesDumpLive do
                       # Push writeup blocks if the trade has them
                       writeup_flash =
                         if is_binary(page_id) && is_list(row.writeup) && row.writeup != [] do
-                          notion_blocks = Journalex.Notion.BlockBuilder.to_notion_blocks(row.writeup)
-                          case NotionClient.append_block_children(page_id, notion_blocks) do
+                          case Notion.push_trade_writeup(page_id, row.writeup) do
                             {:ok, _} -> nil
                             {:error, reason} -> "Writeup blocks failed for #{title}: #{inspect(reason)}"
                           end
@@ -1485,25 +1287,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
     case queue do
       [] ->
-        now = System.monotonic_time(:millisecond)
-
-        socket =
-          socket
-          |> assign(:update_in_progress?, false)
-          |> assign(:update_current, nil)
-          |> assign(:update_finished_at_mono, socket.assigns.update_finished_at_mono || now)
-          |> assign(
-            :update_elapsed_ms,
-            if(socket.assigns.update_started_at_mono,
-              do:
-                (socket.assigns.update_finished_at_mono || now) -
-                  socket.assigns.update_started_at_mono,
-              else: 0
-            )
-          )
-          |> assign(:update_timer_ref, nil)
-
-        {:noreply, socket}
+        {:noreply, QueueProcessor.finish_operation(socket, :update)}
 
       [{row, idx} | rest] ->
         socket = assign(socket, update_current: row)
@@ -1525,25 +1309,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
         # Recompute diffs for this row
         row_incons = socket.assigns.row_inconsistencies || %{}
-
-        row_incons =
-          case page_id do
-            id when is_binary(id) ->
-              case NotionClient.retrieve_page(id) do
-                {:ok, page} ->
-                  diffs = Notion.diff_trade_vs_page(row, page)
-
-                  if map_size(diffs) > 0,
-                    do: Map.put(row_incons, idx, diffs),
-                    else: Map.delete(row_incons, idx)
-
-                _ ->
-                  row_incons
-              end
-
-            _ ->
-              row_incons
-          end
+        row_incons = recompute_row_diffs(row_incons, page_id, idx, row)
 
         now = System.monotonic_time(:millisecond)
 
@@ -1569,154 +1335,12 @@ defmodule JournalexWeb.TradesDumpLive do
 
   @impl true
   def handle_info(:process_next_sync, socket) do
-    queue = socket.assigns.sync_queue
-
-    case queue do
-      [] ->
-        now = System.monotonic_time(:millisecond)
-
-        socket =
-          socket
-          |> assign(:sync_in_progress?, false)
-          |> assign(:sync_current, nil)
-          |> assign(:sync_finished_at_mono, socket.assigns.sync_finished_at_mono || now)
-          |> assign(
-            :sync_elapsed_ms,
-            if(socket.assigns.sync_started_at_mono,
-              do:
-                (socket.assigns.sync_finished_at_mono || now) -
-                  socket.assigns.sync_started_at_mono,
-              else: 0
-            )
-          )
-          |> assign(:sync_timer_ref, nil)
-
-        {:noreply, socket}
-
-      [{row, idx} | rest] ->
-        socket = assign(socket, :sync_current, row)
-        page_ids = socket.assigns.notion_page_ids || %{}
-        page_id = Map.get(page_ids, row_title(row))
-
-        {updated_trades, result_tag} =
-          case {Map.get(row, :id), page_id} do
-            {id, pid} when not is_nil(id) and is_binary(pid) ->
-              case Notion.sync_metadata_from_notion(id, pid) do
-                {:ok, updated_trade} ->
-                  trades =
-                    socket.assigns.trades
-                    |> Enum.with_index()
-                    |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
-
-                  {trades, :synced}
-
-                {:error, _} ->
-                  {socket.assigns.trades, :error}
-              end
-
-            _ ->
-              {socket.assigns.trades, :skipped}
-          end
-
-        now = System.monotonic_time(:millisecond)
-
-        elapsed_ms =
-          if socket.assigns.sync_started_at_mono,
-            do: now - socket.assigns.sync_started_at_mono,
-            else: 0
-
-        sync_results = Map.put(socket.assigns.sync_results || %{}, idx, result_tag)
-
-        row_incons =
-          if result_tag == :synced,
-            do: Map.delete(socket.assigns.row_inconsistencies || %{}, idx),
-            else: socket.assigns.row_inconsistencies || %{}
-
-        socket =
-          socket
-          |> assign(:trades, updated_trades)
-          |> assign(:sync_queue, rest)
-          |> assign(:sync_processed, socket.assigns.sync_processed + 1)
-          |> assign(:sync_results, sync_results)
-          |> assign(:sync_elapsed_ms, elapsed_ms)
-          |> assign(:row_inconsistencies, row_incons)
-
-        timer_ref = Process.send_after(self(), :process_next_sync, 0)
-        {:noreply, assign(socket, :sync_timer_ref, timer_ref)}
-    end
+    process_sync_step(socket, :sync, &Notion.sync_metadata_from_notion/2, :process_next_sync)
   end
 
   @impl true
   def handle_info(:process_next_writeup_sync, socket) do
-    queue = socket.assigns.wsync_queue
-
-    case queue do
-      [] ->
-        now = System.monotonic_time(:millisecond)
-
-        socket =
-          socket
-          |> assign(:wsync_in_progress?, false)
-          |> assign(:wsync_current, nil)
-          |> assign(:wsync_finished_at_mono, socket.assigns.wsync_finished_at_mono || now)
-          |> assign(
-            :wsync_elapsed_ms,
-            if(socket.assigns.wsync_started_at_mono,
-              do:
-                (socket.assigns.wsync_finished_at_mono || now) -
-                  socket.assigns.wsync_started_at_mono,
-              else: 0
-            )
-          )
-          |> assign(:wsync_timer_ref, nil)
-
-        {:noreply, socket}
-
-      [{row, idx} | rest] ->
-        socket = assign(socket, :wsync_current, row)
-        page_ids = socket.assigns.notion_page_ids || %{}
-        page_id = Map.get(page_ids, row_title(row))
-
-        {updated_trades, result_tag} =
-          case {Map.get(row, :id), page_id} do
-            {id, pid} when not is_nil(id) and is_binary(pid) ->
-              case Notion.sync_writeup_from_notion(id, pid) do
-                {:ok, updated_trade} ->
-                  trades =
-                    socket.assigns.trades
-                    |> Enum.with_index()
-                    |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
-
-                  {trades, :synced}
-
-                {:error, _} ->
-                  {socket.assigns.trades, :error}
-              end
-
-            _ ->
-              {socket.assigns.trades, :skipped}
-          end
-
-        now = System.monotonic_time(:millisecond)
-
-        elapsed_ms =
-          if socket.assigns.wsync_started_at_mono,
-            do: now - socket.assigns.wsync_started_at_mono,
-            else: 0
-
-        wsync_results = Map.put(socket.assigns.wsync_results || %{}, idx, result_tag)
-
-        socket =
-          socket
-          |> assign(:trades, updated_trades)
-          |> assign(:wsync_queue, rest)
-          |> assign(:wsync_processed, socket.assigns.wsync_processed + 1)
-          |> assign(:wsync_results, wsync_results)
-          |> assign(:wsync_elapsed_ms, elapsed_ms)
-
-        timer_ref = Process.send_after(self(), :process_next_writeup_sync, 0)
-        {:noreply, assign(socket, :wsync_timer_ref, timer_ref)}
-    end
+    process_sync_step(socket, :wsync, &Notion.sync_writeup_from_notion/2, :process_next_writeup_sync)
   end
 
   @impl true
@@ -1749,41 +1373,39 @@ defmodule JournalexWeb.TradesDumpLive do
           </div>
 
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-              Selected: {MapSet.size(@selected_idx)}
-            </span>
-            <span
+            <StatusBadge.status_badge color={:gray} label="Selected" value={MapSet.size(@selected_idx)} />
+            <StatusBadge.status_badge
               :if={@notion_exists_count + @notion_missing_count > 0}
-              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
-            >
-              Exists: {@notion_exists_count}
-            </span>
-            <span
+              color={:green}
+              label="Exists"
+              value={@notion_exists_count}
+            />
+            <StatusBadge.status_badge
               :if={@notion_exists_count + @notion_missing_count > 0}
-              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"
-            >
-              Missing: {@notion_missing_count}
-            </span>
-            <span
+              color={:red}
+              label="Missing"
+              value={@notion_missing_count}
+            />
+            <StatusBadge.status_badge
               :if={@notion_conn_status == :ok}
-              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
-            >
-              Notion: Connected
-            </span>
-            <span
+              color={:green}
+              label="Notion"
+              value="Connected"
+            />
+            <StatusBadge.status_badge
               :if={@notion_conn_status == :error}
-              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"
+              color={:red}
+              label="Notion"
+              value="Failed"
               title={@notion_conn_message}
-            >
-              Notion: Failed
-            </span>
-            <span
+            />
+            <StatusBadge.status_badge
               :if={@auto_check_pending?}
-              class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700"
-            >
-              <div class="animate-spin rounded-full h-3 w-3 border-2 border-blue-400 border-t-transparent"></div>
-              Notion: Checking…
-            </span>
+              color={:blue}
+              label="Notion"
+              value="Checking…"
+              spinner?={true}
+            />
           </div>
         </div>
 
@@ -2137,22 +1759,6 @@ defmodule JournalexWeb.TradesDumpLive do
   defp format_notion_error(reason),
     do: inspect(reason)
 
-  defp format_conn_error(user_res, db_res) do
-    ur =
-      case user_res do
-        {:ok, _} -> nil
-        {:error, reason} -> "user: #{inspect(reason)}"
-      end
-
-    dr =
-      case db_res do
-        {:ok, _} -> nil
-        {:error, reason} -> "db: #{inspect(reason)}"
-      end
-
-    [ur, dr] |> Enum.reject(&is_nil/1) |> Enum.join("; ")
-  end
-
   defp build_dump_report(results_map, _total, _processed, remaining) do
     values = Map.values(results_map)
     created = Enum.count(values, &(&1 == :created))
@@ -2169,6 +1775,17 @@ defmodule JournalexWeb.TradesDumpLive do
       ", Retrying " <>
       Integer.to_string(retrying) <>
       ", Remaining " <> Integer.to_string(remaining)
+  end
+
+  defp dump_finish_extras(socket) do
+    assign(socket, :dump_report_text,
+      build_dump_report(
+        socket.assigns.dump_results,
+        socket.assigns.dump_total,
+        socket.assigns.dump_processed,
+        0
+      )
+    )
   end
 
   # Build metrics map for DumpProgress component based on existing dump state
@@ -2361,54 +1978,82 @@ defmodule JournalexWeb.TradesDumpLive do
     |> Map.new(& {&1.trade_id, &1})
   end
 
-  # --- Cancel helpers (shared by individual cancel_* handlers and cancel_all) ---
+  # --- Operation lifecycle helpers (finish + cancel) ---
 
-  defp do_cancel_check(socket) do
-    if socket.assigns.check_in_progress? do
-      if socket.assigns.check_timer_ref, do: Process.cancel_timer(socket.assigns.check_timer_ref)
-
-      now = System.monotonic_time(:millisecond)
-
-      socket
-      |> assign(:check_in_progress?, false)
-      |> assign(:check_queue, [])
-      |> assign(:check_current, nil)
-      |> assign(:check_timer_ref, nil)
-      |> assign(:check_finished_at_mono, now)
-      |> assign(
-        :check_elapsed_ms,
-        if socket.assigns.check_started_at_mono do
-          now - socket.assigns.check_started_at_mono
-        else
-          0
-        end
-      )
-    else
-      socket
+  defp recompute_row_diffs(row_incons, page_id, idx, row) when is_binary(page_id) do
+    case Notion.retrieve_and_diff(page_id, row) do
+      {:ok, diffs} when map_size(diffs) > 0 -> Map.put(row_incons, idx, diffs)
+      {:ok, _} -> Map.delete(row_incons, idx)
+      {:error, _} -> row_incons
     end
   end
 
-  defp do_cancel_dump(socket) do
-    if socket.assigns.dump_in_progress? do
-      if socket.assigns.dump_timer_ref, do: Process.cancel_timer(socket.assigns.dump_timer_ref)
+  defp recompute_row_diffs(row_incons, _page_id, _idx, _row), do: row_incons
 
-      now = System.monotonic_time(:millisecond)
+  defp process_sync_step(socket, prefix, sync_fn, message) do
+    queue = socket.assigns[:"#{prefix}_queue"]
 
+    case queue do
+      [] ->
+        {:noreply, QueueProcessor.finish_operation(socket, prefix)}
+
+      [{row, idx} | rest] ->
+        socket = assign(socket, :"#{prefix}_current", row)
+        page_ids = socket.assigns.notion_page_ids || %{}
+        page_id = Map.get(page_ids, row_title(row))
+
+        {updated_trades, result_tag} =
+          case {Map.get(row, :id), page_id} do
+            {id, pid} when not is_nil(id) and is_binary(pid) ->
+              case sync_fn.(id, pid) do
+                {:ok, updated_trade} ->
+                  trades =
+                    socket.assigns.trades
+                    |> Enum.with_index()
+                    |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+                  {trades, :synced}
+
+                {:error, _} ->
+                  {socket.assigns.trades, :error}
+              end
+
+            _ ->
+              {socket.assigns.trades, :skipped}
+          end
+
+        now = System.monotonic_time(:millisecond)
+
+        elapsed_ms =
+          if socket.assigns[:"#{prefix}_started_at_mono"],
+            do: now - socket.assigns[:"#{prefix}_started_at_mono"],
+            else: 0
+
+        results = Map.put(socket.assigns[:"#{prefix}_results"] || %{}, idx, result_tag)
+
+        row_incons =
+          if prefix == :sync and result_tag == :synced,
+            do: Map.delete(socket.assigns.row_inconsistencies || %{}, idx),
+            else: socket.assigns.row_inconsistencies || %{}
+
+        socket =
+          socket
+          |> assign(:trades, updated_trades)
+          |> assign(:"#{prefix}_queue", rest)
+          |> assign(:"#{prefix}_processed", socket.assigns[:"#{prefix}_processed"] + 1)
+          |> assign(:"#{prefix}_results", results)
+          |> assign(:"#{prefix}_elapsed_ms", elapsed_ms)
+          |> assign(:row_inconsistencies, row_incons)
+
+        timer_ref = Process.send_after(self(), message, 0)
+        {:noreply, assign(socket, :"#{prefix}_timer_ref", timer_ref)}
+    end
+  end
+
+  defp cancel_dump(socket) do
+    QueueProcessor.cancel_operation(socket, :dump, fn socket ->
       socket
       |> assign(:dump_cancel_requested?, true)
-      |> assign(:dump_in_progress?, false)
-      |> assign(:dump_queue, [])
-      |> assign(:dump_current, nil)
-      |> assign(:dump_timer_ref, nil)
-      |> assign(:dump_finished_at_mono, now)
-      |> assign(
-        :dump_elapsed_ms,
-        if socket.assigns.dump_started_at_mono do
-          now - socket.assigns.dump_started_at_mono
-        else
-          0
-        end
-      )
       |> assign(
         :dump_report_text,
         build_dump_report(
@@ -2418,83 +2063,6 @@ defmodule JournalexWeb.TradesDumpLive do
           0
         )
       )
-    else
-      socket
-    end
-  end
-
-  defp do_cancel_update(socket) do
-    if socket.assigns.update_in_progress? do
-      if socket.assigns.update_timer_ref, do: Process.cancel_timer(socket.assigns.update_timer_ref)
-
-      now = System.monotonic_time(:millisecond)
-
-      socket
-      |> assign(:update_in_progress?, false)
-      |> assign(:update_queue, [])
-      |> assign(:update_current, nil)
-      |> assign(:update_timer_ref, nil)
-      |> assign(:update_finished_at_mono, now)
-      |> assign(
-        :update_elapsed_ms,
-        if socket.assigns.update_started_at_mono do
-          now - socket.assigns.update_started_at_mono
-        else
-          0
-        end
-      )
-    else
-      socket
-    end
-  end
-
-  defp do_cancel_sync(socket) do
-    if socket.assigns.sync_in_progress? do
-      if socket.assigns.sync_timer_ref, do: Process.cancel_timer(socket.assigns.sync_timer_ref)
-
-      now = System.monotonic_time(:millisecond)
-
-      socket
-      |> assign(:sync_in_progress?, false)
-      |> assign(:sync_queue, [])
-      |> assign(:sync_current, nil)
-      |> assign(:sync_timer_ref, nil)
-      |> assign(:sync_finished_at_mono, now)
-      |> assign(
-        :sync_elapsed_ms,
-        if socket.assigns.sync_started_at_mono do
-          now - socket.assigns.sync_started_at_mono
-        else
-          0
-        end
-      )
-    else
-      socket
-    end
-  end
-
-  defp do_cancel_wsync(socket) do
-    if socket.assigns.wsync_in_progress? do
-      if socket.assigns.wsync_timer_ref, do: Process.cancel_timer(socket.assigns.wsync_timer_ref)
-
-      now = System.monotonic_time(:millisecond)
-
-      socket
-      |> assign(:wsync_in_progress?, false)
-      |> assign(:wsync_queue, [])
-      |> assign(:wsync_current, nil)
-      |> assign(:wsync_timer_ref, nil)
-      |> assign(:wsync_finished_at_mono, now)
-      |> assign(
-        :wsync_elapsed_ms,
-        if socket.assigns.wsync_started_at_mono do
-          now - socket.assigns.wsync_started_at_mono
-        else
-          0
-        end
-      )
-    else
-      socket
-    end
+    end)
   end
 end
