@@ -802,6 +802,8 @@ defmodule JournalexWeb.TradesDumpLive do
          socket
          |> assign(:combined_drafts, CombinedDrafts.list_drafts())
          |> assign(:bound_drafts_map, build_bound_drafts_map(CombinedDrafts.list_drafts()))
+         |> assign(:selected_idx, MapSet.new())
+         |> assign(:all_selected?, false)
          |> put_toast(:info, msg)}
       end
     end
