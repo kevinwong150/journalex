@@ -71,7 +71,6 @@ defmodule Journalex.WriteupDrafts do
 
   @preset_name "Standard Trade"
   @preset_blocks [
-    %{"type" => "paragraph", "text" => ""},
     %{"type" => "paragraph", "text" => "Environment Overview:"},
     %{"type" => "paragraph", "text" => ""},
     %{"type" => "paragraph", "text" => "Comments:"},
