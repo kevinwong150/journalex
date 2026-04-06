@@ -54,6 +54,7 @@ defmodule JournalexWeb.TradeDraftLive do
       |> assign(:writeup_dirty, false)
       |> assign(:modified_draft_ids, MapSet.new())
       |> assign(:cd_delete_confirm, nil)
+      |> assign(:connected, connected?(socket))
 
     {:ok, socket}
   end
@@ -847,7 +848,8 @@ defmodule JournalexWeb.TradeDraftLive do
                       phx-keyup="bulk_update_name"
                       phx-value-index={i}
                       placeholder="Draft name..."
-                      class="flex-1 px-2 py-1.5 text-sm border border-sky-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+                      disabled={!@connected}
+                      class="flex-1 px-2 py-1.5 text-sm border border-sky-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                   </div>
                 <% end %>
@@ -870,7 +872,8 @@ defmodule JournalexWeb.TradeDraftLive do
                 </div>
                 <button
                   phx-click="bulk_create"
-                  class="px-3 py-1.5 text-xs font-medium bg-sky-600 text-white rounded-md hover:bg-sky-700 transition-colors shadow-sm"
+                  disabled={!@connected}
+                  class="px-3 py-1.5 text-xs font-medium bg-sky-600 text-white rounded-md hover:bg-sky-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Create {length(@bulk_names)} draft(s)
                 </button>
@@ -890,12 +893,14 @@ defmodule JournalexWeb.TradeDraftLive do
                   type="text"
                   value={@cd_name}
                   phx-keyup="cd_update_name"
-                  placeholder="Trade draft name..."
-                  class="flex-1 px-2 py-1.5 text-sm border border-sky-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+                  placeholder={if @connected, do: "Trade draft name...", else: "Connecting..."}
+                  disabled={!@connected}
+                  class="flex-1 px-2 py-1.5 text-sm border border-sky-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
                 <button
                   phx-click="cd_save"
-                  class="px-4 py-1.5 text-xs font-medium bg-sky-600 text-white rounded-md hover:bg-sky-700 transition-colors shadow-sm"
+                  disabled={!@connected}
+                  class="px-4 py-1.5 text-xs font-medium bg-sky-600 text-white rounded-md hover:bg-sky-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {if @cd_editing, do: "Update", else: "Create"}
                 </button>
