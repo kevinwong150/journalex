@@ -46,14 +46,18 @@ Context modules implement `@behaviour` for Mox testability. **Not all** public f
 | `Journalex.Trades` | `Journalex.TradesBehaviour` |
 | `Journalex.Settings` | `Journalex.SettingsBehaviour` |
 | `Journalex.ActivityStatementParser` | `Journalex.ParserBehaviour` |
+| `Journalex.CombinedDrafts` | `Journalex.CombinedDraftsBehaviour` |
+| `Journalex.WriteupDrafts` | `Journalex.WriteupDraftsBehaviour` |
 
-After adding a `@callback` to a behaviour, **also** add a matching `Mox.defmock` stub in `test/test_helper.exs` — the four mocks already defined are:
+After adding a `@callback` to a behaviour, **also** add a matching `Mox.defmock` stub in `test/test_helper.exs` — the six mocks currently defined are:
 
 ```elixir
 Mox.defmock(Journalex.MockActivity, for: Journalex.ActivityBehaviour)
 Mox.defmock(Journalex.MockTrades, for: Journalex.TradesBehaviour)
 Mox.defmock(Journalex.MockSettings, for: Journalex.SettingsBehaviour)
 Mox.defmock(Journalex.MockParser, for: Journalex.ParserBehaviour)
+Mox.defmock(Journalex.MockWriteupDrafts, for: Journalex.WriteupDraftsBehaviour)
+Mox.defmock(Journalex.MockCombinedDrafts, for: Journalex.CombinedDraftsBehaviour)
 ```
 
 The mocks exist for future LiveView test isolation. Currently, the only LiveView test (`ActivityStatementUploadResultLiveTest`) calls real modules with CSV fixtures and a real DB. When writing new LiveView tests that need isolation, use `Mox.expect/3` or `Mox.stub/3` with these mocks.

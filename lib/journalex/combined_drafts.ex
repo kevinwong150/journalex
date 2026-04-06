@@ -7,6 +7,8 @@ defmodule Journalex.CombinedDrafts do
   import Ecto.Query, warn: false
   alias Journalex.Repo
   alias Journalex.CombinedDrafts.Draft
+  alias Journalex.MetadataDrafts
+  alias Journalex.WriteupDrafts
 
   @placeholder_blocks [
     %{"type" => "toggle", "text" => "1min:", "children" => []},
@@ -80,18 +82,42 @@ defmodule Journalex.CombinedDrafts do
 
   @doc """
   Delete a combined draft.
+
+  Options:
+    - `:mode` - `:shallow` (default) or `:deep`
+      - `:shallow` deletes only the combined draft record, leaving metadata and writeup drafts intact.
+      - `:deep` also deletes associated metadata and writeup drafts if they are not referenced by
+        any other combined draft. Preset writeup drafts are always preserved.
+
+  `:shallow` returns `{:ok, %Draft{}}`.
+  `:deep` returns `{:ok, %{combined_draft: draft, metadata_draft_deleted: bool, writeup_draft_deleted: bool}}`.
   """
-  def delete_draft(%Draft{} = draft) do
-    Repo.delete(draft)
+  def delete_draft(%Draft{} = draft, opts \\ []) do
+    case Keyword.get(opts, :mode, :shallow) do
+      :shallow -> Repo.delete(draft)
+      :deep -> deep_delete_draft(draft)
+    end
   end
 
   @doc """
-  Delete all combined drafts by a list of ids.
-  Returns `{:ok, count}` with the number of deleted rows.
+  Delete combined drafts by a list of ids.
+
+  Options:
+    - `:mode` - `:shallow` (default) or `:deep`
+      - `:shallow` deletes only the combined draft records. Returns `{:ok, count}`.
+      - `:deep` also prunes associated metadata and writeup drafts that are no longer referenced by
+        any remaining combined draft. Returns
+        `{:ok, %{combined_count: N, metadata_count: N, writeup_count: N}}`.
   """
-  def delete_drafts(ids) when is_list(ids) do
-    {count, _} = from(d in Draft, where: d.id in ^ids) |> Repo.delete_all()
-    {:ok, count}
+  def delete_drafts(ids, opts \\ []) when is_list(ids) do
+    case Keyword.get(opts, :mode, :shallow) do
+      :shallow ->
+        {count, _} = from(d in Draft, where: d.id in ^ids) |> Repo.delete_all()
+        {:ok, count}
+
+      :deep ->
+        deep_delete_drafts(ids)
+    end
   end
 
   @doc """
@@ -165,6 +191,96 @@ defmodule Journalex.CombinedDrafts do
     |> case do
       nil -> nil
       draft -> Repo.preload(draft, @preloads)
+    end
+  end
+
+  # ── Deep delete helpers ──────────────────────────────────────────────
+
+  defp deep_delete_draft(%Draft{} = draft) do
+    md_id = draft.metadata_draft_id
+    wd_id = draft.writeup_draft_id
+
+    Repo.transaction(fn ->
+      case Repo.delete(draft) do
+        {:ok, deleted} ->
+          md_deleted = maybe_delete_orphan_metadata(md_id)
+          wd_deleted = maybe_delete_orphan_writeup(wd_id)
+          %{combined_draft: deleted, metadata_draft_deleted: md_deleted, writeup_draft_deleted: wd_deleted}
+
+        {:error, reason} ->
+          Repo.rollback(reason)
+      end
+    end)
+  end
+
+  defp deep_delete_drafts([]) do
+    {:ok, %{combined_count: 0, metadata_count: 0, writeup_count: 0}}
+  end
+
+  defp deep_delete_drafts(ids) do
+    sub_ids =
+      from(d in Draft,
+        where: d.id in ^ids,
+        select: {d.metadata_draft_id, d.writeup_draft_id}
+      )
+      |> Repo.all()
+
+    md_ids = sub_ids |> Enum.map(&elem(&1, 0)) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+    wd_ids = sub_ids |> Enum.map(&elem(&1, 1)) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    Repo.transaction(fn ->
+      {count, _} = from(d in Draft, where: d.id in ^ids) |> Repo.delete_all()
+
+      md_deleted =
+        Enum.count(md_ids, fn md_id ->
+          remaining =
+            Repo.one(from d in Draft, where: d.metadata_draft_id == ^md_id, select: count(d.id))
+
+          if remaining == 0, do: delete_metadata_draft_by_id(md_id), else: false
+        end)
+
+      wd_deleted =
+        Enum.count(wd_ids, fn wd_id ->
+          remaining =
+            Repo.one(from d in Draft, where: d.writeup_draft_id == ^wd_id, select: count(d.id))
+
+          if remaining == 0, do: delete_writeup_draft_by_id(wd_id), else: false
+        end)
+
+      %{combined_count: count, metadata_count: md_deleted, writeup_count: wd_deleted}
+    end)
+  end
+
+  defp maybe_delete_orphan_metadata(nil), do: false
+
+  defp maybe_delete_orphan_metadata(md_id) do
+    remaining =
+      Repo.one(from d in Draft, where: d.metadata_draft_id == ^md_id, select: count(d.id))
+
+    if remaining == 0, do: delete_metadata_draft_by_id(md_id), else: false
+  end
+
+  defp maybe_delete_orphan_writeup(nil), do: false
+
+  defp maybe_delete_orphan_writeup(wd_id) do
+    remaining =
+      Repo.one(from d in Draft, where: d.writeup_draft_id == ^wd_id, select: count(d.id))
+
+    if remaining == 0, do: delete_writeup_draft_by_id(wd_id), else: false
+  end
+
+  defp delete_metadata_draft_by_id(id) do
+    case MetadataDrafts.get_draft(id) do
+      nil -> false
+      draft -> match?({:ok, _}, MetadataDrafts.delete_draft(draft))
+    end
+  end
+
+  defp delete_writeup_draft_by_id(id) do
+    case WriteupDrafts.get_draft(id) do
+      nil -> false
+      %{is_preset: true} -> false
+      draft -> match?({:ok, _}, WriteupDrafts.delete_draft(draft))
     end
   end
 end

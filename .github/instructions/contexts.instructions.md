@@ -76,3 +76,25 @@ Never hardcode Notion datasource IDs. Use `Journalex.Notion.DataSources` for all
 
 - `Trades.cast_polymorphic_metadata/2` — version-changing writes (routes to V1 or V2 embedded schema)
 - `Trades.update_metadata/2` — partial field updates that preserve the existing version
+
+## Cascade delete pattern (shallow / deep modes)
+
+When a context function must optionally clean up associated records, use a `mode: :shallow | :deep` option:
+
+```elixir
+def delete_draft(%Draft{} = draft, opts \\ []) do
+  case Keyword.get(opts, :mode, :shallow) do
+    :shallow -> Repo.delete(draft)
+    :deep    -> deep_delete_draft(draft)
+  end
+end
+```
+
+Deep delete rules:
+- Wrap the entire operation in `Repo.transaction/1`; call `Repo.rollback/1` on failure
+- Capture sub-record IDs **before** deleting the parent
+- After deleting the parent(s), count remaining references from other parents — only delete the sub-record if the count is 0 (preserves shared/preset sub-records)
+- Return different shapes per mode: `{:ok, count}` (shallow) vs `{:ok, %{combined_count: N, metadata_count: N, writeup_count: N}}` (deep)
+- The `@callback` typespec must union both possible success shapes
+
+Bulk variant (`delete_drafts/2`) collects all sub-IDs with one query before deleting, then iterates checking remaining references.

@@ -53,6 +53,7 @@ defmodule JournalexWeb.TradeDraftLive do
       |> assign(:metadata_dirty, false)
       |> assign(:writeup_dirty, false)
       |> assign(:modified_draft_ids, MapSet.new())
+      |> assign(:cd_delete_confirm, nil)
 
     {:ok, socket}
   end
@@ -191,73 +192,73 @@ defmodule JournalexWeb.TradeDraftLive do
   @impl true
   def handle_event("cd_bulk_delete", _params, socket) do
     ids = MapSet.to_list(socket.assigns.selected_cd_ids)
-    selected_id = socket.assigns.selected_draft && socket.assigns.selected_draft.id
-
-    case CombinedDrafts.delete_drafts(ids) do
-      {:ok, count} ->
-        socket =
-          socket
-          |> assign(:combined_drafts, CombinedDrafts.list_drafts())
-          |> assign(:selected_cd_ids, MapSet.new())
-          |> put_toast(:info, "Deleted #{count} draft(s)")
-
-        socket =
-          if selected_id && selected_id in ids, do: clear_editor(socket), else: socket
-
-        {:noreply, socket}
-
-      {:error, _} ->
-        {:noreply, put_toast(socket, :error, "Failed to delete")}
-    end
+    count = length(ids)
+    {:noreply, assign(socket, :cd_delete_confirm, %{pending_ids: ids, label: "#{count} selected draft(s)"})}
   end
 
   @impl true
   def handle_event("cd_delete_all", _params, socket) do
     all_ids = Enum.map(socket.assigns.combined_drafts, & &1.id)
-    selected_id = socket.assigns.selected_draft && socket.assigns.selected_draft.id
-
-    case CombinedDrafts.delete_drafts(all_ids) do
-      {:ok, count} ->
-        socket =
-          socket
-          |> assign(:combined_drafts, [])
-          |> assign(:selected_cd_ids, MapSet.new())
-          |> put_toast(:info, "Deleted all #{count} draft(s)")
-
-        socket = if selected_id, do: clear_editor(socket), else: socket
-
-        {:noreply, socket}
-
-      {:error, _} ->
-        {:noreply, put_toast(socket, :error, "Failed to delete all")}
-    end
+    count = length(all_ids)
+    {:noreply, assign(socket, :cd_delete_confirm, %{pending_ids: all_ids, label: "all #{count} draft(s)"})}
   end
 
   @impl true
   def handle_event("cd_delete", %{"id" => id_str}, socket) do
     {id, _} = Integer.parse(id_str)
-    draft = CombinedDrafts.get_draft!(id)
+    draft = Enum.find(socket.assigns.combined_drafts, &(&1.id == id))
+    name = if draft, do: draft.name, else: "draft"
+    {:noreply, assign(socket, :cd_delete_confirm, %{pending_ids: [id], label: "\"#{name}\""})}
+  end
 
-    case CombinedDrafts.delete_draft(draft) do
-      {:ok, _} ->
+  @impl true
+  def handle_event("cd_confirm_delete", %{"mode" => mode_str}, socket) do
+    %{pending_ids: ids, label: label} = socket.assigns.cd_delete_confirm
+
+    mode =
+      case mode_str do
+        "deep" -> :deep
+        _ -> :shallow
+      end
+
+    selected_id = socket.assigns.selected_draft && socket.assigns.selected_draft.id
+    socket = assign(socket, :cd_delete_confirm, nil)
+
+    case CombinedDrafts.delete_drafts(ids, mode: mode) do
+      {:ok, count} when is_integer(count) ->
         socket =
           socket
           |> assign(:combined_drafts, CombinedDrafts.list_drafts())
-          |> put_toast(:info, "Deleted trade draft \"#{draft.name}\"")
+          |> assign(:selected_cd_ids, MapSet.new())
+          |> put_toast(:info, "Deleted #{label}")
 
-        # Clear editor if we deleted the selected draft
+        socket = if selected_id && selected_id in ids, do: clear_editor(socket), else: socket
+        {:noreply, socket}
+
+      {:ok, %{combined_count: total} = stats} ->
+        parts =
+          ["#{total} draft(s)"]
+          |> then(&if stats.metadata_count > 0, do: &1 ++ ["#{stats.metadata_count} metadata draft(s)"], else: &1)
+          |> then(&if stats.writeup_count > 0, do: &1 ++ ["#{stats.writeup_count} writeup draft(s)"], else: &1)
+          |> Enum.join(", ")
+
         socket =
-          if socket.assigns.selected_draft && socket.assigns.selected_draft.id == draft.id do
-            clear_editor(socket)
-          else
-            socket
-          end
+          socket
+          |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+          |> assign(:selected_cd_ids, MapSet.new())
+          |> put_toast(:info, "Deleted #{parts}")
 
+        socket = if selected_id && selected_id in ids, do: clear_editor(socket), else: socket
         {:noreply, socket}
 
       {:error, _} ->
-        {:noreply, put_toast(socket, :error, "Failed to delete")}
+        {:noreply, put_toast(socket, :error, "Failed to delete #{label}")}
     end
+  end
+
+  @impl true
+  def handle_event("cd_cancel_delete", _params, socket) do
+    {:noreply, assign(socket, :cd_delete_confirm, nil)}
   end
 
   # ── Bulk create ─────────────────────────────────────────────────────
@@ -753,7 +754,6 @@ defmodule JournalexWeb.TradeDraftLive do
                   :if={!@bulk_mode && @combined_drafts != []}
                   phx-click="cd_delete_all"
                   class="text-xs px-2 py-1 rounded-md border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 font-medium transition-colors"
-                  data-confirm="Delete ALL trade drafts? This cannot be undone."
                 >
                   Delete all
                 </button>
@@ -913,7 +913,6 @@ defmodule JournalexWeb.TradeDraftLive do
                 <button
                   phx-click="cd_bulk_delete"
                   class="text-xs px-2.5 py-1 rounded-md bg-red-600 text-white hover:bg-red-700 font-medium transition-colors"
-                  data-confirm={"Delete #{MapSet.size(@selected_cd_ids)} selected draft(s)?"}
                 >
                   Delete selected
                 </button>
@@ -998,7 +997,6 @@ defmodule JournalexWeb.TradeDraftLive do
                       phx-value-id={cd.id}
                       class="p-1.5 rounded text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                       title="Delete"
-                      data-confirm={"Delete trade draft \"#{cd.name}\"?"}
                     >
                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1211,6 +1209,44 @@ defmodule JournalexWeb.TradeDraftLive do
               <p class="text-sm text-zinc-400">Select a trade draft from the list to edit its metadata and writeup.</p>
             </div>
           <% end %>
+        </div>
+      </div>
+    </div>
+
+    <%!-- ─── Delete confirmation modal ─── --%>
+    <div
+      :if={@cd_delete_confirm}
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      phx-window-keydown="cd_cancel_delete"
+      phx-key="Escape"
+    >
+      <div class="bg-white rounded-lg shadow-xl border border-zinc-200 w-full max-w-md mx-4 p-6">
+        <h3 class="text-base font-semibold text-zinc-900 mb-1">Delete trade draft(s)</h3>
+        <p class="text-sm text-zinc-500 mb-5">
+          Also remove the associated metadata and writeup drafts for {@cd_delete_confirm.label}?
+          Sub-drafts shared by other combined drafts will not be affected.
+        </p>
+        <div class="flex flex-col gap-2">
+          <button
+            phx-click="cd_confirm_delete"
+            phx-value-mode="deep"
+            class="w-full px-4 py-2.5 text-sm font-medium bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+          >
+            Delete draft + sub-drafts
+          </button>
+          <button
+            phx-click="cd_confirm_delete"
+            phx-value-mode="shallow"
+            class="w-full px-4 py-2.5 text-sm font-medium bg-zinc-600 text-white rounded-md hover:bg-zinc-700 transition-colors"
+          >
+            Delete draft only
+          </button>
+          <button
+            phx-click="cd_cancel_delete"
+            class="w-full px-4 py-2.5 text-sm font-medium text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 rounded-md transition-colors border border-zinc-200"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>

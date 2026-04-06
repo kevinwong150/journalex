@@ -55,3 +55,31 @@ end
 - Register routes in `lib/journalex_web/router.ex` under `scope "/", JournalexWeb`
 - Use `Journalex.Settings` for user-configurable settings (not `Application.get_env` for those)
 - Do NOT import `Ecto.Query` in LiveViews — all queries stay in context modules
+
+## Confirmation modal pattern (assign-based, not data-confirm)
+
+For destructive actions that require user confirmation — especially those with multiple modes (e.g., shallow vs deep delete) — use an assign to store pending state rather than a `data-confirm` attribute:
+
+```elixir
+# Event handler that triggers confirmation
+def handle_event("delete", %{"id" => id_str}, socket) do
+  {id, _} = Integer.parse(id_str)
+  name = find_name(socket, id)
+  {:noreply, assign(socket, :my_delete_confirm, %{pending_ids: [id], label: "\"#{name}\""})}
+end
+
+# Confirmation handler — mode passed as phx-value-mode from the modal buttons
+def handle_event("confirm_delete", %{"mode" => mode_str}, socket) do
+  %{pending_ids: ids} = socket.assigns.my_delete_confirm
+  mode = if mode_str == "deep", do: :deep, else: :shallow
+  socket = assign(socket, :my_delete_confirm, nil)  # dismiss modal first
+  # ... perform delete, update assigns, put_toast ...
+end
+
+# Cancel handler
+def handle_event("cancel_delete", _params, socket) do
+  {:noreply, assign(socket, :my_delete_confirm, nil)}
+end
+```
+
+In the template, render the modal conditionally on the assign being non-nil. Use `data-confirm` only for simple single-action confirmations with no mode variants.
