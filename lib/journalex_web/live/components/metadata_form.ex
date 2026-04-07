@@ -581,7 +581,7 @@ defmodule JournalexWeb.MetadataForm do
       "Reversal - Three inside down",
       "Reversal - Capitulation",
       "Reversal - Weak Trend Reversal - Consolidation Below Top Liquidity Grab",
-      "Reversal - Weak Trend Reversal Spike Volume Extended Trend",
+      "Reversal - Weak Trend Reversal - Spike Volume Extended Trend",
       "Reversal - Day High/Low",
       "Breakout - Day High/Low",
       "Bouncy Ball - Big Seller/Buyer",
