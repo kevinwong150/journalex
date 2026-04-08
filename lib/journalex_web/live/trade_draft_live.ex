@@ -647,6 +647,16 @@ defmodule JournalexWeb.TradeDraftLive do
   end
 
   @impl true
+  def handle_event("insert_timestamp", %{"index" => idx_str, "timestamp" => ts}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    current = Enum.at(socket.assigns.blocks, idx)
+    text = current["text"] || ""
+    new_text = if text == "", do: ts, else: text <> "\n" <> ts
+    blocks = BlockHelpers.update_text(socket.assigns.blocks, idx, new_text)
+    {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, idx) |> assign(:writeup_dirty, true)}
+  end
+
+  @impl true
   def handle_event("insert_preset_block_at", %{"id" => id_str, "after" => after_str}, socket) do
     {id, _} = Integer.parse(id_str)
     {after_idx, _} = Integer.parse(after_str)

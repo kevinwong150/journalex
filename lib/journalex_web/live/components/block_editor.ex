@@ -13,6 +13,7 @@ defmodule JournalexWeb.BlockEditor do
   - `update_block_text` with `index` and `value` params
   - `toggle_block_type` with `index` param
   - `insert_preset_block_at` with `id` and `after` params
+  - `insert_timestamp` with `index` and `timestamp` params (via JS hook)
   """
 
   use JournalexWeb, :html
@@ -126,6 +127,18 @@ defmodule JournalexWeb.BlockEditor do
                 >
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  id={"ts-btn-#{idx}"}
+                  phx-hook="TimestampInsert"
+                  data-index={idx}
+                  class="p-1 rounded text-zinc-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                  title="Insert timestamp"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                   </svg>
                 </button>
                 <%!-- Add block after --%>

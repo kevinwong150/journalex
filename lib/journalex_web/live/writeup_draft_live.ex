@@ -385,6 +385,16 @@ defmodule JournalexWeb.WriteupDraftLive do
     {:noreply, assign(socket, :blocks, BlockHelpers.toggle_type(socket.assigns.blocks, idx))}
   end
 
+  @impl true
+  def handle_event("insert_timestamp", %{"index" => idx_str, "timestamp" => ts}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    current = Enum.at(socket.assigns.blocks, idx)
+    text = current["text"] || ""
+    new_text = if text == "", do: ts, else: text <> "\n" <> ts
+    blocks = BlockHelpers.update_text(socket.assigns.blocks, idx, new_text)
+    {:noreply, socket |> assign(:blocks, blocks) |> assign(:active_block_index, idx)}
+  end
+
   # ── Select mode ─────────────────────────────────────────────────────
 
   @impl true
@@ -797,6 +807,16 @@ defmodule JournalexWeb.WriteupDraftLive do
     else
       {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_event("pb_insert_timestamp", %{"index" => idx_str, "timestamp" => ts}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    current = Enum.at(socket.assigns.pb_blocks, idx)
+    text = current["text"] || ""
+    new_text = if text == "", do: ts, else: text <> "\n" <> ts
+    blocks = List.update_at(socket.assigns.pb_blocks, idx, &Map.put(&1, "text", new_text))
+    {:noreply, assign(socket, :pb_blocks, blocks)}
   end
 
   # ── Preset block insertion ─────────────────────────────────────────
@@ -1618,6 +1638,19 @@ defmodule JournalexWeb.WriteupDraftLive do
                           >
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            id={"pb-ts-btn-#{idx}"}
+                            phx-hook="TimestampInsert"
+                            data-index={idx}
+                            data-event="pb_insert_timestamp"
+                            class="p-0.5 rounded text-zinc-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                            title="Insert timestamp"
+                          >
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                             </svg>
                           </button>
                           <button

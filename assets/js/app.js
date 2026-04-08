@@ -343,6 +343,18 @@ Hooks.DetailTabs = {
   }
 }
 
+Hooks.TimestampInsert = {
+  mounted() {
+    this.el.addEventListener('click', () => {
+      const now = new Date()
+      const pad = (n) => String(n).padStart(2, '0')
+      const ts = `[${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}]`
+      const event = this.el.dataset.event || 'insert_timestamp'
+      this.pushEvent(event, {index: this.el.dataset.index, timestamp: ts})
+    })
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
