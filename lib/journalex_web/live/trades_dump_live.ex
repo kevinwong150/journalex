@@ -810,7 +810,7 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   # Push a single bound draft to Notion. Returns {:noreply, socket} for use in single-push handler.
-  defp push_single_to_notion(socket, _idx, trade, combined) do
+  defp push_single_to_notion(socket, idx, trade, combined) do
     page_id = combined.notion_page_id
     ticker = trade.ticker || trade.symbol
     date_key = trade_date_key(trade)
@@ -842,6 +842,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
               {:noreply,
                socket
+               |> assign(:row_statuses, Map.put(socket.assigns.row_statuses, idx, :exists))
                |> assign(:combined_drafts, refreshed_drafts)
                |> assign(:bound_drafts_map, build_bound_drafts_map(refreshed_drafts))
                |> put_toast(:info, "Pushed \"#{combined.name}\" to Notion")}
@@ -857,7 +858,7 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   # Silent version for bulk push — returns {:ok, socket} or {:error, socket} without toasts.
-  defp push_single_to_notion_quiet(socket, _idx, trade, combined) do
+  defp push_single_to_notion_quiet(socket, idx, trade, combined) do
     page_id = combined.notion_page_id
     ticker = trade.ticker || trade.symbol
     date_key = trade_date_key(trade)
@@ -884,7 +885,7 @@ defmodule JournalexWeb.TradesDumpLive do
           case writeup_result do
             {:ok, _} ->
               CombinedDrafts.mark_applied(combined)
-              {:ok, socket}
+              {:ok, assign(socket, :row_statuses, Map.put(socket.assigns.row_statuses, idx, :exists))}
 
             {:error, _} ->
               {:error, socket}

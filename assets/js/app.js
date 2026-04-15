@@ -344,14 +344,20 @@ Hooks.DetailTabs = {
 }
 
 Hooks.TimestampInsert = {
-  mounted() {
-    this.el.addEventListener('click', () => {
+  mounted()  { this._attachListener() },
+  updated()  { this._attachListener() },
+  _attachListener() {
+    if (this._listener) {
+      this.el.removeEventListener('click', this._listener)
+    }
+    this._listener = () => {
       const now = new Date()
       const pad = (n) => String(n).padStart(2, '0')
       const ts = `[${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}]`
       const event = this.el.dataset.event || 'insert_timestamp'
       this.pushEvent(event, {index: this.el.dataset.index, timestamp: ts})
-    })
+    }
+    this.el.addEventListener('click', this._listener)
   }
 }
 
