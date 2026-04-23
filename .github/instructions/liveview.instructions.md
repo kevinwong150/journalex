@@ -55,6 +55,7 @@ end
 - Register routes in `lib/journalex_web/router.ex` under `scope "/", JournalexWeb`
 - Use `Journalex.Settings` for user-configurable settings (not `Application.get_env` for those)
 - Do NOT import `Ecto.Query` in LiveViews — all queries stay in context modules
+- Use `import ModuleName` (not `alias`) when a LiveView template uses shorthand component syntax `<.func_name />` — `alias` only shortcuts the module name and does NOT bring the function into scope
 
 ## Confirmation modal pattern (assign-based, not data-confirm)
 

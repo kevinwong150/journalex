@@ -30,23 +30,33 @@
             <span class="hero-chevron-down-mini text-zinc-500 group-open:rotate-180 transition-transform">
             </span>
           </summary>
-          <div class="absolute right-0 mt-2 w-56 rounded-md border border-zinc-200 bg-white shadow-md py-1">
-            <p class="px-3 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Trades</p>
-            <a href={~p"/trade/all"} class="block px-3 py-1.5 hover:bg-zinc-50">All Trades</a>
-            <a href={~p"/trade/dates"} class="block px-3 py-1.5 hover:bg-zinc-50">Trades by Date</a>
-            <a href={~p"/trade/dump"} class="block px-3 py-1.5 hover:bg-zinc-50">Trades Dump</a>
-            <div class="my-1 h-px bg-zinc-100"></div>
-            <p class="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Drafts</p>
-            <a href={~p"/trade/drafts"} class="block px-3 py-1.5 hover:bg-zinc-50">Trade Drafts</a>
-            <a href={~p"/trade/drafts/metadata"} class="block px-3 py-1.5 hover:bg-zinc-50">Metadata Drafts</a>
-            <a href={~p"/trade/drafts/writeups"} class="block px-3 py-1.5 hover:bg-zinc-50">Writeup Drafts</a>
-            <div class="my-1 h-px bg-zinc-100"></div>
-            <p class="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Statements</p>
-            <a href={~p"/activity_statement/all"} class="block px-3 py-1.5 hover:bg-zinc-50">All Statements</a>
-            <a href={~p"/activity_statement/dates"} class="block px-3 py-1.5 hover:bg-zinc-50">Statements by Date</a>
-            <a href={~p"/statement/dump"} class="block px-3 py-1.5 hover:bg-zinc-50">Statement Dump</a>
-            <div class="my-1 h-px bg-zinc-100"></div>
-            <a href={~p"/settings"} class="block px-3 py-1.5 hover:bg-zinc-50">Settings</a>
+          <div class="absolute right-0 mt-2 w-80 rounded-md border border-zinc-200 bg-white shadow-md py-2 grid grid-cols-2 divide-x divide-zinc-100">
+            <!-- Left: Trades + Drafts -->
+            <div>
+              <p class="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Trades</p>
+              <a href={~p"/trade/all"} class="block px-3 py-1.5 hover:bg-zinc-50">All Trades</a>
+              <a href={~p"/trade/dates"} class="block px-3 py-1.5 hover:bg-zinc-50">Trades by Date</a>
+              <a href={~p"/trade/dump"} class="block px-3 py-1.5 hover:bg-zinc-50">Trades Dump</a>
+              <div class="my-1.5 h-px bg-zinc-100"></div>
+              <p class="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Drafts</p>
+              <a href={~p"/trade/drafts"} class="block px-3 py-1.5 hover:bg-zinc-50">Trade Drafts</a>
+              <a href={~p"/trade/drafts/metadata"} class="block px-3 py-1.5 hover:bg-zinc-50">Metadata Drafts</a>
+              <a href={~p"/trade/drafts/writeups"} class="block px-3 py-1.5 hover:bg-zinc-50">Writeup Drafts</a>
+            </div>
+            <!-- Right: Statements + Analytics + Settings -->
+            <div>
+              <p class="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Statements</p>
+              <a href={~p"/activity_statement/all"} class="block px-3 py-1.5 hover:bg-zinc-50">All Statements</a>
+              <a href={~p"/activity_statement/dates"} class="block px-3 py-1.5 hover:bg-zinc-50">Statements by Date</a>
+              <a href={~p"/statement/dump"} class="block px-3 py-1.5 hover:bg-zinc-50">Statement Dump</a>
+              <div class="my-1.5 h-px bg-zinc-100"></div>
+              <p class="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Analytics</p>
+              <a href={~p"/analytics/dashboard"} class="block px-3 py-1.5 hover:bg-zinc-50">Dashboard</a>
+              <a href={~p"/analytics/calendar"} class="block px-3 py-1.5 hover:bg-zinc-50">Trade Calendar</a>
+              <a href={~p"/analytics/risk"} class="block px-3 py-1.5 hover:bg-zinc-50">Risk / Reward</a>
+              <div class="my-1.5 h-px bg-zinc-100"></div>
+              <a href={~p"/settings"} class="block px-3 py-1.5 hover:bg-zinc-50">Settings</a>
+            </div>
           </div>
         </details>
       </nav>
@@ -111,6 +121,11 @@
               <span class="block rounded px-3 py-2 text-zinc-400 cursor-not-allowed select-none" aria-disabled="true">Upload Result</span>
             <% end %>
             <a href={~p"/statement/dump"} class="block rounded px-3 py-2 hover:bg-zinc-50">Statement Dump</a>
+            <div class="my-1 h-px bg-zinc-100"></div>
+            <p class="px-2 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Analytics</p>
+            <a href={~p"/analytics/dashboard"} class="block rounded px-3 py-2 hover:bg-zinc-50">Dashboard</a>
+            <a href={~p"/analytics/calendar"} class="block rounded px-3 py-2 hover:bg-zinc-50">Trade Calendar</a>
+            <a href={~p"/analytics/risk"} class="block rounded px-3 py-2 hover:bg-zinc-50">Risk / Reward</a>
             <div class="my-1 h-px bg-zinc-100"></div>
             <a href={~p"/settings"} class="block rounded px-3 py-2 hover:bg-zinc-50">Settings</a>
           </div>

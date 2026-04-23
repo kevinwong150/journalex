@@ -17,12 +17,34 @@
 
 // Include phoenix_html to handle method=PUT/DELETE in forms and buttons.
 import "phoenix_html"
+import * as echarts from "echarts"
 // Establish Phoenix Socket and LiveView configuration.
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 
 let Hooks = {}
+
+Hooks.Chart = {
+  mounted() {
+    const option = JSON.parse(this.el.dataset.option)
+    this.chart = echarts.init(this.el, null, { renderer: "canvas" })
+    this.chart.setOption(option)
+    this._resizeHandler = () => this.chart.resize()
+    window.addEventListener("resize", this._resizeHandler)
+    // Receive option updates via push_event (phx-update="ignore" blocks DOM patches)
+    this.handleEvent("chart-update", ({id, option}) => {
+      if (id === this.el.id) {
+        this.chart.setOption(option, { notMerge: true })
+        this.chart.resize()
+      }
+    })
+  },
+  destroyed() {
+    window.removeEventListener("resize", this._resizeHandler)
+    this.chart.dispose()
+  }
+}
 
 Hooks.Toast = {
   mounted() {

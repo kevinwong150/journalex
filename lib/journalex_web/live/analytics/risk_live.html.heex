@@ -1,0 +1,33 @@
+<.analytics_filter_bar
+  versions_available={@versions_available}
+  selected_versions={@selected_versions}
+  from={@from}
+  to={@to}
+  r_mode={@r_mode}
+/>
+
+<div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
+  R:R data requires V2+ trades. V1 trades are excluded from this page.
+</div>
+
+<div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+  <div>
+    <h2 class="mb-2 flex items-center text-sm font-semibold text-zinc-500 uppercase tracking-wider">
+      R-Multiple Distribution
+      <.info_tooltip text="Histogram of realized R-multiples. Shows how often your trades land in each R range, from large losses to large wins." />
+    </h2>
+    <.chart id="rr-histogram" option={@histogram_option} class="w-full h-64" />
+  </div>
+  <div>
+    <h2 class="mb-2 flex items-center text-sm font-semibold text-zinc-500 uppercase tracking-wider">
+      Initial R:R vs Actual R
+      <.info_tooltip text="Scatter plot: x-axis = planned risk:reward ratio at entry, y-axis = realized R. Green dots = wins, red = losses." />
+    </h2>
+    <.chart id="rr-scatter" option={@scatter_option} class="w-full h-64" />
+  </div>
+</div>
+
+<div class="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+  <.kpi_card label="Expectancy" value={"#{@rr.expectancy}R"} tooltip="(Win% × Avg Win R) − (Loss% × Avg Loss R). Expected R earned per trade on average." />
+  <.kpi_card label="R:R Fulfillment" value={"#{Float.round(@rr.fulfillment_rate * 100, 1)}%"} tooltip="Percentage of winning trades where realized R met or exceeded the initial R:R target set at entry." />
+</div>

@@ -210,6 +210,9 @@ The `MetadataForm` component renders V1 or V2 forms via separate function compon
 8. Do not use `Map.merge/2` to combine atom-keyed and string-keyed maps without converting first
 9. Do not reference `get_rich_text/2` or `maybe_put_rich_text/3` — they have been removed from `Journalex.Notion`
 10. Do not hardcode Notion property name strings when adding new fields — check the actual property name in the relevant `extract_v1/v2_metadata_from_properties` and `build_v1/v2_metadata_properties` functions in `lib/journalex/notion.ex`
+11. Do not use `alias` to bring function components into scope for `<.my_component />` syntax — use `import`. `alias JournalexWeb.MyComponent` only shortcuts the module name; `<.my_component />` requires `import JournalexWeb.MyComponent` so the function is in scope
+12. In Ecto `fragment()`, every `?` character in the SQL string is counted as a bind parameter placeholder — including any `?` inside JSONB key names like `"done?"`. Never embed such key names directly in the fragment string; always pass them as a second bound argument: `fragment("(?->>?)::boolean = true", t.metadata, "done?")`
+13. `elixir:latest` Docker image does not include Node.js or npm. Install via NodeSource: `curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs` — this bundles npm with Node 20 LTS
 
 ---
 
@@ -250,7 +253,7 @@ Reply with a number, or just describe what you need.
 
 ## Session memory and knowledge curation
 
-**During every non-trivial session**, write notable learnings to `/memories/session/` as they arise. Things worth noting:
+**During every non-trivial task**, write notable learnings to `/memories/session/` as they arise. Things worth noting:
 - New patterns established or agreed upon
 - New pitfalls discovered (mistakes made, wrong assumptions corrected)
 - Verified facts about the codebase (confirmed baselines, module signatures, working commands)
@@ -259,11 +262,6 @@ Reply with a number, or just describe what you need.
 
 Keep notes short — bullet points or single facts. Create `/memories/session/learnings.md` if it doesn't exist; append to it if it does.
 
-**At the end of every non-trivial session** (when the user signals they're wrapping up, or the main work is complete), offer:
+**After every non-trivial task completes** (same bar as the agent routing menu: implementing a feature, bug fix, code review, test run, or planning work), invoke `journalex-curator` as a subagent and post the returned report in the chat response, separated by `---` and headed `## Curator Report`. Do this automatically — do not ask the user first.
 
-```
-Session complete. Run the curator to persist learnings to permanent files?
-(Invoke @journalex-curator — it will read session notes and decide what to keep.)
-```
-
-Only offer once. Do not repeat if the user declines.
+The curator reads session notes and the git log, decides what is durable and non-duplicate, updates the appropriate permanent files (memory, skills, instructions), and returns a report listing what was persisted and what was skipped.

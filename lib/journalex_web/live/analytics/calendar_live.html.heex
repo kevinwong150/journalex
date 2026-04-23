@@ -1,0 +1,15 @@
+<.analytics_filter_bar
+  versions_available={@versions_available}
+  selected_versions={@selected_versions}
+  from={@from}
+  to={@to}
+  r_mode={@r_mode}
+/>
+
+<div class="mt-6">
+  <h2 class="mb-2 flex items-center text-sm font-semibold text-zinc-500 uppercase tracking-wider">
+    Daily R Heatmap — <%= @year %>
+    <.info_tooltip text="Each cell is one trading day. Green = net profit, red = net loss. Intensity reflects the R magnitude for that day." />
+  </h2>
+  <.chart id="calendar-heatmap" option={@calendar_option} class="w-full h-48" />
+</div>

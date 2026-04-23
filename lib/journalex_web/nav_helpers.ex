@@ -22,7 +22,10 @@ defmodule JournalexWeb.NavHelpers do
     {"statements_by_date", "Statements by Date", "/activity_statement/dates"},
     {"statement_dump",     "Statement Dump",     "/statement/dump"},
     {"upload",             "Upload",             "/activity_statement/upload"},
-    {"settings",           "Settings",           "/settings"}
+    {"settings",           "Settings",           "/settings"},
+    {"analytics_dashboard", "Analytics Dashboard", "/analytics/dashboard"},
+    {"analytics_calendar",  "Trade Calendar",      "/analytics/calendar"},
+    {"analytics_risk",      "Risk / Reward",       "/analytics/risk"}
   ]
 
   @doc """

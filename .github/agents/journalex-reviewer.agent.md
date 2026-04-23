@@ -36,6 +36,7 @@ Read only the files relevant to the code being reviewed (e.g., skip migrations.i
 - Missing `@impl true` on `mount/3`, `handle_event/3`, `handle_params/3`, `handle_info/2`, `render/1`
 - Uninitialized assigns — all assigns must be set in `mount/3`
 - `Application.get_env` for user-configurable settings — must use `Journalex.Settings` instead
+- `alias JournalexWeb.SomeComponent` used with `<.component_func />` syntax — `alias` does NOT bring the function into scope; must use `import JournalexWeb.SomeComponent` instead
 
 ### Context modules (`lib/journalex/**`, excluding `lib/journalex_web/**`)
 

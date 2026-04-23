@@ -1,0 +1,26 @@
+<.analytics_filter_bar
+  versions_available={@versions_available}
+  selected_versions={@selected_versions}
+  from={@from}
+  to={@to}
+  r_mode={@r_mode}
+/>
+
+<div class="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+  <.kpi_card label="Total R" value={"#{@kpis.total_r}R"} tooltip="Sum of all R-multiples for completed trades in the selected period" />
+  <.kpi_card label="Win Rate" value={"#{Float.round(@kpis.win_rate * 100, 1)}%"} tooltip="Percentage of winning trades out of all completed trades" />
+  <.kpi_card label="Trades" value={"#{@kpis.trade_count}"} tooltip="Total number of completed trades in the selected period" />
+  <.kpi_card label="Avg R" value={"#{@kpis.avg_r}R"} tooltip="Average R-multiple per trade (Total R ÷ Trade Count)" />
+  <.kpi_card label="Best Trade" value={"#{@kpis.best_r}R"} tooltip="Highest single-trade R-multiple in the period" />
+  <.kpi_card label="Worst Trade" value={"#{@kpis.worst_r}R"} tooltip="Lowest single-trade R-multiple in the period" />
+  <.kpi_card label="Profit Factor" value={"#{@kpis.profit_factor}"} tooltip="(Avg Win R × Wins) ÷ (Avg Loss R × Losses). Values above 1 are profitable." />
+  <.kpi_card label="Expectancy" value={"#{@kpis.expectancy}R"} tooltip="(Win% × Avg Win R) − (Loss% × Avg Loss R). Expected R earned per trade on average." />
+</div>
+
+<div class="mt-6">
+  <h2 class="mb-2 flex items-center text-sm font-semibold text-zinc-500 uppercase tracking-wider">
+    Equity Curve
+    <.info_tooltip text="Cumulative R over time, ordered by trade date. Each step represents one completed trade." />
+  </h2>
+  <.chart id="dashboard-equity" option={@equity_option} class="w-full h-72" />
+</div>

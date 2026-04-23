@@ -28,16 +28,16 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # command: [
-    #   "sh",
-    #   "-c",
-    #   "mix deps.get && mix ecto.migrate && mix phx.server"
-    # ]
     command: [
       "sh",
       "-c",
-      "mix deps.get && mix ecto.reset && mix phx.server"
+      "npm install --prefix assets && mix deps.get && mix phx.server"
     ]
+    # command: [
+    #   "sh",
+    #   "-c",
+    #   "npm install --prefix assets && mix deps.get && mix ecto.reset && mix phx.server"
+    # ]
     environment:
       MIX_ENV: dev
       NOTION_API_TOKEN: "${NOTION_API_TOKEN}"

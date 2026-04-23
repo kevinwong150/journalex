@@ -273,7 +273,7 @@ defmodule Journalex.Settings do
   # ---------------------------------------------------------------------------
 
   @nav_pinned_pages_key "nav_pinned_pages"
-  @default_nav_pinned_pages ["trade_dump", "trade_drafts"]
+  @default_nav_pinned_pages ["trade_dump", "trade_drafts", "analytics_dashboard"]
 
   @doc """
   Returns the list of page keys that should appear as shortcut buttons in the nav bar.
@@ -293,5 +293,30 @@ defmodule Journalex.Settings do
   """
   def set_nav_pinned_pages(pages) when is_list(pages) do
     put(@nav_pinned_pages_key, Enum.join(pages, ","))
+  end
+
+  # ---------------------------------------------------------------------------
+  # Typed helpers — analytics_r_mode
+  # ---------------------------------------------------------------------------
+
+  @analytics_r_mode_key "analytics_r_mode"
+
+  @doc """
+  Returns the P&L display mode for analytics pages: "r", "usd", or "both".
+  Default: "r" (R-multiples).
+  """
+  def get_analytics_r_mode do
+    case get(@analytics_r_mode_key) do
+      nil -> "r"
+      raw when raw in ["r", "usd", "both"] -> raw
+      _ -> "r"
+    end
+  end
+
+  @doc """
+  Persists the analytics R mode to the DB.
+  """
+  def set_analytics_r_mode(mode) when mode in ["r", "usd", "both"] do
+    put(@analytics_r_mode_key, mode)
   end
 end

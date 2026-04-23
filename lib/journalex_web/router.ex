@@ -45,6 +45,19 @@ defmodule JournalexWeb.Router do
     # Settings page
     live "/settings", SettingsLive
 
+    # Analytics pages
+    live "/analytics/dashboard", Analytics.DashboardLive
+    live "/analytics/equity", Analytics.EquityLive
+    live "/analytics/calendar", Analytics.CalendarLive
+    live "/analytics/breakdown", Analytics.BreakdownLive
+    live "/analytics/tickers", Analytics.TickersLive
+    live "/analytics/time", Analytics.TimeLive
+    live "/analytics/behavior", Analytics.BehaviorLive
+    live "/analytics/risk", Analytics.RiskLive
+    live "/analytics/scorecard", Analytics.ScorecardLive
+    live "/analytics/streaks", Analytics.StreaksLive
+    live "/analytics/compare", Analytics.CompareLive
+
     # Saved statements pages
     get "/activity_statement/all", ActivityStatementController, :index
     get "/activity_statement/:id", ActivityStatementController, :show
