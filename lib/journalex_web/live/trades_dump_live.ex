@@ -11,6 +11,7 @@ defmodule JournalexWeb.TradesDumpLive do
   alias Journalex.MetadataDrafts
   alias Journalex.WriteupDrafts
   alias Journalex.CombinedDrafts
+  alias Journalex.Trades.PreflightChecks
 
   @dump_max_retries 3
   @supported_versions [1, 2]
@@ -67,6 +68,8 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:bound_drafts_map, build_bound_drafts_map(CombinedDrafts.list_drafts()))
       # Writeup detail modal state
       |> assign(:writeup_modal_trade, nil)
+      # Pre-flight check modal state
+      |> assign(:preflight_modal, nil)
 
     will_auto_check = connected?(socket) && Journalex.Settings.get_auto_check_on_load()
     socket = assign(socket, :auto_check_pending?, will_auto_check)
@@ -249,15 +252,23 @@ defmodule JournalexWeb.TradesDumpLive do
 
       queue = if missing_pairs == [], do: selected_pairs, else: missing_pairs
 
-      {:noreply,
-       QueueProcessor.start_operation(socket, :dump, queue, :process_next_dump, fn s ->
-         s
-         |> assign(:dump_results, %{})
-         |> assign(:dump_retry_counts, %{})
-         |> assign(:dump_cancel_requested?, false)
-         |> assign(:dump_report_text, nil)
-         |> assign(:dump_errors, [])
-       end)}
+      queue_trades = Enum.map(queue, fn {row, _idx} -> row end)
+
+      case run_preflight(queue_trades, :insert_missing, socket) do
+        {:preflight, _issues, socket} ->
+          {:noreply, socket}
+
+        {:ok, socket} ->
+          {:noreply,
+           QueueProcessor.start_operation(socket, :dump, queue, :process_next_dump, fn s ->
+             s
+             |> assign(:dump_results, %{})
+             |> assign(:dump_retry_counts, %{})
+             |> assign(:dump_cancel_requested?, false)
+             |> assign(:dump_report_text, nil)
+             |> assign(:dump_errors, [])
+           end)}
+      end
     end
   end
 
@@ -511,6 +522,11 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   @impl true
+  def handle_event("preflight_dismiss", _params, socket) do
+    {:noreply, assign(socket, :preflight_modal, nil)}
+  end
+
+  @impl true
   def handle_event("clear_writeup", %{"index" => idx_str}, socket) do
     {idx, _} = Integer.parse(idx_str)
     trade = Enum.at(socket.assigns.trades, idx)
@@ -704,7 +720,10 @@ defmodule JournalexWeb.TradesDumpLive do
         {:noreply, put_toast(socket, :error, "Run \"Check Notion\" first to populate relation caches")}
 
       true ->
-        push_single_to_notion(socket, idx, trade, combined)
+        case run_preflight([trade], :push_bound, socket) do
+          {:ok, socket} -> push_single_to_notion(socket, idx, trade, combined)
+          {:preflight, _issues, socket} -> {:noreply, socket}
+        end
     end
   end
 
@@ -776,35 +795,43 @@ defmodule JournalexWeb.TradesDumpLive do
       if eligible == [] do
         {:noreply, put_toast(socket, :info, "No eligible trades to push (need bound draft with placeholder, not yet pushed)")}
       else
-        {socket, pushed, skipped} =
-          Enum.reduce(eligible, {socket, 0, 0}, fn {idx, trade, draft}, {sock, ok, skip} ->
-            # Re-fetch draft to get latest state
-            fresh_draft = CombinedDrafts.get_draft(draft.id)
+        eligible_trades = Enum.map(eligible, fn {_idx, trade, _draft} -> trade end)
 
-            if fresh_draft && is_nil(fresh_draft.applied_at) do
-              case push_single_to_notion_quiet(sock, idx, trade, fresh_draft) do
-                {:ok, updated_socket} -> {updated_socket, ok + 1, skip}
-                {:error, updated_socket} -> {updated_socket, ok, skip + 1}
-              end
-            else
-              {sock, ok, skip + 1}
-            end
-          end)
+        case run_preflight(eligible_trades, :bulk_push, socket) do
+          {:preflight, _issues, socket} ->
+            {:noreply, socket}
 
-        msg =
+          {:ok, socket} ->
+            {socket, pushed, skipped} =
+              Enum.reduce(eligible, {socket, 0, 0}, fn {idx, trade, draft}, {sock, ok, skip} ->
+                # Re-fetch draft to get latest state
+                fresh_draft = CombinedDrafts.get_draft(draft.id)
+
+                if fresh_draft && is_nil(fresh_draft.applied_at) do
+                  case push_single_to_notion_quiet(sock, idx, trade, fresh_draft) do
+                    {:ok, updated_socket} -> {updated_socket, ok + 1, skip}
+                    {:error, updated_socket} -> {updated_socket, ok, skip + 1}
+                  end
+                else
+                  {sock, ok, skip + 1}
+                end
+              end)
+
+            msg =
           cond do
             skipped == 0 -> "Pushed #{pushed} trade(s) to Notion"
             pushed == 0 -> "#{skipped} trade(s) skipped (missing relations or errors)"
             true -> "Pushed #{pushed} trade(s) to Notion. #{skipped} skipped."
           end
 
-        {:noreply,
-         socket
-         |> assign(:combined_drafts, CombinedDrafts.list_drafts())
-         |> assign(:bound_drafts_map, build_bound_drafts_map(CombinedDrafts.list_drafts()))
-         |> assign(:selected_idx, MapSet.new())
-         |> assign(:all_selected?, false)
-         |> put_toast(:info, msg)}
+            {:noreply,
+             socket
+             |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+             |> assign(:bound_drafts_map, build_bound_drafts_map(CombinedDrafts.list_drafts()))
+             |> assign(:selected_idx, MapSet.new())
+             |> assign(:all_selected?, false)
+             |> put_toast(:info, msg)}
+        end
       end
     end
   end
@@ -1013,18 +1040,35 @@ defmodule JournalexWeb.TradesDumpLive do
 
   @impl true
   def handle_info(:auto_check_notion, socket) do
-    socket = assign(socket, :auto_check_pending?, false)
+    version = socket.assigns.global_metadata_version
+
+    socket =
+      socket
+      |> assign(:auto_check_pending?, false)
+      |> start_async(:notion_prefetch, fn ->
+        # Run all three blocking Notion API calls in a background task so the
+        # LiveView process stays unblocked and can respond to Phoenix heartbeats.
+        ticker_result = Notion.list_all_ticker_ids()
+        date_result = Notion.list_all_date_ids()
+        trademark_result = list_all_trade_trademarks_with_ids(version)
+        {ticker_result, date_result, trademark_result}
+      end)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_async(:notion_prefetch, {:ok, {ticker_result, date_result, trademark_result}}, socket) do
     rows = socket.assigns.trades || []
 
-    # Prefetch relation caches for TickerLink / DateLink
     {ticker_id_cache, ticker_cache_error} =
-      case Notion.list_all_ticker_ids() do
+      case ticker_result do
         {:ok, map} -> {map, nil}
         {:error, reason} -> {%{}, "Ticker Details cache failed: #{inspect(reason)}"}
       end
 
     {date_id_cache, date_cache_error} =
-      case Notion.list_all_date_ids() do
+      case date_result do
         {:ok, map} -> {map, nil}
         {:error, reason} -> {%{}, "Market Daily cache failed: #{inspect(reason)}"}
       end
@@ -1037,7 +1081,7 @@ defmodule JournalexWeb.TradesDumpLive do
         msgs -> "Relation caches not loaded — " <> Enum.join(msgs, "; ")
       end
 
-    case list_all_trade_trademarks_with_ids(socket.assigns.global_metadata_version) do
+    case trademark_result do
       {:ok, {trademark_set, id_map}} ->
         pairs = Enum.with_index(rows)
 
@@ -1076,62 +1120,71 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   @impl true
+  def handle_async(:notion_prefetch, {:exit, reason}, socket) do
+    {:noreply,
+     assign(socket,
+       notion_conn_status: :error,
+       notion_conn_message: "Auto-check prefetch failed: #{inspect(reason)}"
+     )}
+  end
+
+  @impl true
   def handle_info(:process_next_check, socket) do
     queue = socket.assigns.check_queue || []
 
-    case queue do
-      [] ->
-        {:noreply, QueueProcessor.finish_operation(socket, :check)}
+      case queue do
+        [] ->
+          {:noreply, QueueProcessor.finish_operation(socket, :check)}
 
-      [{row, idx} | rest] ->
-        socket = assign(socket, check_current: row)
+        [{row, idx} | rest] ->
+          socket = assign(socket, check_current: row)
 
-        trademark_set = socket.assigns.check_trademark_set || MapSet.new()
-        id_map = socket.assigns.check_id_map || %{}
+          trademark_set = socket.assigns.check_trademark_set || MapSet.new()
+          id_map = socket.assigns.check_id_map || %{}
 
-        title = row_title(row)
-        status = if not is_nil(title) and MapSet.member?(trademark_set, title), do: :exists, else: :missing
+          title = row_title(row)
+          status = if not is_nil(title) and MapSet.member?(trademark_set, title), do: :exists, else: :missing
 
-        row_statuses = Map.put(socket.assigns.row_statuses || %{}, idx, status)
+          row_statuses = Map.put(socket.assigns.row_statuses || %{}, idx, status)
 
-        {exists_count, missing_count} =
-          case status do
-            :exists -> {socket.assigns.notion_exists_count + 1, socket.assigns.notion_missing_count}
-            _ -> {socket.assigns.notion_exists_count, socket.assigns.notion_missing_count + 1}
-          end
+          {exists_count, missing_count} =
+            case status do
+              :exists -> {socket.assigns.notion_exists_count + 1, socket.assigns.notion_missing_count}
+              _ -> {socket.assigns.notion_exists_count, socket.assigns.notion_missing_count + 1}
+            end
 
-        # If exists, fetch page and compute diffs; else leave inconsistencies as-is
-        row_incons = socket.assigns.row_inconsistencies || %{}
+          # If exists, fetch page and compute diffs; else leave inconsistencies as-is
+          row_incons = socket.assigns.row_inconsistencies || %{}
 
-        row_incons =
-          case {status, Map.get(id_map, title)} do
-            {:exists, page_id} when is_binary(page_id) ->
-              recompute_row_diffs(row_incons, page_id, idx, row)
+          row_incons =
+            case {status, Map.get(id_map, title)} do
+              {:exists, page_id} when is_binary(page_id) ->
+                recompute_row_diffs(row_incons, page_id, idx, row)
 
-            _ ->
-              row_incons
-          end
+              _ ->
+                row_incons
+            end
 
-        now = System.monotonic_time(:millisecond)
+          now = System.monotonic_time(:millisecond)
 
-        elapsed_ms =
-          if socket.assigns.check_started_at_mono,
-            do: now - socket.assigns.check_started_at_mono,
-            else: 0
+          elapsed_ms =
+            if socket.assigns.check_started_at_mono,
+              do: now - socket.assigns.check_started_at_mono,
+              else: 0
 
-        socket =
-          socket
-          |> assign(:row_statuses, row_statuses)
-          |> assign(:row_inconsistencies, row_incons)
-          |> assign(:notion_exists_count, exists_count)
-          |> assign(:notion_missing_count, missing_count)
-          |> assign(:check_queue, rest)
-          |> assign(:check_processed, socket.assigns.check_processed + 1)
-          |> assign(:check_elapsed_ms, elapsed_ms)
+          socket =
+            socket
+            |> assign(:row_statuses, row_statuses)
+            |> assign(:row_inconsistencies, row_incons)
+            |> assign(:notion_exists_count, exists_count)
+            |> assign(:notion_missing_count, missing_count)
+            |> assign(:check_queue, rest)
+            |> assign(:check_processed, socket.assigns.check_processed + 1)
+            |> assign(:check_elapsed_ms, elapsed_ms)
 
-        timer_ref = Process.send_after(self(), :process_next_check, 0)
-        {:noreply, assign(socket, :check_timer_ref, timer_ref)}
-    end
+          timer_ref = Process.send_after(self(), :process_next_check, 0)
+          {:noreply, assign(socket, :check_timer_ref, timer_ref)}
+      end
   end
 
   @impl true
@@ -1746,6 +1799,47 @@ defmodule JournalexWeb.TradesDumpLive do
           </div>
         </div>
       </.modal>
+
+      <%!-- Pre-flight check modal (hard-block: dismiss and fix before retrying) --%>
+      <%= if pm = @preflight_modal do %>
+        <.modal
+          id="preflight-modal"
+          show
+          on_cancel={JS.push("preflight_dismiss")}
+        >
+          <div class="space-y-4">
+            <div>
+              <h3 class="text-base font-semibold text-slate-800">
+                Pre-flight check failed — {pm.operation_label}
+              </h3>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Fix the issues below before retrying.
+              </p>
+            </div>
+
+            <div class="space-y-2">
+              <%= for issue <- pm.issues do %>
+                <div class="rounded-md border border-red-200 bg-red-50 px-3 py-2">
+                  <p :if={issue.trade_label} class="text-xs font-medium text-red-700 mb-0.5">
+                    {issue.trade_label}
+                  </p>
+                  <p class="text-sm text-red-800">{issue.message}</p>
+                </div>
+              <% end %>
+            </div>
+
+            <div class="flex justify-end">
+              <button
+                type="button"
+                phx-click="preflight_dismiss"
+                class="rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </.modal>
+      <% end %>
     </div>
     """
   end
@@ -1838,6 +1932,29 @@ defmodule JournalexWeb.TradesDumpLive do
   defp trades_data_source_id_for_version(version) when is_integer(version) do
     DataSources.get_data_source_id(version) || trades_data_source_id_for_version(nil)
   end
+
+  # --- Pre-flight check helpers ---
+
+  defp run_preflight(trades, operation, socket) do
+    ctx = %{
+      ticker_id_cache: socket.assigns.ticker_id_cache,
+      date_id_cache: socket.assigns.date_id_cache
+    }
+
+    case PreflightChecks.run(trades, operation, ctx) do
+      [] ->
+        {:ok, socket}
+
+      issues ->
+        label = operation_label(operation)
+        {:preflight, issues, assign(socket, :preflight_modal, %{issues: issues, operation_label: label})}
+    end
+  end
+
+  defp operation_label(:push_bound), do: "Push Bound"
+  defp operation_label(:bulk_push), do: "Bulk Push"
+  defp operation_label(:insert_missing), do: "Insert Missing"
+  defp operation_label(op), do: to_string(op)
 
   # --- Helpers for Notion checks ---
   defp row_title(%{datetime: dt} = row) do

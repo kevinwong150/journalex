@@ -1,1 +1,65 @@
-<p class="text-zinc-400 italic">Periodic Scorecard — coming soon</p>
+<.analytics_filter_bar
+  versions_available={@versions_available}
+  selected_versions={@selected_versions}
+  from={@from}
+  to={@to}
+  r_mode={@r_mode}
+/>
+
+<div class="mt-6 flex items-center gap-2">
+  <span class="text-sm font-semibold text-zinc-500">Group by:</span>
+  <%= for {label, unit} <- [{"Month", "month"}, {"Week", "week"}] do %>
+    <button
+      phx-click="set_unit"
+      phx-value-unit={unit}
+      class={[
+        "rounded-full border px-3 py-1 text-sm font-medium transition-colors",
+        if @unit == String.to_existing_atom(unit) do
+          "border-zinc-900 bg-zinc-900 text-white"
+        else
+          "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
+        end
+      ]}
+    >
+      <%= label %>
+    </button>
+  <% end %>
+</div>
+
+<div class="mt-4 overflow-x-auto">
+  <table class="min-w-full text-sm">
+    <thead>
+      <tr class="border-b border-zinc-200 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
+        <th class="pb-2 pr-4">Period</th>
+        <th class="pb-2 pr-4 text-right">Trades</th>
+        <th class="pb-2 pr-4 text-right">Win%</th>
+        <th class="pb-2 pr-4 text-right">Total R</th>
+        <th class="pb-2 pr-4 text-right">Avg R</th>
+        <th class="pb-2 pr-4">Top Rank</th>
+        <th class="pb-2">Top Flag</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-zinc-100">
+      <%= for row <- Enum.reverse(@periods) do %>
+        <tr class="hover:bg-zinc-50">
+          <td class="py-2 pr-4 font-mono text-zinc-700"><%= row.period %></td>
+          <td class="py-2 pr-4 text-right text-zinc-600"><%= row.count %></td>
+          <td class="py-2 pr-4 text-right text-zinc-600"><%= Float.round(row.win_pct * 100, 1) %>%</td>
+          <td class={["py-2 pr-4 text-right font-semibold", if(row.total_r >= 0, do: "text-emerald-600", else: "text-rose-600")]}>
+            <%= row.total_r %>R
+          </td>
+          <td class={["py-2 pr-4 text-right", if(row.avg_r >= 0, do: "text-emerald-600", else: "text-rose-600")]}>
+            <%= row.avg_r %>R
+          </td>
+          <td class="py-2 pr-4 text-zinc-600"><%= row.top_rank || "—" %></td>
+          <td class="py-2 text-zinc-600 text-xs"><%= row.top_flag || "—" %></td>
+        </tr>
+      <% end %>
+      <%= if @periods == [] do %>
+        <tr>
+          <td colspan="7" class="py-6 text-center text-zinc-400">No data for the selected period.</td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>

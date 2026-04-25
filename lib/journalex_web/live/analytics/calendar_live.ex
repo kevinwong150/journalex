@@ -104,14 +104,14 @@ defmodule JournalexWeb.Analytics.CalendarLive do
         week_idx = Map.get(week_index_map, Date.to_iso8601(week_start))
         wd_idx = dow - 1
         r_value = Map.get(trade_map, Date.to_iso8601(date))
-        {week_idx, wd_idx, r_value}
+        {week_idx, wd_idx, r_value, Date.to_iso8601(date)}
       end)
-      |> Enum.reject(fn {week_idx, _, _} -> week_idx == nil end)
+      |> Enum.reject(fn {week_idx, _, _, _} -> week_idx == nil end)
 
-    trade_data = for {wi, di, r} <- weekday_cells, r != nil, do: [wi, di, r]
+    trade_data = for {wi, di, r, date} <- weekday_cells, r != nil, do: %{value: [wi, di, r], name: date}
 
     no_trade_data =
-      for {wi, di, nil} <- weekday_cells do
+      for {wi, di, nil, _date} <- weekday_cells do
         %{
           value: [wi, di, 0],
           itemStyle: %{
@@ -128,6 +128,7 @@ defmodule JournalexWeb.Analytics.CalendarLive do
     option = %{
       aria: %{enabled: true},
       tooltip: %{trigger: "item"},
+      tooltipFormatter: "heatmap_date",
       grid: %{top: 20, bottom: 90, left: 50, right: 20},
       xAxis: %{
         type: "category",
@@ -150,8 +151,8 @@ defmodule JournalexWeb.Analytics.CalendarLive do
         },
         %{
           seriesIndex: 1,
-          min: -3,
-          max: 3,
+          min: -6,
+          max: 6,
           calculable: true,
           orient: "horizontal",
           left: "center",

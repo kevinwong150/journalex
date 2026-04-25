@@ -37,6 +37,7 @@ Read only the files relevant to the code being reviewed (e.g., skip migrations.i
 - Uninitialized assigns — all assigns must be set in `mount/3`
 - `Application.get_env` for user-configurable settings — must use `Journalex.Settings` instead
 - `alias JournalexWeb.SomeComponent` used with `<.component_func />` syntax — `alias` does NOT bring the function into scope; must use `import JournalexWeb.SomeComponent` instead
+- Blocking I/O (HTTP calls, `Finch.request`, slow Ecto queries, file reads) called directly inside `handle_info/2` or `mount/3` — must use `start_async/3` + `handle_async/3` to avoid blocking the channel process and dropping heartbeats
 
 ### Context modules (`lib/journalex/**`, excluding `lib/journalex_web/**`)
 

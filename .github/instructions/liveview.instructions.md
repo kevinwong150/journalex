@@ -56,6 +56,9 @@ end
 - Use `Journalex.Settings` for user-configurable settings (not `Application.get_env` for those)
 - Do NOT import `Ecto.Query` in LiveViews — all queries stay in context modules
 - Use `import ModuleName` (not `alias`) when a LiveView template uses shorthand component syntax `<.func_name />` — `alias` only shortcuts the module name and does NOT bring the function into scope
+- Do NOT use bare `if` inside list literals in HEEx — `[..., if cond, do: a, else: b]` causes a SyntaxError; use `[..., if(cond, do: a, else: b)]` with parentheses
+- Do NOT use `<%# comment %>` in HEEx — deprecated, treated as warning-as-error; use `<%!-- comment --%>` instead
+- Do NOT perform blocking I/O (HTTP calls, slow Ecto queries, file processing) in `handle_info/2` or `mount/3` — the LiveView process IS the Phoenix channel GenServer; blocking it prevents heartbeat processing and causes client disconnects. Use `start_async/3` + `handle_async/3` instead
 
 ## Confirmation modal pattern (assign-based, not data-confirm)
 
@@ -84,3 +87,30 @@ end
 ```
 
 In the template, render the modal conditionally on the assign being non-nil. Use `data-confirm` only for simple single-action confirmations with no mode variants.
+
+## Async operations — start_async / handle_async
+
+The LiveView process IS the Phoenix channel GenServer. Any blocking I/O inside `handle_info/2` or `mount/3` (HTTP calls, slow DB queries, file processing) blocks the channel process entirely — including heartbeat processing — which causes the client to disconnect with a "view crashed - undefined" error.
+
+**Always** offload blocking work using the built-in `start_async/3` + `handle_async/3` pattern:
+
+```elixir
+@impl true
+def handle_event("sync", _params, socket) do
+  {:noreply, start_async(socket, :my_task, fn -> do_blocking_work() end)}
+end
+
+@impl true
+def handle_async(:my_task, {:ok, result}, socket) do
+  {:noreply, assign(socket, data: result)}
+end
+
+def handle_async(:my_task, {:exit, reason}, socket) do
+  {:noreply, put_flash(socket, :error, "Task failed: #{inspect(reason)}")}
+end
+```
+
+- `start_async/3` spawns a linked task and returns immediately
+- `handle_async/3` receives the result as `{:ok, value}` or `{:exit, reason}`
+- Never use bare `Task.async/1` + `handle_info({ref, result}, ...)` for new code — prefer `start_async`
+- Rules: the `mount/3` pattern `if connected?(socket), do: send(self(), :load)` is acceptable for lightweight data loads, but any blocking call behind that `:load` message must use `start_async` not a direct call inside `handle_info`

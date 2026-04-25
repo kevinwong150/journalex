@@ -25,9 +25,25 @@ import topbar from "../vendor/topbar"
 
 let Hooks = {}
 
+// Replaces special string tokens in an ECharts option with live JS functions.
+// JSON cannot carry functions, so server-side code uses sentinel strings instead.
+function resolveFormatters(option) {
+  if (option.tooltipFormatter === "heatmap_date") {
+    delete option.tooltipFormatter
+    option.tooltip = option.tooltip || {}
+    option.tooltip.formatter = (params) => {
+      const date = params.data && params.data.name
+      const val = Array.isArray(params.value) ? params.value[2] : params.value
+      const r = typeof val === "number" ? val.toFixed(2) + "R" : val
+      return date ? `${date}<br/>${r}` : `${r}`
+    }
+  }
+  return option
+}
+
 Hooks.Chart = {
   mounted() {
-    const option = JSON.parse(this.el.dataset.option)
+    const option = resolveFormatters(JSON.parse(this.el.dataset.option))
     this.chart = echarts.init(this.el, null, { renderer: "canvas" })
     this.chart.setOption(option)
     this._resizeHandler = () => this.chart.resize()
@@ -35,7 +51,7 @@ Hooks.Chart = {
     // Receive option updates via push_event (phx-update="ignore" blocks DOM patches)
     this.handleEvent("chart-update", ({id, option}) => {
       if (id === this.el.id) {
-        this.chart.setOption(option, { notMerge: true })
+        this.chart.setOption(resolveFormatters(option), { notMerge: true })
         this.chart.resize()
       }
     })

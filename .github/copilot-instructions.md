@@ -213,6 +213,11 @@ The `MetadataForm` component renders V1 or V2 forms via separate function compon
 11. Do not use `alias` to bring function components into scope for `<.my_component />` syntax — use `import`. `alias JournalexWeb.MyComponent` only shortcuts the module name; `<.my_component />` requires `import JournalexWeb.MyComponent` so the function is in scope
 12. In Ecto `fragment()`, every `?` character in the SQL string is counted as a bind parameter placeholder — including any `?` inside JSONB key names like `"done?"`. Never embed such key names directly in the fragment string; always pass them as a second bound argument: `fragment("(?->>?)::boolean = true", t.metadata, "done?")`
 13. `elixir:latest` Docker image does not include Node.js or npm. Install via NodeSource: `curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs` — this bundles npm with Node 20 LTS
+14. Do not use bare `if` inside list literals in HEEx — `[..., if cond, do: a, else: b]` is a syntax error. Always use parentheses: `[..., if(cond, do: a, else: b)]`. Complex conditions must also move the comparison inside: `if(Map.get(m, :k) >= 0, do: ...)` not `if Map.get(m, :k) >= 0, do:`
+15. Do not use `<%# comment %>` in HEEx templates — it is deprecated and treated as a warning-as-error. Always use `<%!-- comment --%>` for HEEx comments
+16. When a module attribute stores a list of function captures (e.g., a `@checks` registry), use `&__MODULE__.fun/arity` syntax — plain `&fun/arity` is ambiguous at module attribute evaluation time and may not resolve correctly. `&__MODULE__.fun/arity` explicitly names the current module and is always safe
+17. OTP 27 warns on matching `0.0` as a float literal in pattern clauses (imprecise float pattern). Avoid adding `0.0` as a separate match clause for JSONB numeric fields — JSONB integers come back as integers (`0`), not floats; use a guard `when value == 0.0` if a float zero check is genuinely needed
+18. Do not perform blocking I/O (HTTP calls, slow Ecto queries, file processing) inside `handle_info/2` or `mount/3` in a LiveView — the LiveView process IS the Phoenix channel GenServer. Blocking it prevents heartbeat processing and causes the client to disconnect with a "view crashed - undefined" error. Use `start_async/3` + `handle_async/3` (Phoenix LiveView 1.0 built-ins) instead
 
 ---
 

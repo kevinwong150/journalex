@@ -18,6 +18,11 @@ defmodule Journalex.Analytics do
   alias Journalex.{Repo, Settings}
   alias Journalex.Trades.Trade
 
+  @v1_flags ~w(revenge_trade? fomo? operation_mistake? follow_setup? follow_stop_loss_management? unnecessary_trade?)
+  @v2_flags ~w(revenge_trade? fomo? operation_mistake? add_size? adjusted_risk_reward? align_with_trend? better_risk_reward_ratio? big_picture? earning_report? follow_up_trial? good_lesson? hot_sector? momentum? news? normal_emotion? overnight? overnight_in_purpose? slipped_position? choppychart? close_trade_remorse? no_luck? no_risk? clear_liquidity_grab? entry_after_liquidity_grab? instant_lose? too_tight_stop_loss? affected_by_other_trade? mid_range? fully_wrong_direction?)
+  @all_flags Enum.uniq(@v1_flags ++ @v2_flags)
+  @weekday_names ~w(Sun Mon Tue Wed Thu Fri Sat)
+
   # ---------------------------------------------------------------------------
   # Available versions
   # ---------------------------------------------------------------------------
@@ -218,10 +223,36 @@ defmodule Journalex.Analytics do
 
   @impl true
   def breakdown_by_dimension(dimension, opts \\ []) do
-    # TODO: implement — select group key from JSONB, aggregate R per group
-    _ = {dimension, opts}
-    []
+    field = dimension_field(dimension)
+    r_size = Keyword.get(opts, :r_size, Settings.get_r_size())
+
+    rows =
+      Repo.all(
+        from t in base_query(opts),
+          where: not is_nil(fragment("?->>?", t.metadata, ^field)),
+          select: {fragment("?->>?", t.metadata, ^field), t.result, t.realized_pl}
+      )
+
+    rows
+    |> Enum.reject(fn {label, _, _} -> label == "" end)
+    |> Enum.group_by(fn {label, _, _} -> label end)
+    |> Enum.map(fn {label, group} ->
+      count = length(group)
+      wins = Enum.count(group, fn {_, result, _} -> result == "WIN" end)
+      r_values = Enum.map(group, fn {_, _, pl} -> to_r(pl, r_size) end)
+      total_r = r_values |> Enum.sum() |> Float.round(3)
+      win_rate = if count > 0, do: Float.round(wins / count, 4), else: 0.0
+      {label, total_r, win_rate, count}
+    end)
+    |> Enum.sort_by(fn {_, total_r, _, _} -> -total_r end)
   end
+
+  defp dimension_field(:rank), do: "rank"
+  defp dimension_field(:setup), do: "setup"
+  defp dimension_field(:sector), do: "sector"
+  defp dimension_field(:close_trigger), do: "close_trigger"
+  defp dimension_field(:cap_size), do: "cap_size"
+  defp dimension_field(:order_type), do: "order_type"
 
   # ---------------------------------------------------------------------------
   # Long vs short
@@ -229,9 +260,30 @@ defmodule Journalex.Analytics do
 
   @impl true
   def long_vs_short(opts \\ []) do
-    # TODO: implement — split on aggregated_side, compute KPIs per side
-    _ = opts
-    %{long: %{}, short: %{}}
+    r_size = Keyword.get(opts, :r_size, Settings.get_r_size())
+
+    rows =
+      Repo.all(
+        from t in base_query(opts),
+          select: {t.aggregated_side, t.result, t.realized_pl}
+      )
+
+    compute_side_kpis = fn side_rows ->
+      count = length(side_rows)
+      wins = Enum.count(side_rows, fn {_, result, _} -> result == "WIN" end)
+      r_values = Enum.map(side_rows, fn {_, _, pl} -> to_r(pl, r_size) end)
+      %{
+        count: count,
+        win_rate: if(count > 0, do: Float.round(wins / count, 4), else: 0.0),
+        total_r: r_values |> Enum.sum() |> Float.round(3),
+        avg_r: safe_avg(r_values)
+      }
+    end
+
+    longs = Enum.filter(rows, fn {side, _, _} -> side == "LONG" end)
+    shorts = Enum.filter(rows, fn {side, _, _} -> side == "SHORT" end)
+
+    %{long: compute_side_kpis.(longs), short: compute_side_kpis.(shorts)}
   end
 
   # ---------------------------------------------------------------------------
@@ -240,9 +292,35 @@ defmodule Journalex.Analytics do
 
   @impl true
   def flags_impact(opts \\ []) do
-    # TODO: implement — for each boolean flag, compute avg_r when ON vs OFF
-    _ = opts
-    []
+    r_size = Keyword.get(opts, :r_size, Settings.get_r_size())
+
+    rows =
+      Repo.all(
+        from t in base_query(opts),
+          select: {t.metadata_version, t.result, t.realized_pl, t.metadata}
+      )
+
+    versions_present = rows |> Enum.map(fn {v, _, _, _} -> v end) |> Enum.uniq()
+
+    flags =
+      versions_present
+      |> Enum.flat_map(fn
+        1 -> @v1_flags
+        _ -> @v2_flags
+      end)
+      |> Enum.uniq()
+
+    Enum.map(flags, fn flag ->
+      {on_rows, off_rows} =
+        Enum.split_with(rows, fn {_, _, _, meta} ->
+          is_map(meta) and Map.get(meta, flag) == true
+        end)
+
+      on_r = Enum.map(on_rows, fn {_, _, pl, _} -> to_r(pl, r_size) end)
+      off_r = Enum.map(off_rows, fn {_, _, pl, _} -> to_r(pl, r_size) end)
+      {flag, safe_avg(on_r), safe_avg(off_r), length(on_rows), length(off_rows)}
+    end)
+    |> Enum.sort_by(fn {_, _, _, count_on, _} -> -count_on end)
   end
 
   # ---------------------------------------------------------------------------
@@ -251,10 +329,35 @@ defmodule Journalex.Analytics do
 
   @impl true
   def time_heatmap(dimension, opts \\ []) do
-    # TODO: implement — group by timeslot x weekday, compute avg R
-    _ = {dimension, opts}
-    []
+    field =
+      case dimension do
+        :entry_timeslot -> "entry_timeslot"
+        :close_timeslot -> "close_timeslot"
+      end
+
+    r_size = Keyword.get(opts, :r_size, Settings.get_r_size())
+
+    rows =
+      Repo.all(
+        from t in base_query(opts),
+          where: not is_nil(fragment("?->>?", t.metadata, ^field)),
+          select: {
+            fragment("?->>?", t.metadata, ^field),
+            fragment("EXTRACT(DOW FROM ?)::integer", t.datetime),
+            t.realized_pl
+          }
+      )
+
+    rows
+    |> Enum.reject(fn {ts, _, _} -> ts == "" end)
+    |> Enum.group_by(fn {ts, dow, _} -> {ts, dow} end)
+    |> Enum.map(fn {{ts, dow}, group} ->
+      avg_r = group |> Enum.map(fn {_, _, pl} -> to_r(pl, r_size) end) |> safe_avg()
+      {ts, dow_to_name(dow), avg_r}
+    end)
   end
+
+  defp dow_to_name(dow), do: Enum.at(@weekday_names, dow)
 
   # ---------------------------------------------------------------------------
   # Day of week breakdown
@@ -262,9 +365,29 @@ defmodule Journalex.Analytics do
 
   @impl true
   def day_of_week_breakdown(opts \\ []) do
-    # TODO: implement — group by day of week, compute total R + win/loss counts
-    _ = opts
-    []
+    r_size = Keyword.get(opts, :r_size, Settings.get_r_size())
+
+    rows =
+      Repo.all(
+        from t in base_query(opts),
+          select: {
+            fragment("EXTRACT(DOW FROM ?)::integer", t.datetime),
+            t.result,
+            t.realized_pl
+          }
+      )
+
+    rows
+    |> Enum.group_by(fn {dow, _, _} -> dow end)
+    |> Enum.map(fn {dow, group} ->
+      count = length(group)
+      wins = Enum.count(group, fn {_, r, _} -> r == "WIN" end)
+      total_r = group |> Enum.map(fn {_, _, pl} -> to_r(pl, r_size) end) |> Enum.sum() |> Float.round(3)
+      {dow_to_name(dow), total_r, wins, count - wins}
+    end)
+    |> Enum.sort_by(fn {name, _, _, _} ->
+      Enum.find_index(@weekday_names, &(&1 == name)) || 99
+    end)
   end
 
   # ---------------------------------------------------------------------------
@@ -273,9 +396,27 @@ defmodule Journalex.Analytics do
 
   @impl true
   def monthly_breakdown(opts \\ []) do
-    # TODO: implement — group by year-month, compute totals
-    _ = opts
-    []
+    r_size = Keyword.get(opts, :r_size, Settings.get_r_size())
+
+    rows =
+      Repo.all(
+        from t in base_query(opts),
+          select: {
+            fragment("to_char(?, 'YYYY-MM')", t.datetime),
+            t.result,
+            t.realized_pl
+          }
+      )
+
+    rows
+    |> Enum.group_by(fn {month, _, _} -> month end)
+    |> Enum.map(fn {month, group} ->
+      count = length(group)
+      wins = Enum.count(group, fn {_, r, _} -> r == "WIN" end)
+      total_r = group |> Enum.map(fn {_, _, pl} -> to_r(pl, r_size) end) |> Enum.sum() |> Float.round(3)
+      {month, total_r, wins, count - wins}
+    end)
+    |> Enum.sort_by(fn {month, _, _, _} -> month end)
   end
 
   # ---------------------------------------------------------------------------
@@ -284,9 +425,71 @@ defmodule Journalex.Analytics do
 
   @impl true
   def scorecard_periods(unit, opts \\ []) do
-    # TODO: implement — group by week or month, build scorecard rows
-    _ = {unit, opts}
-    []
+    r_size = Keyword.get(opts, :r_size, Settings.get_r_size())
+
+    period_format =
+      case unit do
+        :week -> "IYYY-IW"
+        :month -> "YYYY-MM"
+      end
+
+    rows =
+      Repo.all(
+        from t in base_query(opts),
+          select: {
+            fragment("to_char(?, ?)", t.datetime, ^period_format),
+            t.result,
+            t.realized_pl,
+            fragment("?->>'rank'", t.metadata),
+            t.metadata
+          }
+      )
+
+    rows
+    |> Enum.group_by(fn {period, _, _, _, _} -> period end)
+    |> Enum.map(fn {period, group} ->
+      count = length(group)
+      wins = Enum.count(group, fn {_, r, _, _, _} -> r == "WIN" end)
+      r_values = Enum.map(group, fn {_, _, pl, _, _} -> to_r(pl, r_size) end)
+      total_r = r_values |> Enum.sum() |> Float.round(3)
+      avg_r = safe_avg(r_values)
+      win_pct = if count > 0, do: Float.round(wins / count, 4), else: 0.0
+      top_rank = most_common(Enum.map(group, fn {_, _, _, rank, _} -> rank end))
+      top_flag = most_frequent_flag(Enum.map(group, fn {_, _, _, _, meta} -> meta end))
+
+      %{
+        period: period,
+        count: count,
+        win_pct: win_pct,
+        total_r: total_r,
+        avg_r: avg_r,
+        top_rank: top_rank,
+        top_flag: top_flag
+      }
+    end)
+    |> Enum.sort_by(& &1.period)
+  end
+
+  defp most_common(values) do
+    values
+    |> Enum.reject(&is_nil/1)
+    |> Enum.frequencies()
+    |> Enum.max_by(fn {_, freq} -> freq end, fn -> {nil, 0} end)
+    |> elem(0)
+  end
+
+  defp most_frequent_flag(metas) do
+    metas
+    |> Enum.flat_map(fn meta ->
+      if is_map(meta) do
+        Enum.filter(@all_flags, fn flag -> Map.get(meta, flag) == true end)
+      else
+        []
+      end
+    end)
+    |> Enum.frequencies()
+    |> Enum.max_by(fn {_, freq} -> freq end, fn -> {nil, 0} end)
+    |> elem(0)
   end
 
   # ---------------------------------------------------------------------------
@@ -295,14 +498,54 @@ defmodule Journalex.Analytics do
 
   @impl true
   def streak_data(opts \\ []) do
-    # TODO: implement — scan trade sequence in date order, compute streaks
-    _ = opts
+    r_size = Keyword.get(opts, :r_size, Settings.get_r_size())
+
+    trades =
+      Repo.all(
+        from t in base_query(opts),
+          select: {t.result, t.realized_pl},
+          order_by: [asc: t.datetime]
+      )
+
+    sequence = Enum.map(trades, fn {result, pl} -> {result, to_r(pl, r_size)} end)
+    current_streak = compute_current_streak(sequence)
+    {max_win_streak, max_loss_streak} = compute_max_streaks(sequence)
+
     %{
-      current_streak: 0,
-      max_win_streak: 0,
-      max_loss_streak: 0,
-      per_trade_sequence: []
+      current_streak: current_streak,
+      max_win_streak: max_win_streak,
+      max_loss_streak: max_loss_streak,
+      per_trade_sequence: sequence
     }
+  end
+
+  defp compute_current_streak([]), do: 0
+
+  defp compute_current_streak(sequence) do
+    {last_result, _} = List.last(sequence)
+
+    count =
+      sequence
+      |> Enum.reverse()
+      |> Enum.take_while(fn {r, _} -> r == last_result end)
+      |> length()
+
+    if last_result == "WIN", do: count, else: -count
+  end
+
+  defp compute_max_streaks(sequence) do
+    {max_win, max_loss, _, _} =
+      Enum.reduce(sequence, {0, 0, 0, 0}, fn {result, _}, {mw, ml, cw, cl} ->
+        if result == "WIN" do
+          new_cw = cw + 1
+          {max(mw, new_cw), ml, new_cw, 0}
+        else
+          new_cl = cl + 1
+          {mw, max(ml, new_cl), 0, new_cl}
+        end
+      end)
+
+    {max_win, max_loss}
   end
 
   # ---------------------------------------------------------------------------
@@ -311,9 +554,28 @@ defmodule Journalex.Analytics do
 
   @impl true
   def ticker_summary(opts \\ []) do
-    # TODO: implement — group by ticker, compute per-ticker KPIs
-    _ = opts
-    []
+    r_size = Keyword.get(opts, :r_size, Settings.get_r_size())
+
+    rows =
+      Repo.all(
+        from t in base_query(opts),
+          select: {t.ticker, t.result, t.realized_pl, fragment("?::date", t.datetime)},
+          order_by: [asc: t.datetime]
+      )
+
+    rows
+    |> Enum.group_by(fn {ticker, _, _, _} -> ticker end)
+    |> Enum.map(fn {ticker, group} ->
+      count = length(group)
+      wins = Enum.count(group, fn {_, result, _, _} -> result == "WIN" end)
+      r_values = Enum.map(group, fn {_, _, pl, _} -> to_r(pl, r_size) end)
+      total_r = r_values |> Enum.sum() |> Float.round(3)
+      avg_r = safe_avg(r_values)
+      win_rate = if count > 0, do: Float.round(wins / count, 4), else: 0.0
+      last_date = group |> Enum.map(fn {_, _, _, d} -> d end) |> Enum.max_by(&Date.to_iso8601/1)
+      {ticker, count, win_rate, total_r, avg_r, last_date}
+    end)
+    |> Enum.sort_by(fn {_, _, _, total_r, _, _} -> -total_r end)
   end
 
   # ---------------------------------------------------------------------------

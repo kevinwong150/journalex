@@ -30,8 +30,8 @@
             <span class="hero-chevron-down-mini text-zinc-500 group-open:rotate-180 transition-transform">
             </span>
           </summary>
-          <div class="absolute right-0 mt-2 w-80 rounded-md border border-zinc-200 bg-white shadow-md py-2 grid grid-cols-2 divide-x divide-zinc-100">
-            <!-- Left: Trades + Drafts -->
+          <div class="absolute right-0 mt-2 w-[640px] rounded-md border border-zinc-200 bg-white shadow-md py-2 grid grid-cols-3 divide-x divide-zinc-100">
+            <!-- Col 1: Trades + Drafts -->
             <div>
               <p class="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Trades</p>
               <a href={~p"/trade/all"} class="block px-3 py-1.5 hover:bg-zinc-50">All Trades</a>
@@ -42,20 +42,34 @@
               <a href={~p"/trade/drafts"} class="block px-3 py-1.5 hover:bg-zinc-50">Trade Drafts</a>
               <a href={~p"/trade/drafts/metadata"} class="block px-3 py-1.5 hover:bg-zinc-50">Metadata Drafts</a>
               <a href={~p"/trade/drafts/writeups"} class="block px-3 py-1.5 hover:bg-zinc-50">Writeup Drafts</a>
-            </div>
-            <!-- Right: Statements + Analytics + Settings -->
-            <div>
+              <div class="my-1.5 h-px bg-zinc-100"></div>
               <p class="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Statements</p>
               <a href={~p"/activity_statement/all"} class="block px-3 py-1.5 hover:bg-zinc-50">All Statements</a>
-              <a href={~p"/activity_statement/dates"} class="block px-3 py-1.5 hover:bg-zinc-50">Statements by Date</a>
+              <a href={~p"/activity_statement/dates"} class="block px-3 py-1.5 hover:bg-zinc-50">By Date</a>
               <a href={~p"/statement/dump"} class="block px-3 py-1.5 hover:bg-zinc-50">Statement Dump</a>
               <div class="my-1.5 h-px bg-zinc-100"></div>
-              <p class="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Analytics</p>
+              <a href={~p"/settings"} class="block px-3 py-1.5 hover:bg-zinc-50">Settings</a>
+            </div>
+            <!-- Col 2: Analytics (overview + performance) -->
+            <div>
+              <p class="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Overview</p>
               <a href={~p"/analytics/dashboard"} class="block px-3 py-1.5 hover:bg-zinc-50">Dashboard</a>
               <a href={~p"/analytics/calendar"} class="block px-3 py-1.5 hover:bg-zinc-50">Trade Calendar</a>
-              <a href={~p"/analytics/risk"} class="block px-3 py-1.5 hover:bg-zinc-50">Risk / Reward</a>
+              <a href={~p"/analytics/equity"} class="block px-3 py-1.5 hover:bg-zinc-50">Equity Curve</a>
+              <a href={~p"/analytics/scorecard"} class="block px-3 py-1.5 hover:bg-zinc-50">Scorecard</a>
+              <a href={~p"/analytics/streaks"} class="block px-3 py-1.5 hover:bg-zinc-50">Streaks</a>
               <div class="my-1.5 h-px bg-zinc-100"></div>
-              <a href={~p"/settings"} class="block px-3 py-1.5 hover:bg-zinc-50">Settings</a>
+              <p class="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Breakdown</p>
+              <a href={~p"/analytics/breakdown"} class="block px-3 py-1.5 hover:bg-zinc-50">By Dimension</a>
+              <a href={~p"/analytics/tickers"} class="block px-3 py-1.5 hover:bg-zinc-50">Tickers</a>
+              <a href={~p"/analytics/time"} class="block px-3 py-1.5 hover:bg-zinc-50">Time Analysis</a>
+            </div>
+            <!-- Col 3: Analytics (deep dive) -->
+            <div>
+              <p class="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Deep Dive</p>
+              <a href={~p"/analytics/behavior"} class="block px-3 py-1.5 hover:bg-zinc-50">Behavioral Flags</a>
+              <a href={~p"/analytics/risk"} class="block px-3 py-1.5 hover:bg-zinc-50">Risk / Reward</a>
+              <a href={~p"/analytics/compare"} class="block px-3 py-1.5 hover:bg-zinc-50">Period Compare</a>
             </div>
           </div>
         </details>
@@ -125,7 +139,15 @@
             <p class="px-2 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Analytics</p>
             <a href={~p"/analytics/dashboard"} class="block rounded px-3 py-2 hover:bg-zinc-50">Dashboard</a>
             <a href={~p"/analytics/calendar"} class="block rounded px-3 py-2 hover:bg-zinc-50">Trade Calendar</a>
+            <a href={~p"/analytics/equity"} class="block rounded px-3 py-2 hover:bg-zinc-50">Equity Curve</a>
+            <a href={~p"/analytics/scorecard"} class="block rounded px-3 py-2 hover:bg-zinc-50">Scorecard</a>
+            <a href={~p"/analytics/streaks"} class="block rounded px-3 py-2 hover:bg-zinc-50">Streaks</a>
+            <a href={~p"/analytics/breakdown"} class="block rounded px-3 py-2 hover:bg-zinc-50">Breakdown</a>
+            <a href={~p"/analytics/tickers"} class="block rounded px-3 py-2 hover:bg-zinc-50">Tickers</a>
+            <a href={~p"/analytics/time"} class="block rounded px-3 py-2 hover:bg-zinc-50">Time Analysis</a>
+            <a href={~p"/analytics/behavior"} class="block rounded px-3 py-2 hover:bg-zinc-50">Behavioral Flags</a>
             <a href={~p"/analytics/risk"} class="block rounded px-3 py-2 hover:bg-zinc-50">Risk / Reward</a>
+            <a href={~p"/analytics/compare"} class="block rounded px-3 py-2 hover:bg-zinc-50">Period Compare</a>
             <div class="my-1 h-px bg-zinc-100"></div>
             <a href={~p"/settings"} class="block rounded px-3 py-2 hover:bg-zinc-50">Settings</a>
           </div>

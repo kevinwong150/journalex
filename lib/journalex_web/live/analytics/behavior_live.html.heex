@@ -1,1 +1,56 @@
-<p class="text-zinc-400 italic">Behavioral Flags — coming soon</p>
+<.analytics_filter_bar
+  versions_available={@versions_available}
+  selected_versions={@selected_versions}
+  from={@from}
+  to={@to}
+  r_mode={@r_mode}
+/>
+
+<%= if @total_flag_cost > 0 do %>
+  <div class="mt-6 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+    <p class="text-sm font-semibold text-rose-700">
+      Negative flag total cost:
+      <span class="font-bold"><%= @total_flag_cost %>R</span>
+      <.info_tooltip text="Sum of avg R lost per trade across all flags that performed worse when active (avg_on < avg_off). Lower is better." />
+    </p>
+  </div>
+<% end %>
+
+<div class="mt-6 overflow-x-auto">
+  <table class="min-w-full text-sm">
+    <thead>
+      <tr class="border-b border-zinc-200 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
+        <th class="pb-2 pr-4">Flag</th>
+        <th class="pb-2 pr-4 text-right">Times ON</th>
+        <th class="pb-2 pr-4 text-right">Avg R (ON)</th>
+        <th class="pb-2 pr-4 text-right">Avg R (OFF)
+          <.info_tooltip text="Average R on trades where this flag was NOT set." />
+        </th>
+        <th class="pb-2 text-right">Impact
+          <.info_tooltip text="R difference: positive = flag helps, negative = flag hurts your performance." />
+        </th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-zinc-100">
+      <%= for {flag, avg_on, avg_off, count_on, _count_off} <- @flags, count_on > 0 do %>
+        <% impact = Float.round(avg_on - avg_off, 3) %>
+        <tr class="hover:bg-zinc-50">
+          <td class="py-2 pr-4 font-mono text-xs text-zinc-700"><%= flag %></td>
+          <td class="py-2 pr-4 text-right text-zinc-600"><%= count_on %></td>
+          <td class={["py-2 pr-4 text-right font-medium", impact_color(avg_on, avg_off)]}>
+            <%= avg_on %>R
+          </td>
+          <td class="py-2 pr-4 text-right text-zinc-500"><%= avg_off %>R</td>
+          <td class={["py-2 text-right font-semibold", if(impact >= 0, do: "text-emerald-600", else: "text-rose-600")]}>
+            <%= if impact >= 0, do: "+#{impact}", else: "#{impact}" %>R
+          </td>
+        </tr>
+      <% end %>
+      <%= if Enum.all?(@flags, fn {_, _, _, count_on, _} -> count_on == 0 end) do %>
+        <tr>
+          <td colspan="5" class="py-6 text-center text-zinc-400">No behavioral flags found in the selected period.</td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>

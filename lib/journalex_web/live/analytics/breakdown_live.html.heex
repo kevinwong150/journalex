@@ -1,1 +1,99 @@
-<p class="text-zinc-400 italic">Breakdown Analysis — coming soon</p>
+<.analytics_filter_bar
+  versions_available={@versions_available}
+  selected_versions={@selected_versions}
+  from={@from}
+  to={@to}
+  r_mode={@r_mode}
+/>
+
+<%!-- Tab bar --%>
+<div class="mt-6 flex flex-wrap gap-1 border-b border-zinc-200">
+  <%= for tab <- tabs() do %>
+    <button
+      phx-click="set_tab"
+      phx-value-tab={tab}
+      class={[
+        "px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors",
+        if @active_tab == tab do
+          "border-zinc-900 text-zinc-900 bg-white"
+        else
+          "border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300"
+        end
+      ]}
+    >
+      <%= tab_label(tab) %>
+    </button>
+  <% end %>
+</div>
+
+<div class="mt-4">
+  <%= if @active_tab == :long_vs_short do %>
+    <%!-- Long vs Short KPI comparison --%>
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+      <%= for {side, label} <- [{:long, "LONG"}, {:short, "SHORT"}] do %>
+        <% kpis = Map.get(@long_vs_short, side, %{}) %>
+        <div class="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+          <h3 class="mb-3 text-sm font-bold uppercase tracking-wider text-zinc-500"><%= label %></h3>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <p class="text-xs text-zinc-400">Trades</p>
+              <p class="text-xl font-bold text-zinc-900"><%= Map.get(kpis, :count, 0) %></p>
+            </div>
+            <div>
+              <p class="text-xs text-zinc-400">Win Rate</p>
+              <p class="text-xl font-bold text-zinc-900"><%= Float.round((Map.get(kpis, :win_rate, 0.0)) * 100, 1) %>%</p>
+            </div>
+            <div>
+              <p class="text-xs text-zinc-400">Total R</p>
+              <p class={["text-xl font-bold", if(Map.get(kpis, :total_r, 0.0) >= 0, do: "text-emerald-600", else: "text-rose-600")]}>
+                <%= Map.get(kpis, :total_r, 0.0) %>R
+              </p>
+            </div>
+            <div>
+              <p class="text-xs text-zinc-400">Avg R</p>
+              <p class={["text-xl font-bold", if(Map.get(kpis, :avg_r, 0.0) >= 0, do: "text-emerald-600", else: "text-rose-600")]}>
+                <%= Map.get(kpis, :avg_r, 0.0) %>R
+              </p>
+            </div>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  <% else %>
+    <%!-- Breakdown chart + table --%>
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div>
+        <.chart id="breakdown-chart" option={@breakdown_option} class="w-full h-80" />
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead>
+            <tr class="border-b border-zinc-200 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              <th class="pb-2 pr-4"><%= tab_label(@active_tab) %></th>
+              <th class="pb-2 pr-4 text-right">Trades</th>
+              <th class="pb-2 pr-4 text-right">Win%</th>
+              <th class="pb-2 text-right">Total R</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-100">
+            <%= for {label, total_r, win_rate, count} <- @breakdown do %>
+              <tr class="hover:bg-zinc-50">
+                <td class="py-2 pr-4 font-medium text-zinc-800"><%= label %></td>
+                <td class="py-2 pr-4 text-right text-zinc-600"><%= count %></td>
+                <td class="py-2 pr-4 text-right text-zinc-600"><%= Float.round(win_rate * 100, 1) %>%</td>
+                <td class={["py-2 text-right font-semibold", if(total_r >= 0, do: "text-emerald-600", else: "text-rose-600")]}>
+                  <%= total_r %>R
+                </td>
+              </tr>
+            <% end %>
+            <%= if @breakdown == [] do %>
+              <tr>
+                <td colspan="4" class="py-6 text-center text-zinc-400">No data for this dimension.</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  <% end %>
+</div>

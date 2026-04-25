@@ -1,1 +1,38 @@
-<p class="text-zinc-400 italic">Streak &amp; Consistency — coming soon</p>
+<.analytics_filter_bar
+  versions_available={@versions_available}
+  selected_versions={@selected_versions}
+  from={@from}
+  to={@to}
+  r_mode={@r_mode}
+/>
+
+<div class="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+  <.kpi_card
+    label="Current Streak"
+    value={streak_label(@streak.current_streak)}
+    tooltip="Consecutive wins (+) or losses (−) from the most recent trade."
+  />
+  <.kpi_card
+    label="Max Win Streak"
+    value={"#{@streak.max_win_streak}"}
+    tooltip="Longest consecutive winning streak ever recorded in the selected period."
+  />
+  <.kpi_card
+    label="Max Loss Streak"
+    value={"#{@streak.max_loss_streak}"}
+    tooltip="Longest consecutive losing streak ever recorded in the selected period."
+  />
+  <.kpi_card
+    label="Total Trades"
+    value={"#{length(@streak.per_trade_sequence)}"}
+    tooltip="Number of completed trades in the selected period."
+  />
+</div>
+
+<div class="mt-6">
+  <h2 class="mb-2 flex items-center text-sm font-semibold uppercase tracking-wider text-zinc-500">
+    Trade-by-Trade R History
+    <.info_tooltip text="Each bar is one trade. Green = win, red = loss. Height = realized R-multiple." />
+  </h2>
+  <.chart id="streak-history" option={@history_option} class="w-full h-56" />
+</div>

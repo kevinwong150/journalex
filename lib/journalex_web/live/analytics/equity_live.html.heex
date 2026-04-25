@@ -1,1 +1,38 @@
-<p class="text-zinc-400 italic">Equity Curve &amp; Drawdown — coming soon</p>
+<.analytics_filter_bar
+  versions_available={@versions_available}
+  selected_versions={@selected_versions}
+  from={@from}
+  to={@to}
+  r_mode={@r_mode}
+/>
+
+<div class="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+  <.kpi_card
+    label="Current Streak"
+    value={streak_label(@streak.current_streak)}
+    tooltip="Consecutive wins (+) or losses (−) ending at the most recent trade."
+  />
+  <.kpi_card
+    label="Max Win Streak"
+    value={"#{@streak.max_win_streak}"}
+    tooltip="Longest consecutive winning streak in the selected period."
+  />
+  <.kpi_card
+    label="Max Loss Streak"
+    value={"#{@streak.max_loss_streak}"}
+    tooltip="Longest consecutive losing streak in the selected period."
+  />
+  <.kpi_card
+    label="Max Drawdown"
+    value={"#{@max_drawdown}R"}
+    tooltip="Largest peak-to-trough drop in cumulative R."
+  />
+</div>
+
+<div class="mt-6">
+  <h2 class="mb-2 flex items-center text-sm font-semibold uppercase tracking-wider text-zinc-500">
+    Cumulative R Curve
+    <.info_tooltip text="Running total of R-multiples earned over time. Rising = profitable streak; falling = drawdown period." />
+  </h2>
+  <.chart id="equity-curve" option={@equity_option} class="w-full h-80" />
+</div>

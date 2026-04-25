@@ -436,6 +436,9 @@ test/test_helper.exs                    ← add MockAnalytics defmock
 14. **Every heatmap series must have a matching `visualMap` entry** — a heatmap series with no associated visualMap is rendered invisible. When multiple heatmap series share a grid, `visualMap` must be a **list** `[vm0, vm1, ...]` with each entry targeting its series via `seriesIndex`. A single map object with `seriesIndex: [1]` leaves series 0 cells invisible.
 15. **Do NOT use ECharts `calendar` coordinate system for weekday-only grids** — it always renders all 7 days. Use a category grid (`xAxis: %{type: "category"}`, `yAxis: %{type: "category"}`) with Mon–Fri as the Y-axis data instead
 14. **`filter_dates` form uses `phx-submit`, not `phx-change`** — `phx-change` fires on every keystroke; `phx-submit` only fires on explicit Apply button click
+15. **ECharts formatter functions cannot be passed from Elixir** — the option map is JSON-serialised, so JS function values are lost. Use a **sentinel string pattern**: put a sentinel like `tooltipFormatter: "heatmap_date"` in the Elixir option map, then define a `resolveFormatters(option)` function in `app.js` that inspects the option for known sentinels and replaces them with real JS functions before calling `chart.setOption(option)`
+16. **HEEx bare `if` in list literals is a syntax error** — `[..., if cond, do: a, else: b]` fails. Use `[..., if(cond, do: a, else: b)]`. Complex conditions: `if(Map.get(m, :k) >= 0, do: ...)` not `if Map.get(m, :k) >= 0, do:`
+17. **`<%# comment %>` is deprecated in HEEx** — produces a warning-as-error; use `<%!-- comment --%>` instead
 
 ---
 
@@ -548,3 +551,17 @@ test/test_helper.exs                    ← add MockAnalytics defmock
 **Root cause 2 — Missing visualMap for series 0:** A heatmap series with no associated `visualMap` entry is completely invisible. The prior config had a single `visualMap` map with `seriesIndex: [1]`, leaving series 0 (no-trade cells) unrendered. Fixed by changing `visualMap` from a single map to a list `[vm0, vm1]`: vm0 targets series 0 with `show: false` and a single grey color; vm1 targets series 1 with the R gradient.
 
 **Root cause 3 — Redundant per-item color:** `no_trade_data` items previously had explicit `itemStyle.color: "#e5e7eb"`. Removed since vm0 now owns the grey color; having both caused a conflict.
+
+### 2026-04-24 — Phase 3 complete: all analytics LiveViews implemented
+
+**Analytics context fully implemented:** All functions in `lib/journalex/analytics.ex` are now implemented (no more `# TODO` stubs): `equity_curve/1`, `streak_data/1`, `breakdown_by_dimension/2`, `long_vs_short/1`, `flags_impact/1`, `time_heatmap/2`, `day_of_week_breakdown/1`, `monthly_breakdown/1`, `scorecard_periods/2`, `ticker_summary/1`.
+
+**All 9 remaining analytics LiveViews implemented:** Equity (`equity_live.ex`), Streaks (`streaks_live.ex`), Breakdown (`breakdown_live.ex`), Scorecard (`scorecard_live.ex`), Time (`time_live.ex`), Tickers (`tickers_live.ex`), Behavior (`behavior_live.ex`), and Period Comparison (`compare_live.ex`).
+
+**HEEx pitfalls encountered:**
+- Bare `if` inside list literals (e.g., ECharts option maps built inline) causes SyntaxError — wrap with `if(cond, do: ..., else: ...)` including the comparison inside the parens
+- `<%# comment %>` is deprecated in HEEx and treated as warning-as-error — replaced with `<%!-- comment --%>`
+
+**ECharts formatter sentinel pattern established:** Since Elixir option maps are JSON-serialised before reaching the JS hook, JS functions cannot be included. Pattern: put a sentinel string in the option map (e.g., `tooltipFormatter: "heatmap_date"`); define `resolveFormatters(option)` in `app.js` that detects known sentinels and replaces them with real JS functions; call `resolveFormatters(option)` inside `Hooks.Chart` before `chart.setOption(option)`.
+
+**Period Comparison page pattern (`compare_live.ex`):** Two independent filter forms with separate `phx-submit` event names (`"filter_a"` / `"filter_b"`), each calling a shared `reload/2` helper with different date opts. Equity curves from both periods are re-zeroed to their respective period start values before overlay so the chart Y-axis represents R gained within each period rather than all-time cumulative R.

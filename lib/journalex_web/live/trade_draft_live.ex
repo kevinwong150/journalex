@@ -600,6 +600,57 @@ defmodule JournalexWeb.TradeDraftLive do
     end
   end
 
+  @impl true
+  def handle_event("bulk_create_placeholder", _params, socket) do
+    ids = MapSet.to_list(socket.assigns.selected_cd_ids)
+    drafts = Enum.filter(socket.assigns.combined_drafts, &(&1.id in ids))
+    blocks = CombinedDrafts.placeholder_blocks()
+    default_version = Settings.get_default_metadata_version()
+
+    results =
+      Enum.map(drafts, fn draft ->
+        if draft.notion_page_id do
+          {:skip, draft.name}
+        else
+          version =
+            (draft.metadata_draft && draft.metadata_draft.metadata_version) || default_version
+
+          case Notion.create_placeholder_page(draft.name, blocks, metadata_version: version) do
+            {:ok, page} ->
+              page_id = Map.get(page, "id")
+
+              case CombinedDrafts.set_notion_page_id(draft, page_id) do
+                {:ok, _} -> {:ok, draft.name}
+                {:error, _} -> {:error, draft.name}
+              end
+
+            {:error, _} ->
+              {:error, draft.name}
+          end
+        end
+      end)
+
+    created = Enum.count(results, &match?({:ok, _}, &1))
+    skipped = Enum.count(results, &match?({:skip, _}, &1))
+    failed = Enum.filter(results, &match?({:error, _}, &1)) |> Enum.map(fn {_, n} -> n end)
+
+    suffix =
+      [
+        if(skipped > 0, do: "#{skipped} already had one (skipped)"),
+        if(failed != [], do: "failed: #{Enum.join(failed, ", ")}")
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join("; ")
+
+    msg = "Created #{created} placeholder(s)" <> if(suffix != "", do: " — #{suffix}", else: "")
+    level = if failed != [], do: :error, else: :info
+
+    {:noreply,
+     socket
+     |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+     |> put_toast(level, msg)}
+  end
+
   # ── Block editor events ─────────────────────────────────────────────
 
   @impl true
@@ -925,6 +976,13 @@ defmodule JournalexWeb.TradeDraftLive do
               <span class="text-xs text-red-700 font-medium">{MapSet.size(@selected_cd_ids)} selected</span>
               <div class="flex items-center gap-2">
                 <button phx-click="cd_deselect_all" class="text-xs text-zinc-500 hover:text-zinc-700">Deselect all</button>
+                <button
+                  phx-click="bulk_create_placeholder"
+                  disabled={!@connected}
+                  class="text-xs px-2.5 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Create placeholders
+                </button>
                 <button
                   phx-click="cd_bulk_delete"
                   class="text-xs px-2.5 py-1 rounded-md bg-red-600 text-white hover:bg-red-700 font-medium transition-colors"

@@ -2,6 +2,11 @@ defmodule JournalexWeb.Analytics.EquityLive do
   use JournalexWeb, :live_view
 
   alias Journalex.{Analytics, Settings}
+  alias JournalexWeb.Analytics.PeriodHelpers
+  import JournalexWeb.AnalyticsFilterBar
+  import JournalexWeb.ChartComponent
+  import JournalexWeb.InfoTooltip
+  import JournalexWeb.KpiCard
 
   @impl true
   def mount(_params, _session, socket) do
@@ -14,10 +19,9 @@ defmodule JournalexWeb.Analytics.EquityLive do
        selected_versions: versions_available,
        from: nil,
        to: nil,
-       r_mode: r_mode,
-       equity: Analytics.equity_curve(versions: versions_available),
-       streak: Analytics.streak_data(versions: versions_available)
-     )}
+       r_mode: r_mode
+     )
+     |> reload([])}
   end
 
   @impl true
@@ -27,6 +31,14 @@ defmodule JournalexWeb.Analytics.EquityLive do
     new_selected = if v in selected, do: Enum.reject(selected, &(&1 == v)), else: Enum.sort([v | selected])
     {:noreply, reload(socket, selected_versions: new_selected)}
   end
+
+  @impl true
+  def handle_event("set_period", %{"period" => period}, socket) when period != "" do
+    {from, to} = PeriodHelpers.period_to_dates(period)
+    {:noreply, reload(socket, from: from, to: to)}
+  end
+
+  def handle_event("set_period", _params, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("filter_dates", %{"from" => from, "to" => to}, socket) do
@@ -39,16 +51,82 @@ defmodule JournalexWeb.Analytics.EquityLive do
     {:noreply, reload(socket, r_mode: mode)}
   end
 
+  @impl true
+  def handle_event("reload", _params, socket) do
+    {:noreply, reload(socket, [])}
+  end
+
   defp reload(socket, changes) do
     socket = assign(socket, changes)
     a = socket.assigns
     opts = build_opts(a.selected_versions, a.from, a.to)
-    assign(socket, equity: Analytics.equity_curve(opts), streak: Analytics.streak_data(opts))
+    equity = Analytics.equity_curve(opts)
+    streak = Analytics.streak_data(opts)
+    equity_option = build_equity_option(equity)
+    max_dd = max_drawdown(equity)
+
+    socket
+    |> assign(
+      equity: equity,
+      streak: streak,
+      equity_option: equity_option,
+      max_drawdown: max_dd
+    )
+    |> push_event("chart-update", %{id: "equity-curve", option: equity_option})
   end
 
   defp build_opts(versions, from, to) do
-    from_date = from && from != "" && Date.from_iso8601!(from)
-    to_date = to && to != "" && Date.from_iso8601!(to)
-    Enum.reject([versions: versions, from: from_date, to: to_date], fn {_, v} -> v == false or is_nil(v) end)
+    opts = [versions: versions]
+    opts = if d = parse_date(from), do: Keyword.put(opts, :from, d), else: opts
+    if d = parse_date(to), do: Keyword.put(opts, :to, d), else: opts
   end
+
+  defp parse_date(nil), do: nil
+  defp parse_date(""), do: nil
+
+  defp parse_date(str) do
+    case Date.from_iso8601(str) do
+      {:ok, date} -> date
+      _ -> nil
+    end
+  end
+
+  defp build_equity_option(equity) do
+    dates = Enum.map(equity, fn {d, _} -> Date.to_iso8601(d) end)
+    values = Enum.map(equity, fn {_, r} -> r end)
+
+    %{
+      tooltip: %{trigger: "axis"},
+      xAxis: %{type: "category", data: dates, boundaryGap: false},
+      yAxis: %{type: "value", name: "Cumulative R"},
+      grid: %{left: 50, right: 20, top: 20, bottom: 40},
+      series: [
+        %{
+          name: "Equity",
+          type: "line",
+          data: values,
+          smooth: true,
+          areaStyle: %{opacity: 0.3},
+          lineStyle: %{color: "#22c55e"},
+          itemStyle: %{color: "#22c55e"}
+        }
+      ]
+    }
+  end
+
+  defp max_drawdown([]), do: 0.0
+
+  defp max_drawdown(equity) do
+    equity
+    |> Enum.reduce({0.0, 0.0}, fn {_, cum_r}, {peak, max_dd} ->
+      new_peak = max(peak, cum_r)
+      dd = Float.round(new_peak - cum_r, 3)
+      {new_peak, max(max_dd, dd)}
+    end)
+    |> elem(1)
+  end
+
+  defp streak_label(n) when n > 0, do: "+#{n}W"
+  defp streak_label(n) when n < 0, do: "#{abs(n)}L"
+  defp streak_label(0), do: "\u2014"
 end
