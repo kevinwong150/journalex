@@ -72,7 +72,7 @@ defmodule Journalex.Trades.PreflightChecks do
 
   def check_cache_not_loaded(_trade, ctx) do
     if caches_empty?(ctx) do
-      [%{trade_label: nil, field: "cache", message: "Relation caches not loaded — run Check Notion first", check_name: :cache_not_loaded}]
+      [%{trade_label: nil, field: "cache", message: "Relation caches are unavailable — retry the operation to reload them", check_name: :cache_not_loaded}]
     else
       []
     end

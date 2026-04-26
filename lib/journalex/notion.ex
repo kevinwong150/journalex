@@ -1273,22 +1273,87 @@ defmodule Journalex.Notion do
     if is_nil(data_source_id) do
       {:error, :missing_data_source_id}
     else
-      case Client.retrieve_database(data_source_id) do
-        {:ok, resp} ->
-          case extract_pages_from_db_response(resp) do
-            {:ok, pages} ->
-              {:ok, build_title_id_map(pages, title_prop)}
+      with {:ok, pages} <- paginate_all_pages(data_source_id, page_size) do
+        {:ok, build_title_id_map(pages, title_prop)}
+      end
+    end
+  end
 
-            {:error, _} ->
-              with {:ok, pages} <- paginate_all_pages(data_source_id, page_size) do
-                {:ok, build_title_id_map(pages, title_prop)}
-              end
-          end
+  @doc """
+  Query Notion for a specific set of trade pages by title (trademark strings).
 
-        {:error, _reason} ->
-          with {:ok, pages} <- paginate_all_pages(data_source_id, page_size) do
-            {:ok, build_title_id_map(pages, title_prop)}
-          end
+  Uses OR-filtered batch queries to fetch only the requested pages rather than
+  scanning the entire datasource. Returns a map of title => full page object,
+  suitable for in-memory diffing without additional per-trade HTTP calls.
+
+  ## Options
+
+    * `:batch_size` — max titles per query batch (default 25)
+    * `:title_property` — Notion property name for the title (default "Trademark" from config)
+
+  Returns `{:ok, %{title => page_map}}` or `{:error, reason}`.
+  """
+  def fetch_pages_for_check(titles, data_source_id, opts \\ [])
+      when is_list(titles) and is_binary(data_source_id) do
+    conf = Application.get_env(:journalex, __MODULE__, [])
+    title_prop = Keyword.get(opts, :title_property, conf[:title_property] || "Trademark")
+    batch_size = Keyword.get(opts, :batch_size, 25)
+
+    titles
+    |> Enum.reject(&(is_nil(&1) or &1 == ""))
+    |> Enum.chunk_every(batch_size)
+    |> Enum.reduce_while({:ok, %{}}, fn batch, {:ok, acc} ->
+      case fetch_page_batch(batch, data_source_id, title_prop) do
+        {:ok, batch_map} -> {:cont, {:ok, Map.merge(acc, batch_map)}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  @doc """
+  Fetch specific ticker symbols from the Ticker Details data source and return
+  a map of ticker title => page id.
+
+  Returns `{:ok, %{"AAPL" => page_id, ...}}` or `{:error, reason}`.
+  """
+  def fetch_ticker_ids(tickers, opts \\ []) when is_list(tickers) do
+    conf = Application.get_env(:journalex, __MODULE__, [])
+    data_source_id = Keyword.get(opts, :data_source_id, conf[:ticker_details_data_source_id])
+    batch_size = Keyword.get(opts, :batch_size, 25)
+
+    if is_nil(data_source_id) do
+      {:error, :missing_ticker_details_data_source_id}
+    else
+      with {:ok, page_map} <-
+             fetch_pages_for_check(tickers, data_source_id,
+               title_property: "Ticker",
+               batch_size: batch_size
+             ) do
+        {:ok, build_page_id_map(page_map)}
+      end
+    end
+  end
+
+  @doc """
+  Fetch specific date keys from the Market Daily data source and return a map
+  of date title => page id.
+
+  Returns `{:ok, %{"2026-02-21" => page_id, ...}}` or `{:error, reason}`.
+  """
+  def fetch_date_ids(date_keys, opts \\ []) when is_list(date_keys) do
+    conf = Application.get_env(:journalex, __MODULE__, [])
+    data_source_id = Keyword.get(opts, :data_source_id, conf[:market_daily_data_source_id])
+    batch_size = Keyword.get(opts, :batch_size, 25)
+
+    if is_nil(data_source_id) do
+      {:error, :missing_market_daily_data_source_id}
+    else
+      with {:ok, page_map} <-
+             fetch_pages_for_check(date_keys, data_source_id,
+               title_property: "Date",
+               batch_size: batch_size
+             ) do
+        {:ok, build_page_id_map(page_map)}
       end
     end
   end
@@ -1369,6 +1434,56 @@ defmodule Journalex.Notion do
   defp maybe_put_start_cursor(map, cursor) when is_binary(cursor),
     do: Map.put(map, :start_cursor, cursor)
 
+  defp fetch_page_batch([single_title], data_source_id, title_prop) do
+    body = %{
+      filter: %{property: title_prop, rich_text: %{equals: single_title}},
+      page_size: 10
+    }
+
+    case Client.query_database(data_source_id, body) do
+      {:ok, %{"results" => results}} when is_list(results) ->
+        page_map =
+          Enum.reduce(results, %{}, fn page, acc ->
+            t = extract_title(page, title_prop)
+            if is_binary(t) and t != "", do: Map.put_new(acc, t, page), else: acc
+          end)
+
+        {:ok, page_map}
+
+      {:ok, other} ->
+        {:error, {:unexpected_response, other}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp fetch_page_batch(title_batch, data_source_id, title_prop) when is_list(title_batch) do
+    conditions = Enum.map(title_batch, fn t -> %{property: title_prop, rich_text: %{equals: t}} end)
+
+    body = %{
+      filter: %{"or" => conditions},
+      page_size: length(title_batch) + 10
+    }
+
+    case Client.query_database(data_source_id, body) do
+      {:ok, %{"results" => results}} when is_list(results) ->
+        page_map =
+          Enum.reduce(results, %{}, fn page, acc ->
+            t = extract_title(page, title_prop)
+            if is_binary(t) and t != "", do: Map.put_new(acc, t, page), else: acc
+          end)
+
+        {:ok, page_map}
+
+      {:ok, other} ->
+        {:error, {:unexpected_response, other}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   defp extract_title(page, title_prop) do
     case get_in(page, ["properties", title_prop, "title"]) do
       list when is_list(list) and list != [] ->
@@ -1398,6 +1513,18 @@ defmodule Journalex.Notion do
   defp build_title_id_map(pages, title_prop) when is_list(pages) do
     Enum.reduce(pages, %{}, fn page, acc ->
       title = extract_title(page, title_prop)
+      id = Map.get(page, "id")
+
+      if is_binary(title) and title != "" and is_binary(id) and id != "" do
+        Map.put_new(acc, title, id)
+      else
+        acc
+      end
+    end)
+  end
+
+  defp build_page_id_map(page_map) when is_map(page_map) do
+    Enum.reduce(page_map, %{}, fn {title, page}, acc ->
       id = Map.get(page, "id")
 
       if is_binary(title) and title != "" and is_binary(id) and id != "" do

@@ -24,19 +24,21 @@ Use the `get_errors` tool on the specified files (or all files if none specified
 Run the full test suite:
 
 ```
-docker compose -f docker-compose.test.yml run --rm test
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test
 ```
 
 This runs inside a Docker container with the test database on port 6544.
+
+`docker-compose.test.yml` builds the `test` service from `Dockerfile.test`, which copies the repo into the image (no bind mounts). After source changes, do not trust `docker compose -f docker-compose.test.yml run --rm test` unless the image was rebuilt first, or you may validate stale code.
 
 ### Step 3: Parse and Report Results
 
 From the test output, extract:
 
-1. **Test count**: Total tests run (baseline: 223)
+1. **Test count**: Total tests run (baseline: 235)
 2. **Failures**: Number of failures and their details
 3. **Warnings**: Any compilation warnings
-4. **Test count delta**: Compare against the 223-test baseline
+4. **Test count delta**: Compare against the 235-test baseline
 
 ### Step 4 (Optional): Focused Test Run
 
@@ -53,7 +55,7 @@ If the user specifies particular test files, run those first for faster feedback
 
 ### Test Suite
 - Result: PASS / FAIL
-- Tests: N (baseline: 223, delta: +/-N)
+- Tests: N (baseline: 235, delta: +/-N)
 - Failures: N
 - Excluded: N
 
@@ -68,4 +70,5 @@ If the user specifies particular test files, run those first for faster feedback
 
 - The project uses Docker for testing — never run `mix test` directly on the host
 - Test database runs on port 6544 (not 5432)
+- Rebuild the Docker test image after source changes before trusting results; the test container does not bind-mount the working tree
 - If Docker is not running, report that clearly instead of retrying

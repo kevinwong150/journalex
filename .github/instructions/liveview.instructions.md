@@ -59,6 +59,9 @@ end
 - Do NOT use bare `if` inside list literals in HEEx — `[..., if cond, do: a, else: b]` causes a SyntaxError; use `[..., if(cond, do: a, else: b)]` with parentheses
 - Do NOT use `<%# comment %>` in HEEx — deprecated, treated as warning-as-error; use `<%!-- comment --%>` instead
 - Do NOT perform blocking I/O (HTTP calls, slow Ecto queries, file processing) in `handle_info/2` or `mount/3` — the LiveView process IS the Phoenix channel GenServer; blocking it prevents heartbeat processing and causes client disconnects. Use `start_async/3` + `handle_async/3` instead
+- For paginated or sliced collections whose row actions depend on the original row position, preserve caller-provided `{item, global_index}` pairs through sorting and rendering; do NOT re-index inside the child component after pagination
+- If select-all or bulk actions are page-scoped in a paginated LiveView, compute them from the visible page subset rather than the full backing list
+- When the same control block needs to appear in multiple places within one LiveView, extract it into a local function component so labels, event wiring, and disabled states stay behavior-identical
 
 ## Confirmation modal pattern (assign-based, not data-confirm)
 

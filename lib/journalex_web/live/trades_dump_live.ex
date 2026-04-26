@@ -13,8 +13,10 @@ defmodule JournalexWeb.TradesDumpLive do
   alias Journalex.CombinedDrafts
   alias Journalex.Trades.PreflightChecks
 
+  @check_chunk_size 25
   @dump_max_retries 3
   @supported_versions [1, 2]
+  @trade_page_size 50
 
   @impl true
   def mount(_params, _session, socket) do
@@ -36,6 +38,8 @@ defmodule JournalexWeb.TradesDumpLive do
         check_trademark_set: nil,
         check_id_map: nil
       )
+      |> assign(:check_page_cache, %{})
+      |> assign(:check_pending_pairs, [])
       # Dump queue/progress state
       |> QueueProcessor.init_assigns(:dump,
         dump_results: %{},
@@ -70,6 +74,9 @@ defmodule JournalexWeb.TradesDumpLive do
       |> assign(:writeup_modal_trade, nil)
       # Pre-flight check modal state
       |> assign(:preflight_modal, nil)
+      |> assign(:relation_prefetch_action, nil)
+      |> assign(:trade_page, 1)
+      |> assign(:trade_page_size, @trade_page_size)
 
     will_auto_check = connected?(socket) && Journalex.Settings.get_auto_check_on_load()
     socket = assign(socket, :auto_check_pending?, will_auto_check)
@@ -119,14 +126,14 @@ defmodule JournalexWeb.TradesDumpLive do
 
   @impl true
   def handle_event("toggle_select_all", _params, socket) do
-    all_idx =
-      socket.assigns.trades |> Enum.with_index() |> Enum.map(fn {_r, i} -> i end) |> MapSet.new()
+    visible_indices = visible_trade_indices(socket)
 
     {selected_idx, all_selected?} =
-      if socket.assigns.all_selected? do
-        {MapSet.new(), false}
+      if page_all_selected?(socket.assigns.selected_idx, visible_indices) do
+        {Enum.reduce(visible_indices, socket.assigns.selected_idx, &MapSet.delete(&2, &1)), false}
       else
-        {all_idx, true}
+        next_selected = Enum.reduce(visible_indices, socket.assigns.selected_idx, &MapSet.put(&2, &1))
+        {next_selected, page_all_selected?(next_selected, visible_indices)}
       end
 
     {:noreply, assign(socket, selected_idx: selected_idx, all_selected?: all_selected?)}
@@ -144,12 +151,23 @@ defmodule JournalexWeb.TradesDumpLive do
         MapSet.put(selected, idx)
       end
 
-    all_idx =
-      socket.assigns.trades |> Enum.with_index() |> Enum.map(fn {_r, i} -> i end) |> MapSet.new()
-
-    all_selected? = MapSet.equal?(selected, all_idx) and MapSet.size(all_idx) > 0
+    all_selected? = page_all_selected?(selected, visible_trade_indices(socket))
 
     {:noreply, assign(socket, selected_idx: selected, all_selected?: all_selected?)}
+  end
+
+  @impl true
+  def handle_event("trade_page", %{"page" => page_str}, socket) do
+    case Integer.parse(page_str) do
+      {page, _} ->
+        trade_page = clamp_trade_page(page, length(socket.assigns.trades || []), socket.assigns.trade_page_size)
+        all_selected? = page_all_selected?(socket.assigns.selected_idx, visible_trade_indices(socket, trade_page))
+
+        {:noreply, assign(socket, trade_page: trade_page, all_selected?: all_selected?)}
+
+      :error ->
+        {:noreply, socket}
+    end
   end
 
   @impl true
@@ -173,62 +191,34 @@ defmodule JournalexWeb.TradesDumpLive do
       |> Enum.with_index()
       |> Enum.filter(fn {_r, i} -> MapSet.member?(selected_idx, i) end)
 
-    # Refresh relation caches for TickerLink / DateLink
-    {ticker_id_cache, ticker_cache_error} =
-      case Notion.list_all_ticker_ids() do
-        {:ok, map} -> {map, nil}
-        {:error, reason} -> {socket.assigns.ticker_id_cache, "Ticker Details cache failed: #{inspect(reason)}"}
-      end
+    if selected_pairs == [] do
+      {:noreply, put_toast(socket, :error, "No rows selected")}
+    else
+      tickers = relation_tickers_for_pairs(selected_pairs)
+      date_keys = relation_date_keys_for_pairs(selected_pairs)
 
-    {date_id_cache, date_cache_error} =
-      case Notion.list_all_date_ids() do
-        {:ok, map} -> {map, nil}
-        {:error, reason} -> {socket.assigns.date_id_cache, "Market Daily cache failed: #{inspect(reason)}"}
-      end
+      titles =
+        Enum.map(selected_pairs, fn {row, _} -> row_title(row) end)
+        |> Enum.reject(&is_nil/1)
 
-    cache_warning =
-      [ticker_cache_error, date_cache_error]
-      |> Enum.reject(&is_nil/1)
-      |> case do
-        [] -> nil
-        msgs -> "Relation caches not loaded — " <> Enum.join(msgs, "; ")
-      end
+      ds_id = trades_data_source_id_for_version(socket.assigns.global_metadata_version)
 
-    case list_all_trade_trademarks_with_ids(socket.assigns.global_metadata_version) do
-      {:ok, {trademark_set, id_map}} ->
-        socket =
-          QueueProcessor.start_operation(socket, :check, selected_pairs, :process_next_check, fn s ->
-            s
-            |> assign(:check_trademark_set, trademark_set)
-            |> assign(:check_id_map, id_map)
-            |> assign(:notion_conn_status, :ok)
-            |> assign(:notion_conn_message, nil)
-            |> assign(:notion_page_ids, id_map)
-            |> assign(:ticker_id_cache, ticker_id_cache)
-            |> assign(:date_id_cache, date_id_cache)
-            # reset counters for this run
-            |> assign(:notion_exists_count, 0)
-            |> assign(:notion_missing_count, 0)
-          end)
+      socket =
+        socket
+        |> assign(:check_pending_pairs, selected_pairs)
+        |> start_async(:notion_prefetch, fn ->
+          [ticker_result, date_result, trades_result] =
+            [
+              Task.async(fn -> Notion.fetch_ticker_ids(tickers) end),
+              Task.async(fn -> Notion.fetch_date_ids(date_keys) end),
+              Task.async(fn -> Notion.fetch_pages_for_check(titles, ds_id) end)
+            ]
+            |> Task.await_many(60_000)
 
-        socket = if cache_warning, do: put_toast(socket, :error, cache_warning), else: socket
+          {ticker_result, date_result, trades_result}
+        end)
 
-        {:noreply, socket}
-
-      {:error, reason} ->
-        {row_statuses, exists_count, missing_count} =
-          Enum.reduce(selected_pairs, {%{}, 0, 0}, fn {_row, idx}, {acc, ec, mc} ->
-            {Map.put(acc, idx, :error), ec, mc}
-          end)
-
-        {:noreply,
-         assign(socket,
-           row_statuses: Map.merge(socket.assigns.row_statuses, row_statuses),
-           notion_exists_count: exists_count,
-           notion_missing_count: missing_count,
-           notion_conn_status: :error,
-           notion_conn_message: "Failed to fetch Notion records: " <> inspect(reason)
-         )}
+      {:noreply, socket}
     end
   end
 
@@ -252,23 +242,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
       queue = if missing_pairs == [], do: selected_pairs, else: missing_pairs
 
-      queue_trades = Enum.map(queue, fn {row, _idx} -> row end)
-
-      case run_preflight(queue_trades, :insert_missing, socket) do
-        {:preflight, _issues, socket} ->
-          {:noreply, socket}
-
-        {:ok, socket} ->
-          {:noreply,
-           QueueProcessor.start_operation(socket, :dump, queue, :process_next_dump, fn s ->
-             s
-             |> assign(:dump_results, %{})
-             |> assign(:dump_retry_counts, %{})
-             |> assign(:dump_cancel_requested?, false)
-             |> assign(:dump_report_text, nil)
-             |> assign(:dump_errors, [])
-           end)}
-      end
+      continue_insert_missing(socket, queue)
     end
   end
 
@@ -279,7 +253,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
   @impl true
   def handle_event("cancel_check", _params, socket) do
-    {:noreply, QueueProcessor.cancel_operation(socket, :check)}
+    {:noreply, cancel_check(socket)}
   end
 
   @impl true
@@ -301,7 +275,7 @@ defmodule JournalexWeb.TradesDumpLive do
   def handle_event("cancel_all", _params, socket) do
     socket =
       socket
-      |> QueueProcessor.cancel_operation(:check)
+      |> cancel_check()
       |> cancel_dump()
       |> QueueProcessor.cancel_operation(:update)
       |> QueueProcessor.cancel_operation(:sync)
@@ -697,34 +671,7 @@ defmodule JournalexWeb.TradesDumpLive do
     {idx, _} = Integer.parse(idx_str)
     {draft_id, _} = Integer.parse(draft_id_str)
 
-    trade = Enum.at(socket.assigns.trades, idx)
-    combined = CombinedDrafts.get_draft(draft_id)
-
-    cond do
-      is_nil(trade) ->
-        {:noreply, put_toast(socket, :error, "Trade not found")}
-
-      is_nil(combined) ->
-        {:noreply, put_toast(socket, :error, "Combined draft not found")}
-
-      combined.trade_id != trade.id ->
-        {:noreply, put_toast(socket, :error, "Draft is not bound to this trade")}
-
-      is_nil(combined.notion_page_id) ->
-        {:noreply, put_toast(socket, :error, "No placeholder — create one from Trade Drafts first")}
-
-      not is_nil(combined.applied_at) ->
-        {:noreply, put_toast(socket, :error, "Already pushed on #{Calendar.strftime(combined.applied_at, "%Y-%m-%d %H:%M")}")}
-
-      socket.assigns.ticker_id_cache == %{} ->
-        {:noreply, put_toast(socket, :error, "Run \"Check Notion\" first to populate relation caches")}
-
-      true ->
-        case run_preflight([trade], :push_bound, socket) do
-          {:ok, socket} -> push_single_to_notion(socket, idx, trade, combined)
-          {:preflight, _issues, socket} -> {:noreply, socket}
-        end
-    end
+    continue_push_to_notion(socket, idx, draft_id)
   end
 
   @impl true
@@ -770,157 +717,12 @@ defmodule JournalexWeb.TradesDumpLive do
 
   @impl true
   def handle_event("bulk_push_to_notion", _params, socket) do
-    if socket.assigns.ticker_id_cache == %{} do
-      {:noreply, put_toast(socket, :error, "Run \"Check Notion\" first to populate relation caches")}
+    eligible_refs = bulk_push_eligible_refs(socket)
+
+    if eligible_refs == [] do
+      {:noreply, put_toast(socket, :info, "No eligible trades to push (need bound draft with placeholder, not yet pushed)")}
     else
-      # Collect eligible trades: selected, have bound draft with notion_page_id, not yet pushed
-      eligible =
-        socket.assigns.selected_idx
-        |> MapSet.to_list()
-        |> Enum.sort()
-        |> Enum.map(fn idx ->
-          trade = Enum.at(socket.assigns.trades, idx)
-          draft = if trade, do: Map.get(socket.assigns.bound_drafts_map, trade.id)
-
-          cond do
-            is_nil(trade) -> nil
-            is_nil(draft) -> nil
-            is_nil(draft.notion_page_id) -> nil
-            not is_nil(draft.applied_at) -> nil
-            true -> {idx, trade, draft}
-          end
-        end)
-        |> Enum.reject(&is_nil/1)
-
-      if eligible == [] do
-        {:noreply, put_toast(socket, :info, "No eligible trades to push (need bound draft with placeholder, not yet pushed)")}
-      else
-        eligible_trades = Enum.map(eligible, fn {_idx, trade, _draft} -> trade end)
-
-        case run_preflight(eligible_trades, :bulk_push, socket) do
-          {:preflight, _issues, socket} ->
-            {:noreply, socket}
-
-          {:ok, socket} ->
-            {socket, pushed, skipped} =
-              Enum.reduce(eligible, {socket, 0, 0}, fn {idx, trade, draft}, {sock, ok, skip} ->
-                # Re-fetch draft to get latest state
-                fresh_draft = CombinedDrafts.get_draft(draft.id)
-
-                if fresh_draft && is_nil(fresh_draft.applied_at) do
-                  case push_single_to_notion_quiet(sock, idx, trade, fresh_draft) do
-                    {:ok, updated_socket} -> {updated_socket, ok + 1, skip}
-                    {:error, updated_socket} -> {updated_socket, ok, skip + 1}
-                  end
-                else
-                  {sock, ok, skip + 1}
-                end
-              end)
-
-            msg =
-          cond do
-            skipped == 0 -> "Pushed #{pushed} trade(s) to Notion"
-            pushed == 0 -> "#{skipped} trade(s) skipped (missing relations or errors)"
-            true -> "Pushed #{pushed} trade(s) to Notion. #{skipped} skipped."
-          end
-
-            {:noreply,
-             socket
-             |> assign(:combined_drafts, CombinedDrafts.list_drafts())
-             |> assign(:bound_drafts_map, build_bound_drafts_map(CombinedDrafts.list_drafts()))
-             |> assign(:selected_idx, MapSet.new())
-             |> assign(:all_selected?, false)
-             |> put_toast(:info, msg)}
-        end
-      end
-    end
-  end
-
-  # Push a single bound draft to Notion. Returns {:noreply, socket} for use in single-push handler.
-  defp push_single_to_notion(socket, idx, trade, combined) do
-    page_id = combined.notion_page_id
-    ticker = trade.ticker || trade.symbol
-    date_key = trade_date_key(trade)
-    ticker_page_id = Map.get(socket.assigns.ticker_id_cache, ticker)
-    date_page_id = Map.get(socket.assigns.date_id_cache, date_key)
-
-    missing_relations = build_missing_relations_message(ticker, ticker_page_id, date_key, date_page_id)
-
-    if missing_relations do
-      {:noreply, put_toast(socket, :error, missing_relations)}
-    else
-      # Push reads from trade (source of truth after bind)
-      case Notion.update_trade_page(page_id, trade,
-             ticker_page_id: ticker_page_id,
-             date_page_id: date_page_id
-           ) do
-        {:ok, _} ->
-          writeup_result =
-            if is_list(trade.writeup) && trade.writeup != [] do
-              Notion.push_trade_writeup(page_id, trade.writeup)
-            else
-              {:ok, :no_writeup}
-            end
-
-          case writeup_result do
-            {:ok, _} ->
-              CombinedDrafts.mark_applied(combined)
-              refreshed_drafts = CombinedDrafts.list_drafts()
-
-              {:noreply,
-               socket
-               |> assign(:row_statuses, Map.put(socket.assigns.row_statuses, idx, :exists))
-               |> assign(:combined_drafts, refreshed_drafts)
-               |> assign(:bound_drafts_map, build_bound_drafts_map(refreshed_drafts))
-               |> put_toast(:info, "Pushed \"#{combined.name}\" to Notion")}
-
-            {:error, reason} ->
-              {:noreply, put_toast(socket, :error, "Properties updated but writeup failed: #{inspect(reason)}")}
-          end
-
-        {:error, reason} ->
-          {:noreply, put_toast(socket, :error, "Failed to push to Notion: #{inspect(reason)}")}
-      end
-    end
-  end
-
-  # Silent version for bulk push — returns {:ok, socket} or {:error, socket} without toasts.
-  defp push_single_to_notion_quiet(socket, idx, trade, combined) do
-    page_id = combined.notion_page_id
-    ticker = trade.ticker || trade.symbol
-    date_key = trade_date_key(trade)
-    ticker_page_id = Map.get(socket.assigns.ticker_id_cache, ticker)
-    date_page_id = Map.get(socket.assigns.date_id_cache, date_key)
-
-    missing_relations = build_missing_relations_message(ticker, ticker_page_id, date_key, date_page_id)
-
-    if missing_relations do
-      {:error, socket}
-    else
-      case Notion.update_trade_page(page_id, trade,
-             ticker_page_id: ticker_page_id,
-             date_page_id: date_page_id
-           ) do
-        {:ok, _} ->
-          writeup_result =
-            if is_list(trade.writeup) && trade.writeup != [] do
-              Notion.push_trade_writeup(page_id, trade.writeup)
-            else
-              {:ok, :no_writeup}
-            end
-
-          case writeup_result do
-            {:ok, _} ->
-              CombinedDrafts.mark_applied(combined)
-              {:ok, assign(socket, :row_statuses, Map.put(socket.assigns.row_statuses, idx, :exists))}
-
-            {:error, _} ->
-              {:error, socket}
-          end
-
-        {:error, _} ->
-          {:error, socket}
-      end
+      continue_bulk_push_to_notion(socket, eligible_refs)
     end
   end
 
@@ -1038,153 +840,359 @@ defmodule JournalexWeb.TradesDumpLive do
     end
   end
 
+  defp continue_insert_missing(socket, queue, opts \\ []) do
+    prefetched? = Keyword.get(opts, :prefetched?, false)
+    queue_trades = Enum.map(queue, fn {row, _idx} -> row end)
+
+    if prefetched? do
+      case run_preflight(queue_trades, :insert_missing, socket) do
+        {:preflight, _issues, socket} ->
+          {:noreply, socket}
+
+        {:ok, socket} ->
+          {:noreply,
+           QueueProcessor.start_operation(socket, :dump, queue, :process_next_dump, fn s ->
+             s
+             |> assign(:dump_results, %{})
+             |> assign(:dump_retry_counts, %{})
+             |> assign(:dump_cancel_requested?, false)
+             |> assign(:dump_report_text, nil)
+             |> assign(:dump_errors, [])
+           end)}
+      end
+    else
+      case maybe_start_relation_prefetch(socket, queue_trades, %{kind: :insert_missing, queue: queue}) do
+        {:ready, socket} -> continue_insert_missing(socket, queue, prefetched?: true)
+        {:deferred, socket} -> {:noreply, socket}
+      end
+    end
+  end
+
+  defp continue_push_to_notion(socket, idx, draft_id, opts \\ []) do
+    prefetched? = Keyword.get(opts, :prefetched?, false)
+
+    trade = Enum.at(socket.assigns.trades, idx)
+    combined = CombinedDrafts.get_draft(draft_id)
+
+    cond do
+      is_nil(trade) ->
+        {:noreply, put_toast(socket, :error, "Trade not found")}
+
+      is_nil(combined) ->
+        {:noreply, put_toast(socket, :error, "Combined draft not found")}
+
+      combined.trade_id != trade.id ->
+        {:noreply, put_toast(socket, :error, "Draft is not bound to this trade")}
+
+      is_nil(combined.notion_page_id) ->
+        {:noreply, put_toast(socket, :error, "No placeholder — create one from Trade Drafts first")}
+
+      not is_nil(combined.applied_at) ->
+        {:noreply, put_toast(socket, :error, "Already pushed on #{Calendar.strftime(combined.applied_at, "%Y-%m-%d %H:%M")}")}
+
+      prefetched? ->
+        case run_preflight([trade], :push_bound, socket) do
+          {:ok, socket} -> push_single_to_notion(socket, idx, trade, combined)
+          {:preflight, _issues, socket} -> {:noreply, socket}
+        end
+
+      true ->
+        case maybe_start_relation_prefetch(socket, [trade], %{kind: :push_bound, idx: idx, draft_id: draft_id}) do
+          {:ready, socket} -> continue_push_to_notion(socket, idx, draft_id, prefetched?: true)
+          {:deferred, socket} -> {:noreply, socket}
+        end
+    end
+  end
+
+  defp continue_bulk_push_to_notion(socket, eligible_refs, opts \\ []) do
+    prefetched? = Keyword.get(opts, :prefetched?, false)
+    eligible = hydrate_bulk_push_eligible(socket, eligible_refs)
+
+    if eligible == [] do
+      {:noreply, put_toast(socket, :info, "No eligible trades to push (need bound draft with placeholder, not yet pushed)")}
+    else
+      eligible_trades = Enum.map(eligible, fn {_idx, trade, _draft} -> trade end)
+
+      if prefetched? do
+        case run_preflight(eligible_trades, :bulk_push, socket) do
+          {:preflight, _issues, socket} ->
+            {:noreply, socket}
+
+          {:ok, socket} ->
+            {socket, pushed, skipped} =
+              Enum.reduce(eligible, {socket, 0, 0}, fn {idx, trade, draft}, {sock, ok, skip} ->
+                fresh_draft = CombinedDrafts.get_draft(draft.id)
+
+                if fresh_draft && is_nil(fresh_draft.applied_at) do
+                  case push_single_to_notion_quiet(sock, idx, trade, fresh_draft) do
+                    {:ok, updated_socket} -> {updated_socket, ok + 1, skip}
+                    {:error, updated_socket} -> {updated_socket, ok, skip + 1}
+                  end
+                else
+                  {sock, ok, skip + 1}
+                end
+              end)
+
+            msg =
+              cond do
+                skipped == 0 -> "Pushed #{pushed} trade(s) to Notion"
+                pushed == 0 -> "#{skipped} trade(s) skipped (missing relations or errors)"
+                true -> "Pushed #{pushed} trade(s) to Notion. #{skipped} skipped."
+              end
+
+            {:noreply,
+             socket
+             |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+             |> assign(:bound_drafts_map, build_bound_drafts_map(CombinedDrafts.list_drafts()))
+             |> assign(:selected_idx, MapSet.new())
+             |> assign(:all_selected?, false)
+             |> put_toast(:info, msg)}
+        end
+      else
+        case maybe_start_relation_prefetch(socket, eligible_trades, %{kind: :bulk_push, eligible_refs: eligible_refs}) do
+          {:ready, socket} -> continue_bulk_push_to_notion(socket, eligible_refs, prefetched?: true)
+          {:deferred, socket} -> {:noreply, socket}
+        end
+      end
+    end
+  end
+
+  defp maybe_start_relation_prefetch(socket, trades, pending_action) do
+    tickers = missing_relation_tickers(socket, trades)
+    date_keys = missing_relation_date_keys(socket, trades)
+
+    if tickers == [] and date_keys == [] do
+      {:ready, socket}
+    else
+      socket =
+        socket
+        |> assign(:relation_prefetch_action, pending_action)
+        |> start_async(:relation_prefetch, fn ->
+          [ticker_result, date_result] =
+            [
+              Task.async(fn -> Notion.fetch_ticker_ids(tickers) end),
+              Task.async(fn -> Notion.fetch_date_ids(date_keys) end)
+            ]
+            |> Task.await_many(60_000)
+
+          {ticker_result, date_result}
+        end)
+
+      {:deferred, socket}
+    end
+  end
+
+  defp hydrate_bulk_push_eligible(socket, eligible_refs) do
+    eligible_refs
+    |> Enum.map(fn {idx, draft_id} ->
+      trade = Enum.at(socket.assigns.trades, idx)
+      draft = if trade, do: CombinedDrafts.get_draft(draft_id)
+
+      cond do
+        is_nil(trade) -> nil
+        is_nil(draft) -> nil
+        is_nil(draft.notion_page_id) -> nil
+        not is_nil(draft.applied_at) -> nil
+        true -> {idx, trade, draft}
+      end
+    end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp bulk_push_eligible_refs(socket) do
+    socket.assigns.selected_idx
+    |> MapSet.to_list()
+    |> Enum.sort()
+    |> Enum.map(fn idx ->
+      trade = Enum.at(socket.assigns.trades, idx)
+      draft = if trade, do: Map.get(socket.assigns.bound_drafts_map, trade.id)
+
+      cond do
+        is_nil(trade) -> nil
+        is_nil(draft) -> nil
+        is_nil(draft.notion_page_id) -> nil
+        not is_nil(draft.applied_at) -> nil
+        true -> {idx, draft.id}
+      end
+    end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp missing_relation_tickers(socket, trades) do
+    trades
+    |> relation_tickers_for_trades()
+    |> Enum.reject(&Map.has_key?(socket.assigns.ticker_id_cache, &1))
+  end
+
+  defp missing_relation_date_keys(socket, trades) do
+    trades
+    |> relation_date_keys_for_trades()
+    |> Enum.reject(&Map.has_key?(socket.assigns.date_id_cache, &1))
+  end
+
+  # Push a single bound draft to Notion. Returns {:noreply, socket} for use in single-push handler.
+  defp push_single_to_notion(socket, idx, trade, combined) do
+    page_id = combined.notion_page_id
+    ticker = trade.ticker || trade.symbol
+    date_key = trade_date_key(trade)
+    ticker_page_id = Map.get(socket.assigns.ticker_id_cache, ticker)
+    date_page_id = Map.get(socket.assigns.date_id_cache, date_key)
+
+    missing_relations = build_missing_relations_message(ticker, ticker_page_id, date_key, date_page_id)
+
+    if missing_relations do
+      {:noreply, put_toast(socket, :error, missing_relations)}
+    else
+      # Push reads from trade (source of truth after bind)
+      case Notion.update_trade_page(page_id, trade,
+             ticker_page_id: ticker_page_id,
+             date_page_id: date_page_id
+           ) do
+        {:ok, _} ->
+          writeup_result =
+            if is_list(trade.writeup) && trade.writeup != [] do
+              Notion.push_trade_writeup(page_id, trade.writeup)
+            else
+              {:ok, :no_writeup}
+            end
+
+          case writeup_result do
+            {:ok, _} ->
+              CombinedDrafts.mark_applied(combined)
+              refreshed_drafts = CombinedDrafts.list_drafts()
+
+              {:noreply,
+               socket
+               |> assign(:row_statuses, Map.put(socket.assigns.row_statuses, idx, :exists))
+               |> assign(:combined_drafts, refreshed_drafts)
+               |> assign(:bound_drafts_map, build_bound_drafts_map(refreshed_drafts))
+               |> put_toast(:info, "Pushed \"#{combined.name}\" to Notion")}
+
+            {:error, reason} ->
+              {:noreply, put_toast(socket, :error, "Properties updated but writeup failed: #{inspect(reason)}")}
+          end
+
+        {:error, reason} ->
+          {:noreply, put_toast(socket, :error, "Failed to push to Notion: #{inspect(reason)}")}
+      end
+    end
+  end
+
+  # Silent version for bulk push — returns {:ok, socket} or {:error, socket} without toasts.
+  defp push_single_to_notion_quiet(socket, idx, trade, combined) do
+    page_id = combined.notion_page_id
+    ticker = trade.ticker || trade.symbol
+    date_key = trade_date_key(trade)
+    ticker_page_id = Map.get(socket.assigns.ticker_id_cache, ticker)
+    date_page_id = Map.get(socket.assigns.date_id_cache, date_key)
+
+    missing_relations = build_missing_relations_message(ticker, ticker_page_id, date_key, date_page_id)
+
+    if missing_relations do
+      {:error, socket}
+    else
+      case Notion.update_trade_page(page_id, trade,
+             ticker_page_id: ticker_page_id,
+             date_page_id: date_page_id
+           ) do
+        {:ok, _} ->
+          writeup_result =
+            if is_list(trade.writeup) && trade.writeup != [] do
+              Notion.push_trade_writeup(page_id, trade.writeup)
+            else
+              {:ok, :no_writeup}
+            end
+
+          case writeup_result do
+            {:ok, _} ->
+              CombinedDrafts.mark_applied(combined)
+              {:ok, assign(socket, :row_statuses, Map.put(socket.assigns.row_statuses, idx, :exists))}
+
+            {:error, _} ->
+              {:error, socket}
+          end
+
+        {:error, _} ->
+          {:error, socket}
+      end
+    end
+  end
+
   @impl true
   def handle_info(:auto_check_notion, socket) do
+    rows = visible_trade_rows(socket)
     version = socket.assigns.global_metadata_version
+    pairs = visible_trade_pairs(socket)
+    tickers = relation_tickers_for_pairs(pairs)
+    date_keys = relation_date_keys_for_pairs(pairs)
+    titles = Enum.map(rows, &row_title/1) |> Enum.reject(&is_nil/1)
+    ds_id = trades_data_source_id_for_version(version)
 
     socket =
       socket
       |> assign(:auto_check_pending?, false)
+      |> assign(:check_pending_pairs, pairs)
       |> start_async(:notion_prefetch, fn ->
-        # Run all three blocking Notion API calls in a background task so the
+        # Run all three Notion API queries in parallel background tasks so the
         # LiveView process stays unblocked and can respond to Phoenix heartbeats.
-        ticker_result = Notion.list_all_ticker_ids()
-        date_result = Notion.list_all_date_ids()
-        trademark_result = list_all_trade_trademarks_with_ids(version)
-        {ticker_result, date_result, trademark_result}
+        [ticker_result, date_result, trades_result] =
+          [
+            Task.async(fn -> Notion.fetch_ticker_ids(tickers) end),
+            Task.async(fn -> Notion.fetch_date_ids(date_keys) end),
+            Task.async(fn -> Notion.fetch_pages_for_check(titles, ds_id) end)
+          ]
+          |> Task.await_many(60_000)
+
+        {ticker_result, date_result, trades_result}
       end)
 
     {:noreply, socket}
   end
 
   @impl true
-  def handle_async(:notion_prefetch, {:ok, {ticker_result, date_result, trademark_result}}, socket) do
-    rows = socket.assigns.trades || []
-
-    {ticker_id_cache, ticker_cache_error} =
-      case ticker_result do
-        {:ok, map} -> {map, nil}
-        {:error, reason} -> {%{}, "Ticker Details cache failed: #{inspect(reason)}"}
-      end
-
-    {date_id_cache, date_cache_error} =
-      case date_result do
-        {:ok, map} -> {map, nil}
-        {:error, reason} -> {%{}, "Market Daily cache failed: #{inspect(reason)}"}
-      end
-
-    cache_warning =
-      [ticker_cache_error, date_cache_error]
-      |> Enum.reject(&is_nil/1)
-      |> case do
-        [] -> nil
-        msgs -> "Relation caches not loaded — " <> Enum.join(msgs, "; ")
-      end
-
-    case trademark_result do
-      {:ok, {trademark_set, id_map}} ->
-        pairs = Enum.with_index(rows)
-
-        socket =
-          QueueProcessor.start_operation(socket, :check, pairs, :process_next_check, fn s ->
-            s
-            |> assign(:check_trademark_set, trademark_set)
-            |> assign(:check_id_map, id_map)
-            |> assign(:notion_conn_status, :ok)
-            |> assign(:notion_conn_message, nil)
-            |> assign(:notion_page_ids, id_map)
-            |> assign(:ticker_id_cache, ticker_id_cache)
-            |> assign(:date_id_cache, date_id_cache)
-            # reset counters for this run
-            |> assign(:notion_exists_count, 0)
-            |> assign(:notion_missing_count, 0)
-          end)
-
-        socket = if cache_warning, do: put_toast(socket, :error, cache_warning), else: socket
-
-        {:noreply, socket}
-
-      {:error, reason} ->
-        row_statuses =
-          rows
-          |> Enum.with_index()
-          |> Enum.reduce(%{}, fn {_row, i}, acc -> Map.put(acc, i, :error) end)
-
-        {:noreply,
-         assign(socket,
-           row_statuses: Map.merge(socket.assigns.row_statuses, row_statuses),
-           notion_conn_status: :error,
-           notion_conn_message: "Failed to fetch Notion records: " <> inspect(reason)
-         )}
-    end
-  end
-
-  @impl true
-  def handle_async(:notion_prefetch, {:exit, reason}, socket) do
-    {:noreply,
-     assign(socket,
-       notion_conn_status: :error,
-       notion_conn_message: "Auto-check prefetch failed: #{inspect(reason)}"
-     )}
-  end
-
-  @impl true
   def handle_info(:process_next_check, socket) do
     queue = socket.assigns.check_queue || []
 
-      case queue do
-        [] ->
-          {:noreply, QueueProcessor.finish_operation(socket, :check)}
+    case queue do
+      [] ->
+        {:noreply, finish_check(socket)}
 
-        [{row, idx} | rest] ->
-          socket = assign(socket, check_current: row)
+      _ ->
+        {batch, rest} = Enum.split(queue, @check_chunk_size)
 
-          trademark_set = socket.assigns.check_trademark_set || MapSet.new()
-          id_map = socket.assigns.check_id_map || %{}
+        %{
+          current: current,
+          row_statuses: row_statuses,
+          row_inconsistencies: row_incons,
+          exists_count: exists_count,
+          missing_count: missing_count
+        } = process_check_batch(batch, socket)
 
-          title = row_title(row)
-          status = if not is_nil(title) and MapSet.member?(trademark_set, title), do: :exists, else: :missing
+        now = System.monotonic_time(:millisecond)
 
-          row_statuses = Map.put(socket.assigns.row_statuses || %{}, idx, status)
+        elapsed_ms =
+          if socket.assigns.check_started_at_mono,
+            do: now - socket.assigns.check_started_at_mono,
+            else: 0
 
-          {exists_count, missing_count} =
-            case status do
-              :exists -> {socket.assigns.notion_exists_count + 1, socket.assigns.notion_missing_count}
-              _ -> {socket.assigns.notion_exists_count, socket.assigns.notion_missing_count + 1}
-            end
+        socket =
+          socket
+          |> assign(:check_current, current)
+          |> assign(:row_statuses, row_statuses)
+          |> assign(:row_inconsistencies, row_incons)
+          |> assign(:notion_exists_count, exists_count)
+          |> assign(:notion_missing_count, missing_count)
+          |> assign(:check_queue, rest)
+          |> assign(:check_processed, socket.assigns.check_processed + length(batch))
+          |> assign(:check_elapsed_ms, elapsed_ms)
 
-          # If exists, fetch page and compute diffs; else leave inconsistencies as-is
-          row_incons = socket.assigns.row_inconsistencies || %{}
-
-          row_incons =
-            case {status, Map.get(id_map, title)} do
-              {:exists, page_id} when is_binary(page_id) ->
-                recompute_row_diffs(row_incons, page_id, idx, row)
-
-              _ ->
-                row_incons
-            end
-
-          now = System.monotonic_time(:millisecond)
-
-          elapsed_ms =
-            if socket.assigns.check_started_at_mono,
-              do: now - socket.assigns.check_started_at_mono,
-              else: 0
-
-          socket =
-            socket
-            |> assign(:row_statuses, row_statuses)
-            |> assign(:row_inconsistencies, row_incons)
-            |> assign(:notion_exists_count, exists_count)
-            |> assign(:notion_missing_count, missing_count)
-            |> assign(:check_queue, rest)
-            |> assign(:check_processed, socket.assigns.check_processed + 1)
-            |> assign(:check_elapsed_ms, elapsed_ms)
-
+        if rest == [] do
+          {:noreply, finish_check(socket)}
+        else
           timer_ref = Process.send_after(self(), :process_next_check, 0)
           {:noreply, assign(socket, :check_timer_ref, timer_ref)}
-      end
+        end
+    end
   end
 
   @impl true
@@ -1397,6 +1405,115 @@ defmodule JournalexWeb.TradesDumpLive do
   @impl true
   def handle_info(:process_next_writeup_sync, socket) do
     process_sync_step(socket, :wsync, &Notion.sync_writeup_from_notion/2, :process_next_writeup_sync)
+  end
+
+  @impl true
+  def handle_async(:notion_prefetch, {:ok, {ticker_result, date_result, trademark_result}}, socket) do
+    {ticker_id_cache, ticker_cache_error} =
+      case ticker_result do
+        {:ok, map} -> {map, nil}
+        {:error, reason} -> {%{}, "Ticker Details cache failed: #{inspect(reason)}"}
+      end
+
+    {date_id_cache, date_cache_error} =
+      case date_result do
+        {:ok, map} -> {map, nil}
+        {:error, reason} -> {%{}, "Market Daily cache failed: #{inspect(reason)}"}
+      end
+
+    cache_warning =
+      [ticker_cache_error, date_cache_error]
+      |> Enum.reject(&is_nil/1)
+      |> case do
+        [] -> nil
+        msgs -> "Relation caches not loaded — " <> Enum.join(msgs, "; ")
+      end
+
+    case trademark_result do
+      {:ok, page_cache} ->
+        trademark_set = page_cache |> Map.keys() |> MapSet.new()
+        id_map = Map.new(page_cache, fn {title, page} -> {title, Map.get(page, "id")} end)
+        pairs = socket.assigns.check_pending_pairs
+
+        socket =
+          QueueProcessor.start_operation(socket, :check, pairs, :process_next_check, fn s ->
+            s
+            |> assign(:check_trademark_set, trademark_set)
+            |> assign(:check_id_map, id_map)
+            |> assign(:check_page_cache, page_cache)
+            |> assign(:notion_conn_status, :ok)
+            |> assign(:notion_conn_message, nil)
+            |> assign(:notion_page_ids, id_map)
+            |> assign(:ticker_id_cache, ticker_id_cache)
+            |> assign(:date_id_cache, date_id_cache)
+            # reset counters for this run
+            |> assign(:notion_exists_count, 0)
+            |> assign(:notion_missing_count, 0)
+          end)
+
+        socket = if cache_warning, do: put_toast(socket, :error, cache_warning), else: socket
+
+        {:noreply, socket}
+
+      {:error, reason} ->
+        pairs = socket.assigns.check_pending_pairs || []
+
+        row_statuses =
+          Enum.reduce(pairs, %{}, fn {_row, i}, acc -> Map.put(acc, i, :error) end)
+
+        {:noreply,
+         socket
+         |> clear_check_runtime()
+         |> assign(
+           row_statuses: Map.merge(socket.assigns.row_statuses, row_statuses),
+           notion_conn_status: :error,
+           notion_conn_message: "Failed to fetch Notion records: " <> inspect(reason)
+         )}
+    end
+  end
+
+  @impl true
+  def handle_async(:notion_prefetch, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> clear_check_runtime()
+     |> assign(
+       notion_conn_status: :error,
+       notion_conn_message: "Auto-check prefetch failed: #{inspect(reason)}"
+     )}
+  end
+
+  @impl true
+  def handle_async(:relation_prefetch, {:ok, {ticker_result, date_result}}, socket) do
+    pending_action = socket.assigns.relation_prefetch_action
+
+    {ticker_id_cache, ticker_cache_error} =
+      merge_relation_cache_result(socket.assigns.ticker_id_cache, ticker_result, "Ticker Details")
+
+    {date_id_cache, date_cache_error} =
+      merge_relation_cache_result(socket.assigns.date_id_cache, date_result, "Market Daily")
+
+    socket =
+      socket
+      |> assign(:ticker_id_cache, ticker_id_cache)
+      |> assign(:date_id_cache, date_id_cache)
+      |> assign(:relation_prefetch_action, nil)
+
+    case Enum.reject([ticker_cache_error, date_cache_error], &is_nil/1) do
+      [] ->
+        resume_relation_prefetch_action(socket, pending_action)
+
+      errors ->
+        {:noreply, put_toast(socket, :error, Enum.join(errors, "; "))}
+    end
+  end
+
+  @impl true
+  def handle_async(:relation_prefetch, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:relation_prefetch_action, nil)
+     |> put_toast(:error, "Failed to load relation caches: #{inspect(reason)}")}
   end
 
   @impl true
@@ -1703,10 +1820,27 @@ defmodule JournalexWeb.TradesDumpLive do
         else
           MapSet.new()
         end %>
+      <% visible_trade_pairs = visible_trade_pairs(@trades, @trade_page, @trade_page_size) %>
+      <% visible_trades = Enum.map(visible_trade_pairs, &elem(&1, 0)) %>
+      <% trade_total = length(@trades) %>
+      <% trade_pages = trade_page_count(trade_total, @trade_page_size) %>
+      <% trade_offset = (@trade_page - 1) * @trade_page_size %>
+      <% trade_from = if trade_total == 0, do: 0, else: trade_offset + 1 %>
+      <% trade_to = min(trade_offset + @trade_page_size, trade_total) %>
+
+      <.trade_pagination_controls
+        :if={trade_pages > 1}
+        trade_page={@trade_page}
+        trade_pages={trade_pages}
+        trade_from={trade_from}
+        trade_to={trade_to}
+        trade_total={trade_total}
+      />
 
       <AggregatedTradeList.aggregated_trade_list
         id="trades-dump"
-        items={@trades}
+        items={visible_trades}
+        indexed_items={visible_trade_pairs}
         sortable={true}
         default_sort_by={:date}
         default_sort_dir={:desc}
@@ -1740,6 +1874,15 @@ defmodule JournalexWeb.TradesDumpLive do
         on_clear_writeup_event="clear_writeup"
         on_sync_writeup_event="sync_writeup_from_notion"
         on_open_writeup_modal_event="open_writeup_modal"
+      />
+
+      <.trade_pagination_controls
+        :if={trade_pages > 1}
+        trade_page={@trade_page}
+        trade_pages={trade_pages}
+        trade_from={trade_from}
+        trade_to={trade_to}
+        trade_total={trade_total}
       />
 
       <%!-- Writeup detail modal (single shared instance) --%>
@@ -1904,20 +2047,6 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   defp dump_metrics(_, _), do: %{}
-
-  defp list_all_trade_trademarks_with_ids(version) do
-    id = trades_data_source_id_for_version(version)
-
-    case id do
-      nil ->
-        {:error, :missing_data_source_id}
-
-      id ->
-        with {:ok, id_map} <- Notion.list_all_trademarks_with_ids(data_source_id: id) do
-          {:ok, {Map.keys(id_map) |> MapSet.new(), id_map}}
-        end
-    end
-  end
 
   # Returns the Notion data source ID for the given metadata version.
   # Uses DataSources.get_data_source_id/1 when a version is provided,
@@ -2109,6 +2238,200 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   defp recompute_row_diffs(row_incons, _page_id, _idx, _row), do: row_incons
+
+  defp process_check_batch(batch, socket) do
+    trademark_set = socket.assigns.check_trademark_set || MapSet.new()
+    page_cache = socket.assigns.check_page_cache || %{}
+
+    Enum.reduce(batch, initial_check_batch_state(socket), fn {row, idx}, acc ->
+      title = row_title(row)
+
+      status =
+        if not is_nil(title) and MapSet.member?(trademark_set, title), do: :exists, else: :missing
+
+      row_statuses = Map.put(acc.row_statuses, idx, status)
+
+      {exists_count, missing_count} =
+        case status do
+          :exists -> {acc.exists_count + 1, acc.missing_count}
+          _ -> {acc.exists_count, acc.missing_count + 1}
+        end
+
+      row_inconsistencies =
+        case status do
+          :exists ->
+            case Map.get(page_cache, title) do
+              nil ->
+                acc.row_inconsistencies
+
+              page ->
+                diffs = Notion.diff_trade_vs_page(row, page)
+
+                if map_size(diffs) > 0,
+                  do: Map.put(acc.row_inconsistencies, idx, diffs),
+                  else: Map.delete(acc.row_inconsistencies, idx)
+            end
+
+          _ ->
+            acc.row_inconsistencies
+        end
+
+      %{
+        acc
+        | current: row,
+          row_statuses: row_statuses,
+          row_inconsistencies: row_inconsistencies,
+          exists_count: exists_count,
+          missing_count: missing_count
+      }
+    end)
+  end
+
+  defp initial_check_batch_state(socket) do
+    %{
+      current: socket.assigns.check_current,
+      row_statuses: socket.assigns.row_statuses || %{},
+      row_inconsistencies: socket.assigns.row_inconsistencies || %{},
+      exists_count: socket.assigns.notion_exists_count,
+      missing_count: socket.assigns.notion_missing_count
+    }
+  end
+
+  defp finish_check(socket) do
+    QueueProcessor.finish_operation(socket, :check, &clear_check_runtime/1)
+  end
+
+  defp cancel_check(socket) do
+    QueueProcessor.cancel_operation(socket, :check, &clear_check_runtime/1)
+  end
+
+  defp clear_check_runtime(socket) do
+    socket
+    |> assign(:check_pending_pairs, [])
+    |> assign(:check_trademark_set, nil)
+    |> assign(:check_id_map, nil)
+    |> assign(:check_page_cache, %{})
+  end
+
+  defp visible_trade_rows(socket) do
+    socket
+    |> visible_trade_pairs()
+    |> Enum.map(&elem(&1, 0))
+  end
+
+  defp visible_trade_pairs(socket) do
+    visible_trade_pairs(socket.assigns.trades || [], socket.assigns.trade_page, socket.assigns.trade_page_size)
+  end
+
+  defp visible_trade_pairs(trades, page, page_size) when is_list(trades) do
+    offset = max(page - 1, 0) * page_size
+    trades
+    |> Enum.with_index()
+    |> Enum.slice(offset, page_size)
+  end
+
+  defp visible_trade_indices(socket), do: visible_trade_indices(socket, socket.assigns.trade_page)
+
+  defp visible_trade_indices(socket, page) do
+    socket.assigns.trades
+    |> visible_trade_pairs(page, socket.assigns.trade_page_size)
+    |> Enum.map(&elem(&1, 1))
+  end
+
+  defp relation_tickers_for_pairs(pairs) do
+    pairs
+    |> Enum.map(fn {row, _idx} -> row end)
+    |> relation_tickers_for_trades()
+  end
+
+  defp relation_date_keys_for_pairs(pairs) do
+    pairs
+    |> Enum.map(fn {row, _idx} -> row end)
+    |> relation_date_keys_for_trades()
+  end
+
+  defp relation_tickers_for_trades(trades) do
+    trades
+    |> Enum.map(fn row -> row.ticker || row.symbol end)
+    |> Enum.filter(&is_binary/1)
+    |> Enum.uniq()
+  end
+
+  defp relation_date_keys_for_trades(trades) do
+    trades
+    |> Enum.map(&trade_date_key/1)
+    |> Enum.filter(&is_binary/1)
+    |> Enum.uniq()
+  end
+
+  defp resume_relation_prefetch_action(socket, %{kind: :insert_missing, queue: queue}) do
+    continue_insert_missing(socket, queue, prefetched?: true)
+  end
+
+  defp resume_relation_prefetch_action(socket, %{kind: :push_bound, idx: idx, draft_id: draft_id}) do
+    continue_push_to_notion(socket, idx, draft_id, prefetched?: true)
+  end
+
+  defp resume_relation_prefetch_action(socket, %{kind: :bulk_push, eligible_refs: eligible_refs}) do
+    continue_bulk_push_to_notion(socket, eligible_refs, prefetched?: true)
+  end
+
+  defp resume_relation_prefetch_action(socket, _), do: {:noreply, socket}
+
+  defp merge_relation_cache_result(existing_cache, {:ok, cache_delta}, _label) when is_map(cache_delta) do
+    {Map.merge(existing_cache, cache_delta), nil}
+  end
+
+  defp merge_relation_cache_result(existing_cache, {:error, reason}, label) do
+    {existing_cache, "#{label} cache failed: #{inspect(reason)}"}
+  end
+
+  defp page_all_selected?(selected_idx, visible_indices) do
+    visible_indices != [] and Enum.all?(visible_indices, &MapSet.member?(selected_idx, &1))
+  end
+
+  attr :trade_page, :integer, required: true
+  attr :trade_pages, :integer, required: true
+  attr :trade_from, :integer, required: true
+  attr :trade_to, :integer, required: true
+  attr :trade_total, :integer, required: true
+
+  defp trade_pagination_controls(assigns) do
+    ~H"""
+    <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm flex items-center justify-between gap-3 flex-wrap">
+      <span class="text-xs text-gray-500">
+        Showing {@trade_from}–{@trade_to} of {@trade_total} trades
+      </span>
+      <div class="flex items-center gap-2">
+        <button
+          phx-click="trade_page"
+          phx-value-page={@trade_page - 1}
+          disabled={@trade_page <= 1}
+          class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          ← Prev
+        </button>
+        <span class="text-xs text-gray-600">{@trade_page} / {@trade_pages}</span>
+        <button
+          phx-click="trade_page"
+          phx-value-page={@trade_page + 1}
+          disabled={@trade_page >= @trade_pages}
+          class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Next →
+        </button>
+      </div>
+    </div>
+    """
+  end
+
+  defp trade_page_count(total, page_size), do: max(1, div(total + page_size - 1, page_size))
+
+  defp clamp_trade_page(page, total, page_size) do
+    page
+    |> max(1)
+    |> min(trade_page_count(total, page_size))
+  end
 
   defp process_sync_step(socket, prefix, sync_fn, message) do
     queue = socket.assigns[:"#{prefix}_queue"]

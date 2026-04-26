@@ -54,7 +54,7 @@ defmodule Journalex.Notion.Client do
       req =
         Finch.build(method, url, headers, json_body)
 
-      case Finch.request(req, Journalex.Finch) do
+      case Finch.request(req, Journalex.Finch, receive_timeout: 30_000) do
         {:ok, %Finch.Response{status: status, body: resp_body}} ->
           case safe_decode_json(resp_body) do
             {:ok, map} ->
@@ -80,6 +80,42 @@ defmodule Journalex.Notion.Client do
   end
 
   @doc """
+  Perform a raw request with automatic retry for transient failures.
+
+  Retries on HTTP 429 (rate limited) and 502/503/504 (transient server errors).
+  Does not retry 4xx client errors or network errors.
+
+  Max attempts defaults to 3. Backoff is exponential with \u00b140% jitter:
+  base 500\u202fms \u00d7 2^(attempt\u22121), capped at 8\u202fs.
+
+  Returns `{:ok, status, body_map}` or `{:error, reason}`.
+  """
+  @spec request_with_retry(method(), binary(), map() | nil, headers(), pos_integer()) ::
+          {:ok, non_neg_integer(), map()} | {:error, term()}
+  def request_with_retry(method, path, body \\ nil, headers \\ [], max_attempts \\ 3) do
+    do_request_with_retry(method, path, body, headers, max_attempts, 1)
+  end
+
+  defp do_request_with_retry(method, path, body, headers, max_attempts, attempt) do
+    case request(method, path, body, headers) do
+      {:ok, status, _map} when status in [429, 502, 503, 504] and attempt < max_attempts ->
+        delay = backoff_delay(attempt)
+        Logger.warning("[Notion] #{status} #{path} \u2014 retrying (#{attempt}/#{max_attempts - 1}) after #{delay}ms")
+        Process.sleep(delay)
+        do_request_with_retry(method, path, body, headers, max_attempts, attempt + 1)
+
+      other ->
+        other
+    end
+  end
+
+  defp backoff_delay(attempt) do
+    base = 500 * :math.pow(2, attempt - 1)
+    jitter = :rand.uniform() * 0.8 - 0.4
+    min(trunc(base * (1 + jitter)), 8_000)
+  end
+
+  @doc """
   Query a Notion database by id.
 
   `body` follows Notion's query payload. Example: `%{filter: %{...}, page_size: 100}`
@@ -88,7 +124,7 @@ defmodule Journalex.Notion.Client do
   """
   @spec query_database(binary(), map()) :: {:ok, map()} | {:error, term()}
   def query_database(database_id, body \\ %{}) do
-    case request(
+    case request_with_retry(
            :post,
            "/data_sources/#{database_id}/query",
            body
@@ -131,7 +167,7 @@ defmodule Journalex.Notion.Client do
   """
   @spec retrieve_page(binary()) :: {:ok, map()} | {:error, term()}
   def retrieve_page(page_id) do
-    case request(:get, "/pages/#{page_id}") do
+    case request_with_retry(:get, "/pages/#{page_id}") do
       {:ok, status, map} when status in 200..299 -> {:ok, map}
       {:ok, status, map} -> {:error, {:http_error, status, map}}
       {:error, reason} -> {:error, reason}

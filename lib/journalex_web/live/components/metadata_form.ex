@@ -233,6 +233,7 @@ defmodule JournalexWeb.MetadataForm do
   attr :draft_name, :string, default: ""
   attr :save_label, :string, default: "Save Metadata"
   attr :on_change_event, :string, default: nil
+  attr :r_size, :float, default: nil
 
   def v2(assigns) do
     ~H"""
@@ -436,7 +437,7 @@ defmodule JournalexWeb.MetadataForm do
               </div>
 
               <!-- Size (plain number; auto-fills for losing trades) -->
-              <% r_size = Journalex.Settings.get_r_size() %>
+              <% r_size = @r_size || Journalex.Settings.get_r_size() %>
               <% size_val = compute_size_value(@item, metadata, r_size) %>
               <% size_auto? = is_auto_size?(@item, metadata) %>
               <div>

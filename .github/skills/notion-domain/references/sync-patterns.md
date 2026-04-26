@@ -73,8 +73,57 @@ page_properties → parent.data_source_id → DataSources.get_version(id) → 1 
 
 This determines which extract/build function pair to use. The routing is **automatic** — callers pass a page ID, and the system detects the version.
 
+## Bulk Check Pattern — `fetch_pages_for_check/3`
+
+For checking many trades against Notion at once, use the targeted batch-fetch function instead of per-trade GETs:
+
+```elixir
+Notion.fetch_pages_for_check(titles, ds_id)
+# → {:ok, %{title_string => full_page_map}}
+```
+
+- Takes a list of trade title strings and a datasource ID
+- Chunks into batches of 25; each batch uses an OR-filter of `rich_text: %{equals: title}` per title
+- Returns a map keyed by title string; missing titles simply won't have an entry
+- Old shape before this function existed: `{trademark_set, id_map}` — do NOT use that pattern
+
+**Check processing is zero-HTTP after prefetch:**
+
+```elixir
+# In handle_async after fetching page_cache:
+page = Map.get(socket.assigns.check_page_cache, title)
+diff = Notion.diff_trade_vs_page(row, page)
+```
+
+Never re-query Notion per-row during `process_next_check` — all HTTP happens upfront in the `start_async` phase.
+
+**Parallelizing multiple independent Notion queries inside `start_async`:**
+
+```elixir
+start_async(socket, :notion_prefetch, fn ->
+  t1 = Task.async(fn -> Notion.list_all_trademarks_with_ids(ds_id) end)
+  t2 = Task.async(fn -> Notion.fetch_pages_for_check(titles, ds_id) end)
+  [trademark_result, check_result] = Task.await_many([t1, t2], 60_000)
+  {trademark_result, check_result}
+end)
+```
+
+This is safe because `start_async` runs in a separate process, so `Task.await_many` blocking there does not affect the LiveView channel heartbeat.
+
+## Relation Cache Warmup Pattern — targeted lookups
+
+For insert or push flows that need Notion relation page IDs (for example ticker/date relations), do not require a full "Check Notion" run just to populate caches.
+
+- Collect only the missing relation keys from the trades involved in the pending action
+- Use `Notion.fetch_ticker_ids/1` and `Notion.fetch_date_ids/1` inside `start_async/3`
+- Merge the returned deltas into the existing caches in `handle_async/3`
+- Store enough pending-action state to resume the original insert/push flow after the warmup completes
+
+This keeps the LiveView non-blocking and avoids full data-source scans when only a small set of relation IDs is needed.
+
 ## Error Handling
 
 - Sync functions return `{:ok, updated_trade}` or `{:error, reason}`
 - The Notion Client wraps HTTP errors into `{:error, %{status: code, body: body}}`
 - LiveViews handle errors via `put_flash(socket, :error, message)` — they don't retry automatically
+- `Client.request_with_retry/5` (in `notion/client.ex`) retries on 429, 502, 503, 504: max 3 attempts, exponential backoff 500ms × 2^(attempt−1) ± 40% jitter, capped at 8s. Used by `query_database` and `retrieve_page`; mutation functions are unchanged.

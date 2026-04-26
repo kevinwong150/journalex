@@ -32,6 +32,10 @@ defmodule JournalexWeb.AggregatedTradeList do
     doc:
       "List of aggregated trade items. Each item may include realized_pl, winrate/counts, and date/label info"
 
+  attr :indexed_items, :list,
+    default: nil,
+    doc: "Optional list of {item, global_index} pairs to preserve row identity across paged views"
+
   attr :id, :string, default: nil, doc: "Optional DOM id for the table container"
   attr :class, :string, default: nil, doc: "Optional extra CSS classes for the container"
 
@@ -189,8 +193,12 @@ defmodule JournalexWeb.AggregatedTradeList do
     <% chain_key = @action_chain_key %>
     <% show_action_toggle? = @show_action_chain? %>
     <% hidden_idx = @hidden_idx || MapSet.new() %>
+    <% indexed_items = if is_list(@indexed_items), do: @indexed_items, else: Enum.with_index(@items) %>
     <% sorted_items =
-      if @sortable, do: sort_items(@items, @default_sort_by, @default_sort_dir), else: @items %>
+      if @sortable,
+        do: sort_indexed_items(indexed_items, @default_sort_by, @default_sort_dir),
+        else: indexed_items %>
+    <% r_size = Journalex.Settings.get_r_size() %>
     <div
       class={Enum.join(Enum.reject(["overflow-x-auto", @class], &is_nil/1), " ")}
       data-component="aggregated-trade-list"
@@ -390,7 +398,7 @@ defmodule JournalexWeb.AggregatedTradeList do
 
           <tbody class="bg-white divide-y divide-gray-200">
             <% id_prefix = if(@id, do: @id <> "-", else: "") %>
-            <%= for {item, idx} <- Enum.with_index(sorted_items) do %>
+            <%= for {item, idx} <- sorted_items do %>
               <% row_id = id_prefix <> "row-" <> Integer.to_string(idx) %>
               <% chain = action_chain(item, chain_key) %>
               <% chain_length = length(chain) %>
@@ -849,6 +857,7 @@ defmodule JournalexWeb.AggregatedTradeList do
                         on_reset_event={@on_reset_metadata_event}
                         drafts={@drafts}
                         on_apply_draft_event={@on_apply_draft_event}
+                        r_size={r_size}
                       />
                     </div>
 
@@ -1067,13 +1076,13 @@ defmodule JournalexWeb.AggregatedTradeList do
   defp format_duration(_), do: "-"
 
   # Sorting helpers
-  defp sort_items(items, sort_by, sort_dir) when is_list(items) do
+  defp sort_indexed_items(indexed_items, sort_by, sort_dir) when is_list(indexed_items) do
     dir = normalize_dir(sort_dir)
     key = normalize_key(sort_by)
     sorter = sorter_for(key)
 
-    items
-    |> Enum.sort_by(sorter, dir)
+    indexed_items
+    |> Enum.sort_by(fn {item, _idx} -> sorter.(item) end, dir)
   end
 
   defp normalize_key(k) when k in [:date, :ticker, :side, :result, :duration, :pl], do: k
@@ -1563,6 +1572,7 @@ defmodule JournalexWeb.AggregatedTradeList do
   attr :on_reset_event, :string, default: nil
   attr :drafts, :list, default: []
   attr :on_apply_draft_event, :string, default: nil
+  attr :r_size, :float, default: nil
 
   defp render_metadata_form(assigns) do
     ~H"""
@@ -1584,6 +1594,7 @@ defmodule JournalexWeb.AggregatedTradeList do
           on_reset_event={@on_reset_event}
           drafts={@drafts}
           on_apply_draft_event={@on_apply_draft_event}
+          r_size={@r_size}
         />
       <% _ -> %>
         <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center text-sm text-gray-500">
