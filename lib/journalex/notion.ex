@@ -1340,22 +1340,11 @@ defmodule Journalex.Notion do
 
   Returns `{:ok, %{"2026-02-21" => page_id, ...}}` or `{:error, reason}`.
   """
-  def fetch_date_ids(date_keys, opts \\ []) when is_list(date_keys) do
-    conf = Application.get_env(:journalex, __MODULE__, [])
-    data_source_id = Keyword.get(opts, :data_source_id, conf[:market_daily_data_source_id])
-    batch_size = Keyword.get(opts, :batch_size, 25)
-
-    if is_nil(data_source_id) do
-      {:error, :missing_market_daily_data_source_id}
-    else
-      with {:ok, page_map} <-
-             fetch_pages_for_check(date_keys, data_source_id,
-               title_property: "Date",
-               batch_size: batch_size
-             ) do
-        {:ok, build_page_id_map(page_map)}
-      end
-    end
+  def fetch_date_ids(_date_keys, opts \\ []) do
+    # Market Daily page titles use Notion date-mention rich text rather than plain text,
+    # so Notion's rich_text/title filter never matches them. We load all pages once and
+    # return the full map; callers merge it into their date_id_cache.
+    list_all_date_ids(opts)
   end
 
   @doc """

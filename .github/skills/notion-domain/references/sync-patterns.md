@@ -116,6 +116,7 @@ For insert or push flows that need Notion relation page IDs (for example ticker/
 
 - Collect only the missing relation keys from the trades involved in the pending action
 - Use `Notion.fetch_ticker_ids/1` and `Notion.fetch_date_ids/1` inside `start_async/3`
+- **`fetch_date_ids` must list all pages — never filter by title.** Market Daily page titles are Notion date-mention rich text, not plain text. A `rich_text: {equals: "2026-04-27"}` filter always returns 0 results. The correct implementation fetches all pages from the datasource and builds the date→ID map from the full result set (~127 pages, ~2.7 s). `fetch_ticker_ids` is unaffected (Ticker Details titles are plain text).
 - Merge the returned deltas into the existing caches in `handle_async/3`
 - Store enough pending-action state to resume the original insert/push flow after the warmup completes
 
