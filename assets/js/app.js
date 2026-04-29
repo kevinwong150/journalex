@@ -38,6 +38,41 @@ function resolveFormatters(option) {
       return date ? `${date}<br/>${r}` : `${r}`
     }
   }
+
+  if (option.tooltipFormatter === "timeslot_heatmap_stats") {
+    delete option.tooltipFormatter
+    option.tooltip = option.tooltip || {}
+    option.tooltip.formatter = (params) => {
+      const data = params.data || {}
+      const value = Array.isArray(data.value) ? data.value[2] : params.value
+      const avgR = typeof value === "number" ? value.toFixed(2) : value
+      const weekday = data.weekday || ""
+      const timeslot = data.timeslot || ""
+      const count = data.count ?? "-"
+
+      return `${weekday} · ${timeslot}<br/>Avg R: ${avgR}<br/>Trades: ${count}`
+    }
+  }
+
+  if (option.tooltipFormatter === "timeslot_breakdown") {
+    delete option.tooltipFormatter
+    option.tooltip = option.tooltip || {}
+    option.tooltip.formatter = (params) => {
+      if (!params || !params.length) return ""
+      const barParam = params.find(p => p.seriesName === "Total R")
+      const lineParam = params.find(p => p.seriesName === "Avg R")
+      if (!barParam) return ""
+      const d = barParam.data || {}
+      const timeslot = d.timeslot || barParam.axisValue || ""
+      const totalR = typeof barParam.value === "number" ? barParam.value.toFixed(2) : barParam.value
+      const avgR = lineParam && typeof lineParam.value === "number" ? lineParam.value.toFixed(2) : "-"
+      const wins = d.wins ?? "-"
+      const losses = d.losses ?? "-"
+      const count = typeof wins === "number" && typeof losses === "number" ? wins + losses : "-"
+      return `${timeslot}<br/>Total R: ${totalR}<br/>Avg R: ${avgR}<br/>Trades: ${count} (${wins}W / ${losses}L)`
+    }
+  }
+
   return option
 }
 

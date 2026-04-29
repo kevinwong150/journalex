@@ -116,4 +116,7 @@ end
 - `start_async/3` spawns a linked task and returns immediately
 - `handle_async/3` receives the result as `{:ok, value}` or `{:exit, reason}`
 - Never use bare `Task.async/1` + `handle_info({ref, result}, ...)` for new code — prefer `start_async`
-- Rules: the `mount/3` pattern `if connected?(socket), do: send(self(), :load)` is acceptable for lightweight data loads, but any blocking call behind that `:load` message must use `start_async` not a direct call inside `handle_info`
+- The `mount/3` pattern `if connected?(socket), do: send(self(), :load)` is acceptable for lightweight data loads, but any blocking call behind that `:load` message must use `start_async` not a direct call inside `handle_info`
+- For heavier loads (e.g., analytics charts), skip the `send/handle_info` hop entirely — call a `reload(socket, opts)` function directly from the `connected?` guard in `mount/3`; that function returns `start_async(socket, :key, fn -> ... end)`. Pattern: `if(connected?(socket), do: reload(socket, []), else: socket)`
+- Seed placeholder assigns in `mount/3` so the initial dead render has a defined shape without running any DB query; for charts, prefer the same empty builder used for real data (for example `build_chart_option([])`) instead of an ad hoc module attribute map
+- When a chart uses `phx-update="ignore"` with `Hooks.Chart`, its initial option must still be a valid ECharts config for that chart type. Placeholder maps that only contain `series` can crash `mounted()` before `handleEvent("chart-update", ...)` is registered

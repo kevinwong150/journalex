@@ -44,6 +44,23 @@ assert trade.metadata["done?"] == true   # ✅ correct
 assert trade.metadata.done? == true      # ❌ wrong
 ```
 
+## Trade fixture pattern (context/Analytics tests)
+
+No shared fixture helper exists for `Trade` records. Create them inline using `Map.merge/2` for base+overrides:
+
+```elixir
+base = %{
+  symbol: "NQ", open_date_time: ~N[2025-01-01 09:30:00], ...,
+  metadata_version: 2,
+  metadata: %{"done?" => true, "entry_timeslot" => "09:30"}
+}
+
+%Trade{} |> Trade.changeset(Map.merge(base, %{metadata: %{...}})) |> Repo.insert!()
+```
+
+- Always use string keys in the `metadata` map (JSONB is stored and read back with string keys)
+- Override only the fields that differ per test case
+
 ## CSV fixtures
 
 Use only helpers from `test/support/fixtures.ex`. Do NOT read arbitrary file paths directly.

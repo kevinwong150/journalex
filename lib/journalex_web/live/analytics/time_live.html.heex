@@ -6,17 +6,25 @@
   r_mode={@r_mode}
 />
 
-<div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-  <%!-- Entry Timeslot Heatmap --%>
+<div class="mt-6 space-y-6">
+  <%!-- Entry Timeslot heatmap + performance chart --%>
   <div>
     <h2 class="mb-2 flex items-center text-sm font-semibold uppercase tracking-wider text-zinc-500">
       Entry Timeslot × Day of Week
       <.info_tooltip text="Average R per entry timeslot and weekday. Darker green = better average outcome. Darker red = worse." />
     </h2>
-    <.chart id="entry-timeslot-heatmap" option={@entry_option} class="w-full h-56" />
+    <.chart id="entry-timeslot-heatmap" option={@entry_option} class="w-full h-72" />
   </div>
 
-  <%!-- Close Timeslot Heatmap (V2 only) --%>
+  <div>
+    <h2 class="mb-2 flex items-center text-sm font-semibold uppercase tracking-wider text-zinc-500">
+      Entry Timeslot Performance
+      <.info_tooltip text="Total R (bars, coloured green/red) and average R (line) per entry timeslot across all weekdays." />
+    </h2>
+    <.chart id="entry-timeslot-perf" option={@entry_breakdown_option} class="w-full h-56" />
+  </div>
+
+  <%!-- Close Timeslot heatmap + performance chart (V2 only) --%>
   <div>
     <h2 class="mb-2 flex items-center text-sm font-semibold uppercase tracking-wider text-zinc-500">
       Close Timeslot × Day of Week
@@ -27,25 +35,40 @@
         Requires V2+ trades.
       </div>
     <% else %>
-      <.chart id="close-timeslot-heatmap" option={@close_option} class="w-full h-56" />
+      <.chart id="close-timeslot-heatmap" option={@close_option} class="w-full h-72" />
     <% end %>
   </div>
 
-  <%!-- Day of Week bar --%>
   <div>
     <h2 class="mb-2 flex items-center text-sm font-semibold uppercase tracking-wider text-zinc-500">
-      Day-of-Week Performance
-      <.info_tooltip text="Total R earned per trading day. Green = net positive, red = net negative." />
+      Close Timeslot Performance
+      <.info_tooltip text="Total R (bars, coloured green/red) and average R (line) per close timeslot across all weekdays. V2+ trades only." />
     </h2>
-    <.chart id="dow-chart" option={@dow_option} class="w-full h-48" />
+    <%= if not @has_v2 do %>
+      <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+        Requires V2+ trades.
+      </div>
+    <% else %>
+      <.chart id="close-timeslot-perf" option={@close_breakdown_option} class="w-full h-56" />
+    <% end %>
   </div>
 
-  <%!-- Monthly bars --%>
-  <div>
-    <h2 class="mb-2 flex items-center text-sm font-semibold uppercase tracking-wider text-zinc-500">
-      Monthly P&amp;L
-      <.info_tooltip text="Total R earned per calendar month. Green = profitable month, red = losing month." />
-    </h2>
-    <.chart id="monthly-chart" option={@monthly_option} class="w-full h-48" />
+  <%!-- Bar charts — 2-column grid --%>
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <div>
+      <h2 class="mb-2 flex items-center text-sm font-semibold uppercase tracking-wider text-zinc-500">
+        Day-of-Week Performance
+        <.info_tooltip text="Total R earned per trading day. Green = net positive, red = net negative." />
+      </h2>
+      <.chart id="dow-chart" option={@dow_option} class="w-full h-48" />
+    </div>
+
+    <div>
+      <h2 class="mb-2 flex items-center text-sm font-semibold uppercase tracking-wider text-zinc-500">
+        Monthly P&amp;L
+        <.info_tooltip text="Total R earned per calendar month. Green = profitable month, red = losing month." />
+      </h2>
+      <.chart id="monthly-chart" option={@monthly_option} class="w-full h-48" />
+    </div>
   </div>
 </div>

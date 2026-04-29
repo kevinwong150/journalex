@@ -34,7 +34,10 @@ defmodule Journalex.AnalyticsBehaviour do
             }
 
   @callback time_heatmap(atom(), keyword()) ::
-              [{String.t(), String.t(), float()}]
+              [{String.t(), String.t(), float(), integer()}]
+
+  @callback timeslot_breakdown(atom(), keyword()) ::
+              [{String.t(), float(), float(), integer(), integer()}]
 
   @callback day_of_week_breakdown(keyword()) ::
               [{String.t(), float(), integer(), integer()}]

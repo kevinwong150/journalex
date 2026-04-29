@@ -353,11 +353,51 @@ defmodule Journalex.Analytics do
     |> Enum.group_by(fn {ts, dow, _} -> {ts, dow} end)
     |> Enum.map(fn {{ts, dow}, group} ->
       avg_r = group |> Enum.map(fn {_, _, pl} -> to_r(pl, r_size) end) |> safe_avg()
-      {ts, dow_to_name(dow), avg_r}
+      count = length(group)
+      {ts, dow_to_name(dow), avg_r, count}
     end)
   end
 
   defp dow_to_name(dow), do: Enum.at(@weekday_names, dow)
+
+  # ---------------------------------------------------------------------------
+  # Timeslot breakdown (collapsed across all weekdays)
+  # ---------------------------------------------------------------------------
+
+  @impl true
+  def timeslot_breakdown(dimension, opts \\ []) do
+    field =
+      case dimension do
+        :entry_timeslot -> "entry_timeslot"
+        :close_timeslot -> "close_timeslot"
+      end
+
+    r_size = Keyword.get(opts, :r_size, Settings.get_r_size())
+
+    rows =
+      Repo.all(
+        from t in base_query(opts),
+          where: not is_nil(fragment("?->>?", t.metadata, ^field)),
+          select: {
+            fragment("?->>?", t.metadata, ^field),
+            t.result,
+            t.realized_pl
+          }
+      )
+
+    rows
+    |> Enum.reject(fn {ts, _, _} -> ts == "" end)
+    |> Enum.group_by(fn {ts, _, _} -> ts end)
+    |> Enum.map(fn {ts, group} ->
+      wins = Enum.count(group, fn {_, r, _} -> r == "WIN" end)
+      losses = length(group) - wins
+      r_values = Enum.map(group, fn {_, _, pl} -> to_r(pl, r_size) end)
+      total_r = r_values |> Enum.sum() |> Float.round(3)
+      avg_r = safe_avg(r_values)
+      {ts, total_r, avg_r, wins, losses}
+    end)
+    |> Enum.sort_by(fn {ts, _, _, _, _} -> ts end)
+  end
 
   # ---------------------------------------------------------------------------
   # Day of week breakdown

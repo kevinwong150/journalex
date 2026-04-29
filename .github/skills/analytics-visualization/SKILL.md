@@ -96,8 +96,8 @@ All routes live under `scope "/", JournalexWeb` in `router.ex`. Analytics LiveVi
 - Day-of-week bar chart (R and win/loss count)
 - Monthly P&L bars (Jan–Dec)
 - Duration scatter: duration (integer) vs realized R, color = WIN/LOSE
-- Uses: `Analytics.time_heatmap/2`, `Analytics.day_of_week_breakdown/1`, `Analytics.monthly_breakdown/1`
-- ECharts types: `heatmap`, `bar`, `scatter`
+- Uses: `Analytics.time_heatmap/2`, `Analytics.timeslot_breakdown/2`, `Analytics.day_of_week_breakdown/1`, `Analytics.monthly_breakdown/1`
+- ECharts types: `heatmap`, `bar` (bar+line combo for timeslot charts), `scatter`
 
 ### E — Psychology
 
@@ -252,6 +252,7 @@ long_vs_short(opts)        # → %{long: kpis, short: kpis}
 flags_impact(opts)         # → [{flag_name, avg_r_on, avg_r_off, count_on, count_off}]
 rr_analysis(opts)          # → %{histogram_bins, scatter_data, expectancy, fulfillment_rate}
 time_heatmap(dimension, opts) # dimension: :entry_timeslot | :close_timeslot → [{timeslot, weekday, avg_r}]
+timeslot_breakdown(dimension, opts) # dimension: :entry_timeslot | :close_timeslot → [{ts, total_r, avg_r, wins, losses}] sorted by ts
 day_of_week_breakdown(opts)   # → [{weekday, total_r, wins, losses}]
 monthly_breakdown(opts)    # → [{month_label, total_r, wins, losses}]
 scorecard_periods(unit, opts) # unit: :week | :month → [{period_label, count, win_pct, total_r, avg_r, top_rank, top_flag}]
@@ -439,6 +440,16 @@ test/test_helper.exs                    ← add MockAnalytics defmock
 15. **ECharts formatter functions cannot be passed from Elixir** — the option map is JSON-serialised, so JS function values are lost. Use a **sentinel string pattern**: put a sentinel like `tooltipFormatter: "heatmap_date"` in the Elixir option map, then define a `resolveFormatters(option)` function in `app.js` that inspects the option for known sentinels and replaces them with real JS functions before calling `chart.setOption(option)`
 16. **HEEx bare `if` in list literals is a syntax error** — `[..., if cond, do: a, else: b]` fails. Use `[..., if(cond, do: a, else: b)]`. Complex conditions: `if(Map.get(m, :k) >= 0, do: ...)` not `if Map.get(m, :k) >= 0, do:`
 17. **`<%# comment %>` is deprecated in HEEx** — produces a warning-as-error; use `<%!-- comment --%>` instead
+18. **ECharts `{c}` formatter in heatmap shows the entire data array** — for raw array data like `[xi, yi, value]`, `{c}` renders the whole array as a comma-joined string, not just the value. Use `{@[2]}` for simple label templates, or disable cell labels entirely with `label: %{show: false}`. `{b}` renders the series name.
+19. **Heatmap `visualMap` colors by the last numeric slot in `data.value`** — if a point changes from `[x, y, avg_r]` to `[x, y, avg_r, count]`, color silently switches from `avg_r` to `count`. Keep the color-driving metric in `value[2]` and store extra tooltip metadata as sibling keys on the point object (`%{value: [x, y, avg_r], count: count, weekday: weekday, timeslot: slot}`).
+20. **Time heatmap tooltips must use `resolveFormatters(option)` for rich metadata** — literal template strings like `{@[2]}` were not interpolated reliably on this chart path. When tooltip content needs `count`, `weekday`, or `timeslot`, pass a sentinel from Elixir and replace it with a real JS formatter in `assets/js/app.js`, reading the sibling fields from `params.data`.
+21. **ECharts heatmap `visualMap` at bottom competes with rotated x-axis labels** — both occupy the same vertical space below the grid, causing overlap. Move visualMap above the chart: `top: 5` (in the visualMap) and `grid.top: 40` (in the grid). This is the correct layout for any heatmap where x-axis labels are rotated.
+22. **Full-width timeslot heatmaps read better with two-line x-axis labels than rotated labels** — for dense time-bucket heatmaps, format each bucket as `HH:MM\nHH:MM` (for example `09:30\n10:00`) instead of rotating a single string to `90` degrees. This preserves scanability on full-width charts with many columns.
+23. **Two-line timeslot x-axis labels need extra bottom grid space** — set `grid.bottom` to about `62` so stacked time labels fit without overlap or clipping. Smaller bottoms reintroduce collisions with the chart edge.
+24. **Heatmaps with 14+ x-axis categories must be full-width** — placing a heatmap in a `lg:grid-cols-2` layout halves cell width to ~39px, making labels, cell values, and the visualMap unreadable. Bar charts with 5–12 entries tolerate half-width fine. Apply `col-span-full` or remove grid nesting for any heatmap with many categories.
+25. **ECharts dual y-axis requires `yAxis` to be a list, not a map** — `yAxis: %{...}` gives one axis; `yAxis: [%{name: "R", ...}, %{name: "Count", ...}]` gives two. Each series must declare `yAxisIndex: 0` or `yAxisIndex: 1`; omitting it defaults to 0. Use `nameTextStyle: %{align: "left"}` on the right axis to prevent its label from clipping outside the chart.
+26. **Bar+line combo charts need `legend.top: 0` + `grid.top: 30`** — without explicit grid top space, the legend overlaps the top of the chart. Standard safe config: `legend: %{top: 0}`, `grid: %{top: 30, bottom: 40, left: 55, right: 55}`.
+27. **Bar series item sidecar data is accessed as `barParam.data` in tooltip formatters** — when each bar data point is a map like `%{value: r, timeslot: ts, wins: w, losses: l}`, the tooltip `params` array contains one entry per series; use `params.find(p => p.seriesName === "Total R")` to get the bar entry, then read `barParam.data.wins` etc. For a multi-series axis tooltip, pass a sentinel and resolve it via `resolveFormatters(option)` in `app.js`.
 
 ---
 
@@ -565,3 +576,57 @@ test/test_helper.exs                    ← add MockAnalytics defmock
 **ECharts formatter sentinel pattern established:** Since Elixir option maps are JSON-serialised before reaching the JS hook, JS functions cannot be included. Pattern: put a sentinel string in the option map (e.g., `tooltipFormatter: "heatmap_date"`); define `resolveFormatters(option)` in `app.js` that detects known sentinels and replaces them with real JS functions; call `resolveFormatters(option)` inside `Hooks.Chart` before `chart.setOption(option)`.
 
 **Period Comparison page pattern (`compare_live.ex`):** Two independent filter forms with separate `phx-submit` event names (`"filter_a"` / `"filter_b"`), each calling a shared `reload/2` helper with different date opts. Equity curves from both periods are re-zeroed to their respective period start values before overlay so the chart Y-axis represents R gained within each period rather than all-time cumulative R.
+
+### 2026-04-28 — Time analysis heatmap fixes
+
+**ECharts `{c}` formatter bug:** Heatmap series with multi-value data arrays (e.g., `[xi, yi, avg_r, count]`) rendered the entire array as a comma-joined string when `{c}` was used in cell labels or tooltips. Fixed by switching to `{@[2]}` to target the third element. Cell labels disabled with `label: %{show: false}` where not needed.
+
+**Heatmap color regression guard:** Changing point data from `[xi, yi, avg_r]` to `[xi, yi, avg_r, count]` made `visualMap` color by `count`, because it uses the last numeric slot in `value`. The safe pattern is to keep `avg_r` in `value[2]` and move `count`, `weekday`, and `timeslot` to sibling fields on each point.
+
+**Tooltip formatter correction:** Time heatmap tooltips on this path should use the formatter sentinel pattern via `resolveFormatters(option)` in `assets/js/app.js`. Literal `{@[2]}` template strings were not interpolated reliably here, so rich tooltip content must read sibling fields from `params.data` in a real JS formatter.
+
+**visualMap / x-axis label collision:** Moving `visualMap` to `top: 5` and setting `grid.top: 40` eliminated the overlap with rotated x-axis labels at the bottom of the chart.
+
+**Two-line timeslot axis labels:** On full-width time heatmaps with many x-axis buckets, labels are more readable as two stacked times like `09:30\n10:00` than as a single rotated label. This keeps the axis scannable without resorting to `rotate: 90`.
+
+**Bottom grid spacing for stacked labels:** `grid.bottom: 62` gives two-line timeslot labels enough room without reintroducing overlap or clipping at the chart edge.
+
+**Full-width requirement for heatmaps:** Time heatmaps were placed in `lg:grid-cols-2`. At half width, cell size dropped to ~39px, making all content unreadable. Changed to full-width. Bar charts in the same page (5–12 entries) remain in the grid layout.
+
+### 2026-04-28 — Timeslot performance bar+line charts
+
+**`Analytics.timeslot_breakdown/2` added:** Groups trades by a JSONB timeslot field, returns `{ts, total_r, avg_r, wins, losses}` 5-tuples sorted by timeslot string. Uses `fragment("?->>?", t.metadata, ^field)` for JSONB string extraction — `^field` is bound so `?` in the field name (there is none here, but the pattern is safe for any key).
+
+**Two bar+line combo charts wired into `time_live.ex`:** Entry timeslot chart (always visible) and close timeslot chart (V2-gated with amber warning box, consistent with heatmap section pattern). Charts inserted between the heatmaps and the DoW/Monthly grid in `time_live.html.heex`.
+
+**Dual y-axis ECharts pattern confirmed:** `yAxis` must be a list when using two axes. Bar series uses `yAxisIndex: 0` (Total R), line series uses `yAxisIndex: 1` (Avg R). `nameTextStyle.align` on the right axis keeps the axis label inside the chart boundary.
+
+**Bar+line layout:** `legend: %{top: 0}` + `grid: %{top: 30}` prevents the legend from overlapping chart content. This is the standard config for any dual-series bar+line chart.
+
+**Per-bar item colors:** Set via `itemStyle: %{color: "..."}` inside each data point map in the series data list (not at the series level). Positive total-R bars green, negative bars red.
+
+**Sidecar data on bar items:** Each data point is a map `%{value: r, timeslot: ts, wins: w, losses: l}`. In the `timeslot_breakdown` tooltip formatter (sentinel resolved in `app.js`), `params.find(p => p.seriesName === "Total R").data` gives access to `wins` and `losses` alongside the bar value.
+
+**`timeslot_breakdown` sentinel added to `resolveFormatters`:** New entry `"timeslot_breakdown"` in `app.js` `resolveFormatters`. Uses `params.find(p => p.seriesName === "...")` to extract each series' params independently in the multi-series axis tooltip.
+
+### 2026-04-29 — `time_live.ex` async refactor + convention violations fix
+
+**Blocking `mount/3` fixed:** Replaced inline `reload/2` call with `if(connected?(socket), do: reload(socket, []), else: socket)`. The `connected?` guard prevents DB queries during the server-side dead render.
+
+**`reload/2` now returns `start_async`:** All 6 Analytics DB queries (`time_heatmap`, `timeslot_breakdown` ×2, `day_of_week_breakdown`, `monthly_breakdown` ×2) are batched inside a single `compute_chart_data/1` function called from a `start_async(socket, :load_charts, ...)` task. `handle_async(:load_charts, {:ok, ...}, socket)` builds all chart options and pushes events; `handle_async(:load_charts, {:exit, _}, socket)` puts a flash error.
+
+**`has_v2` computed synchronously before `start_async`:** When a version gate (`has_v2`) drives conditional rendering of entire chart sections, compute it from `a.selected_versions` at the top of `reload/2` (before spawning the task) so the gate reflects the user's filter selection immediately — not after the async result arrives.
+
+**Valid empty chart options required:** Initial chart assigns in `mount/3` must come from empty option builders that still include the required ECharts axes/grid/legend structure. Placeholder maps with only `series` are not sufficient for heatmap, bar, or dual-axis charts.
+
+**SKILL.md fix:** `yAxisIndex: 1` series description corrected from `(count)` to `(Avg R)` in the dual-axis bar+line section.
+
+### 2026-04-28 — `time_live.ex` empty option regression fix
+
+**Browser-confirmed root cause:** `/analytics/time` charts stopped loading because the first render passed invalid empty ECharts options to `Hooks.Chart`. Example bad shape: `%{series: [%{type: "heatmap", data: []}]}`. ECharts raised `xAxis "0" not found`, which crashed `mounted()` before `handleEvent("chart-update", ...)` was registered.
+
+**Fix applied in `time_live.ex`:** `mount/3` now seeds initial chart assigns via `build_timeslot_heatmap_option([])`, `build_timeslot_breakdown_option([])`, `build_dow_option([])`, and `build_monthly_option([])`. All empty-option builders now return valid configs with the required axes, grid, tooltip, legend, and dual-axis structure where applicable.
+
+**Why this matters with `phx-update="ignore"`:** When the hook crashes on the initial empty option, later server `push_event("chart-update", ...)` updates are effectively lost because the handler was never attached. Valid empty configs are therefore required even when real data will arrive asynchronously moments later.
+
+**Behavioral validation:** Verified in the browser that `/analytics/time` now mounts all chart canvases on first load, and remains stable when filters produce empty datasets (e.g. toggling off the only selected version).
