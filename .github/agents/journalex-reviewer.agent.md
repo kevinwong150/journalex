@@ -56,6 +56,7 @@ Read only the files relevant to the code being reviewed (e.g., skip migrations.i
 - Hardcoded Notion datasource IDs — must use `Journalex.Notion.DataSources`
 - Wrong property names (spaces in V2 names, missing spaces in V1's `"Entry Timeslot"`)
 - References to removed helpers (`get_rich_text/2`, `maybe_put_rich_text/3`)
+- Building `rich_text` spans inline instead of via `BlockBuilder.rich_text/1` — bypassing chunking risks 400 errors for texts > 2000 chars
 
 ### General (all files)
 

@@ -36,8 +36,9 @@ All sync logic lives in `lib/journalex/notion.ex`. LiveViews call context-level 
 ### `push_trade_writeup(page_id, writeup)`
 
 1. Converts internal writeup format to Notion blocks via `BlockBuilder.to_notion_blocks/1`
-2. Appends blocks to page via `Client.append_block_children(page_id, blocks)`
-3. Returns `{:ok, :no_writeup}` if writeup is empty/nil
+2. `BlockBuilder.rich_text/1` automatically chunks any text > 2000 chars into multiple spans — the Notion API rejects a single span exceeding 2000 characters with a silent 400 error
+3. Appends blocks to page via `Client.append_block_children(page_id, blocks)`
+4. Returns `{:ok, :no_writeup}` if writeup is empty/nil
 
 ## Extraction Helpers (Notion → Elixir)
 

@@ -96,14 +96,30 @@ defmodule Journalex.Notion.BlockBuilder do
   # Fallback: treat unknown types as empty paragraphs
   defp to_notion_block(_block), do: empty_paragraph()
 
+  # Notion caps each rich_text object at 2000 characters. Split long text into
+  # multiple spans so the API does not reject the block.
+  @max_rich_text_length 2000
+
   defp rich_text(nil), do: []
   defp rich_text(""), do: []
 
   defp rich_text(text) when is_binary(text) do
-    [%{"type" => "text", "text" => %{"content" => text}}]
+    text
+    |> chunk_text(@max_rich_text_length)
+    |> Enum.map(fn chunk -> %{"type" => "text", "text" => %{"content" => chunk}} end)
   end
 
   defp rich_text(_), do: []
+
+  defp chunk_text(text, max) do
+    Stream.unfold(text, fn
+      "" -> nil
+      t ->
+        {chunk, rest} = String.split_at(t, max)
+        {chunk, rest}
+    end)
+    |> Enum.to_list()
+  end
 
   defp empty_paragraph do
     %{

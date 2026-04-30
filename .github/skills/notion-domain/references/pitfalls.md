@@ -61,3 +61,9 @@ These are verified mistakes that have occurred or could easily occur in the Jour
 **Wrong**: Including `"Sector"` or `"CapSize"` in `build_v1/v2_metadata_properties`
 **Why**: These are rollup fields — read-only in Notion
 **Fix**: Only read via `get_rollup_first_select/2`; never include in property writes
+
+## 11. Notion 2000-character rich_text limit
+
+**Wrong**: Passing a string longer than 2000 chars directly as a single `rich_text` span in a block
+**Why**: The Notion API returns a 400 error and silently drops the block write — the push appears to succeed at the HTTP level in some paths but the page is unchanged
+**Fix**: Always route text through `BlockBuilder.rich_text/1`; it automatically chunks into multiple spans of ≤ 2000 chars each. Never bypass `BlockBuilder` when constructing paragraph or toggle blocks.

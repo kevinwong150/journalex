@@ -219,6 +219,7 @@ The `MetadataForm` component renders V1 or V2 forms via separate function compon
 17. OTP 27 warns on matching `0.0` as a float literal in pattern clauses (imprecise float pattern). Avoid adding `0.0` as a separate match clause for JSONB numeric fields — JSONB integers come back as integers (`0`), not floats; use a guard `when value == 0.0` if a float zero check is genuinely needed
 18. Do not perform blocking I/O (HTTP calls, slow Ecto queries, file processing) inside `handle_info/2` or `mount/3` in a LiveView — the LiveView process IS the Phoenix channel GenServer. Blocking it prevents heartbeat processing and causes the client to disconnect with a "view crashed - undefined" error. Use `start_async/3` + `handle_async/3` (Phoenix LiveView 1.0 built-ins) instead
 19. Do not use a Notion `rich_text: {equals: ...}` filter to look up Market Daily pages by title — those page titles are Notion **date-mention** rich text (not plain text), so the filter always returns 0 results. `fetch_date_ids` must fetch all pages from the datasource (no title filter) and build the date→ID map from the full result set. `fetch_ticker_ids` is not affected because Ticker Details titles are plain text.
+20. Notion's API rejects any `rich_text` span longer than 2000 characters with a 400 error. `BlockBuilder.rich_text/1` handles this automatically by chunking long text into multiple spans (each ≤ 2000 chars). Do not bypass `BlockBuilder` when writing text blocks to Notion.
 
 ---
 
