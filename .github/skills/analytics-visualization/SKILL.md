@@ -96,8 +96,9 @@ All routes live under `scope "/", JournalexWeb` in `router.ex`. Analytics LiveVi
 - Day-of-week bar chart (R and win/loss count)
 - Monthly P&L bars (Jan–Dec)
 - Duration scatter: duration (integer) vs realized R, color = WIN/LOSE
-- Uses: `Analytics.time_heatmap/2`, `Analytics.timeslot_breakdown/2`, `Analytics.day_of_week_breakdown/1`, `Analytics.monthly_breakdown/1`
-- ECharts types: `heatmap`, `bar` (bar+line combo for timeslot charts), `scatter`
+- **Duration Band Performance chart** — full-width dual-axis bar+line; 7 hold-duration bins (0–15m through 180m+); bars = Total R (green/red), line = Win Rate % (right axis, 0–100); no V2 gate (duration column on all versions)
+- Uses: `Analytics.time_heatmap/2`, `Analytics.timeslot_breakdown/2`, `Analytics.day_of_week_breakdown/1`, `Analytics.monthly_breakdown/1`, `Analytics.duration_band_breakdown/1`
+- ECharts types: `heatmap`, `bar` (bar+line combo for timeslot charts), `scatter`, `bar+line` (dual-axis for duration bands)
 
 ### E — Psychology
 
@@ -630,3 +631,15 @@ test/test_helper.exs                    ← add MockAnalytics defmock
 **Why this matters with `phx-update="ignore"`:** When the hook crashes on the initial empty option, later server `push_event("chart-update", ...)` updates are effectively lost because the handler was never attached. Valid empty configs are therefore required even when real data will arrive asynchronously moments later.
 
 **Behavioral validation:** Verified in the browser that `/analytics/time` now mounts all chart canvases on first load, and remains stable when filters produce empty datasets (e.g. toggling off the only selected version).
+
+### 2026-04-30 — Duration Band Performance chart (`/analytics/time`)
+
+**New function `Analytics.duration_band_breakdown/1`:** Added to `analytics.ex` and `analytics_behaviour.ex`. Queries `{t.duration, t.result, t.realized_pl}` (plain integer column — no JSONB fragment needed). Groups Elixir-side into 7 bins via a `@duration_bins` module attribute list: `[{900, "0–15m"}, {1800, "15–30m"}, {3600, "30–60m"}, {5400, "60–90m"}, {7200, "90–120m"}, {10800, "120–180m"}, {:infinity, "180m+"}]`. Returns `[{bin_label, total_r, avg_r, win_rate, wins, losses}]` 6-tuples. `win_rate` is a 0.0–1.0 float (multiplied by 100 in the option builder, not in the context).
+
+**`@duration_bins` module attribute pattern:** Store duration (or any fixed ordered classification) bins as a module attribute list of `{threshold, label}` tuples. The sentinel `{:infinity, label}` as the last entry means `bin_label/1` needs no `else` branch — `Enum.find_value/2` will always match it. Sorting results by bin order uses `Enum.find_index(@duration_bin_labels, &(&1 == label))`.
+
+**Chart design:** Full-width dual-axis bar+line. Bars = Total R (yAxisIndex 0, green positive / red negative), line = Win Rate % (yAxisIndex 1, right axis `min: 0, max: 100`, blue `#3b82f6`). Win Rate chosen over Avg R as the line metric because it is dimensionless (immune to R/$/Both toggle). No V2 gate — `duration` is a native column present on all metadata versions.
+
+**`"duration_band"` tooltip sentinel:** New entry in `resolveFormatters` in `assets/js/app.js`. Reads `avg_r`, `wins`, `losses` from bar sidecar (`barParam.data`), win rate % from line series value. Output: `{bin}<br/>Total R: {x}<br/>Avg R: {y}<br/>Win Rate: {z}%<br/>Trades: {n} ({w}W / {l}L)`.
+
+**`time_live.ex` changes:** `mount/3` seeds `duration_option` via `build_duration_band_option([])`. `compute_chart_data/1` extended from 6-tuple to 7-tuple, adding `duration_band_breakdown(opts)`. `handle_async(:load_charts, {:ok, 7-tuple}, socket)` assigns `duration_option` and pushes `"chart-update"` for `"duration-band-chart"`.

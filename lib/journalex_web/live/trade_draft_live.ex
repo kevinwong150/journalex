@@ -28,6 +28,7 @@ defmodule JournalexWeb.TradeDraftLive do
       # Combined draft list
       |> assign(:combined_drafts, CombinedDrafts.list_drafts())
       |> assign(:selected_cd_ids, MapSet.new())
+      |> assign(:select_mode, false)
       # Inline create/edit form
       |> assign(:cd_editing, nil)
       |> assign(:cd_name, "")
@@ -191,6 +192,18 @@ defmodule JournalexWeb.TradeDraftLive do
   end
 
   @impl true
+  def handle_event("toggle_select_mode", _params, socket) do
+    if socket.assigns.select_mode do
+      {:noreply,
+       socket
+       |> assign(:select_mode, false)
+       |> assign(:selected_cd_ids, MapSet.new())}
+    else
+      {:noreply, assign(socket, :select_mode, true)}
+    end
+  end
+
+  @impl true
   def handle_event("cd_bulk_delete", _params, socket) do
     ids = MapSet.to_list(socket.assigns.selected_cd_ids)
     count = length(ids)
@@ -269,6 +282,8 @@ defmodule JournalexWeb.TradeDraftLive do
     {:noreply,
      socket
      |> assign(:bulk_mode, !socket.assigns.bulk_mode)
+     |> assign(:select_mode, false)
+     |> assign(:selected_cd_ids, MapSet.new())
      |> assign(:bulk_names, List.duplicate("", 2))
      |> assign(:bulk_auto_meta, true)
      |> assign(:bulk_auto_writeup, true)
@@ -651,6 +666,44 @@ defmodule JournalexWeb.TradeDraftLive do
      |> put_toast(level, msg)}
   end
 
+  @impl true
+  def handle_event("create_all_placeholders", _params, socket) do
+    drafts = Enum.reject(socket.assigns.combined_drafts, & &1.notion_page_id)
+    blocks = CombinedDrafts.placeholder_blocks()
+    default_version = Settings.get_default_metadata_version()
+
+    results =
+      Enum.map(drafts, fn draft ->
+        version =
+          (draft.metadata_draft && draft.metadata_draft.metadata_version) || default_version
+
+        case Notion.create_placeholder_page(draft.name, blocks, metadata_version: version) do
+          {:ok, page} ->
+            page_id = Map.get(page, "id")
+
+            case CombinedDrafts.set_notion_page_id(draft, page_id) do
+              {:ok, _} -> {:ok, draft.name}
+              {:error, _} -> {:error, draft.name}
+            end
+
+          {:error, _} ->
+            {:error, draft.name}
+        end
+      end)
+
+    created = Enum.count(results, &match?({:ok, _}, &1))
+    failed = results |> Enum.filter(&match?({:error, _}, &1)) |> Enum.map(fn {_, n} -> n end)
+
+    suffix = if failed != [], do: " — failed: #{Enum.join(failed, ", ")}", else: ""
+    msg = "Created #{created} placeholder(s)#{suffix}"
+    level = if failed != [], do: :error, else: :info
+
+    {:noreply,
+     socket
+     |> assign(:combined_drafts, CombinedDrafts.list_drafts())
+     |> put_toast(level, msg)}
+  end
+
   # ── Block editor events ─────────────────────────────────────────────
 
   @impl true
@@ -811,21 +864,81 @@ defmodule JournalexWeb.TradeDraftLive do
                 <h2 class="text-sm font-semibold text-sky-800 uppercase tracking-wide">Trade Drafts</h2>
                 <p class="text-xs text-sky-600 mt-0.5">Combined metadata + writeup templates.</p>
               </div>
-              <div class="flex items-center gap-2">
+              <%!-- Default toolbar --%>
+              <div :if={!@bulk_mode && !@select_mode} class="flex items-center gap-1.5">
                 <button
-                  :if={!@bulk_mode && @combined_drafts != []}
-                  phx-click="cd_delete_all"
-                  class="text-xs px-2 py-1 rounded-md border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 font-medium transition-colors"
-                >
-                  Delete all
-                </button>
-                <button
-                  :if={!@bulk_mode}
-                  phx-click="toggle_bulk"
+                  :if={@combined_drafts != []}
+                  phx-click="toggle_select_mode"
+                  title="Enter selection mode to act on individual drafts"
                   class="text-xs px-2 py-1 rounded-md border border-sky-200 bg-sky-100 text-sky-700 hover:bg-sky-200 font-medium transition-colors"
                 >
-                  Bulk create
+                  Select
                 </button>
+                <button
+                  :if={@combined_drafts != []}
+                  phx-click="create_all_placeholders"
+                  disabled={!@connected}
+                  title={if @connected, do: "Create Notion placeholder entries for all drafts in this list", else: "Waiting for server connection…"}
+                  class="text-xs px-2 py-1 rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  + Placeholders
+                </button>
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-sky-200 text-sky-700">
+                  {length(@combined_drafts)}
+                </span>
+                <details class="relative">
+                  <summary title="More options" class="list-none cursor-pointer text-xs px-2 py-1 rounded-md border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 font-medium transition-colors select-none">
+                    ···
+                  </summary>
+                  <div class="absolute right-0 top-full mt-1 z-10 bg-white border border-zinc-200 rounded-md shadow-lg py-1 min-w-[9rem]">
+                    <button
+                      phx-click="toggle_bulk"
+                      title="Open bulk create to add multiple new drafts at once"
+                      class="w-full text-left text-xs px-3 py-1.5 text-sky-700 hover:bg-sky-50 font-medium transition-colors"
+                    >
+                      New drafts…
+                    </button>
+                    <button
+                      :if={@combined_drafts != []}
+                      phx-click="cd_delete_all"
+                      title="Permanently delete all drafts from this list"
+                      class="w-full text-left text-xs px-3 py-1.5 text-red-600 hover:bg-red-50 font-medium transition-colors"
+                    >
+                      Delete all
+                    </button>
+                  </div>
+                </details>
+              </div>
+              <%!-- Select mode toolbar --%>
+              <div :if={@select_mode} class="flex items-center gap-1.5">
+                <button
+                  phx-click="cd_select_all"
+                  title="Select all drafts"
+                  class="text-xs px-2 py-1 rounded-md border border-sky-200 bg-sky-100 text-sky-700 hover:bg-sky-200 font-medium transition-colors"
+                >
+                  All
+                </button>
+                <button
+                  phx-click="cd_deselect_all"
+                  title="Deselect all drafts"
+                  class="text-xs px-2 py-1 rounded-md border border-sky-200 text-sky-600 hover:bg-sky-100 font-medium transition-colors"
+                >
+                  None
+                </button>
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-sky-200 text-sky-700"
+                  aria-label="{length(@combined_drafts)} drafts">
+                  {length(@combined_drafts)}
+                </span>
+                <button
+                  phx-click="toggle_select_mode"
+                  title="Exit selection mode"
+                  class="text-xs px-2 py-1 rounded-md border border-zinc-200 text-zinc-500 hover:bg-zinc-100 font-medium transition-colors"
+                >
+                  Exit
+                </button>
+              </div>
+              <%!-- Bulk create mode: count only (Cancel is inside the form) --%>
+              <div :if={@bulk_mode} class="flex items-center gap-2">
                 <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-sky-200 text-sky-700">
                   {length(@combined_drafts)}
                 </span>
@@ -972,19 +1085,20 @@ defmodule JournalexWeb.TradeDraftLive do
             <div :if={@combined_drafts == []} class="px-5 py-6 text-center text-sm text-sky-400">
               No trade drafts yet. Create one above.
             </div>
-            <div :if={@combined_drafts != [] && MapSet.size(@selected_cd_ids) > 0} class="px-5 py-2 bg-red-50 border-b border-red-100 flex items-center justify-between gap-2">
-              <span class="text-xs text-red-700 font-medium">{MapSet.size(@selected_cd_ids)} selected</span>
+            <div :if={@select_mode && MapSet.size(@selected_cd_ids) > 0} class="px-5 py-2 bg-sky-50 border-b border-sky-100 flex items-center justify-between gap-2">
+              <span class="text-xs text-sky-700 font-medium">{MapSet.size(@selected_cd_ids)} selected</span>
               <div class="flex items-center gap-2">
-                <button phx-click="cd_deselect_all" class="text-xs text-zinc-500 hover:text-zinc-700">Deselect all</button>
                 <button
                   phx-click="bulk_create_placeholder"
                   disabled={!@connected}
+                  title={if @connected, do: "Create Notion placeholder entries for all selected drafts", else: "Waiting for server connection…"}
                   class="text-xs px-2.5 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Create placeholders
                 </button>
                 <button
                   phx-click="cd_bulk_delete"
+                  title="Permanently delete all selected drafts"
                   class="text-xs px-2.5 py-1 rounded-md bg-red-600 text-white hover:bg-red-700 font-medium transition-colors"
                 >
                   Delete selected
@@ -1003,11 +1117,12 @@ defmodule JournalexWeb.TradeDraftLive do
                   ]}
                 >
                   <input
+                    :if={@select_mode}
                     type="checkbox"
                     checked={MapSet.member?(@selected_cd_ids, cd.id)}
                     phx-click="cd_toggle_select"
                     phx-value-id={cd.id}
-                    class="w-4 h-4 shrink-0 rounded border-zinc-300 text-red-600 cursor-pointer"
+                    class="w-4 h-4 shrink-0 rounded border-zinc-300 text-sky-600 cursor-pointer"
                   />
                   <div
                     class="min-w-0 flex-1 cursor-pointer"

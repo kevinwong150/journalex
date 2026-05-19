@@ -71,4 +71,13 @@
       <.chart id="monthly-chart" option={@monthly_option} class="w-full h-48" />
     </div>
   </div>
+
+  <%!-- Duration Band Performance --%>
+  <div>
+    <h2 class="mb-2 flex items-center text-sm font-semibold uppercase tracking-wider text-zinc-500">
+      Duration Band Performance
+      <.info_tooltip text="Total R (bars, green/red) and win rate % (line) grouped by trade hold duration. Counts only completed trades." />
+    </h2>
+    <.chart id="duration-band-chart" option={@duration_option} class="w-full h-56" />
+  </div>
 </div>

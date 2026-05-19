@@ -62,6 +62,16 @@ end
 - For paginated or sliced collections whose row actions depend on the original row position, preserve caller-provided `{item, global_index}` pairs through sorting and rendering; do NOT re-index inside the child component after pagination
 - If select-all or bulk actions are page-scoped in a paginated LiveView, compute them from the visible page subset rather than the full backing list
 - When the same control block needs to appear in multiple places within one LiveView, extract it into a local function component so labels, event wiring, and disabled states stay behavior-identical
+- For LiveView pages with multiple mutually exclusive UI modes (e.g., bulk-create mode vs select mode), use two boolean assigns as a "toolbar state" controller: each toggle handler resets the other boolean to `false`. Use `:if` blocks in the header area to render the correct toolbar. Example: `bulk_mode` and `select_mode` — toggling `bulk_mode` does `assign(socket, bulk_mode: true, select_mode: false)` and vice versa
+- For selection-mode UX: toggle checkbox visibility with `:if={@select_mode}` on each row's `<input>` element (no JS required). Gate the action bar on `@select_mode && MapSet.size(@selected_ids) > 0` to prevent accidental trigger from residual selection state when outside select mode
+
+## Toolbar and button accessibility
+
+- Always add a `title` attribute to every toolbar button, especially icon-only buttons. Button labels alone are often ambiguous in dense toolbars
+- For disabled buttons that communicate a reason, use a dynamic `title`: `title={if @connected, do: "Normal description", else: "Waiting for server connection…"}` — provides context without relying on visual cues alone
+- Count badge `<span>` elements should have `aria-label` to make the numeric value meaningful to screen readers: `aria-label="{n} drafts"`
+- Overflow `<details>/<summary>` elements whose `<summary>` text is a visual placeholder (e.g., `···`) must include `title="More options"` on the `<summary>`
+- Menu item labels in overflow dropdowns should use verb-noun phrasing ("New drafts…") not ambiguous shorthand ("Batch new…")
 
 ## Confirmation modal pattern (assign-based, not data-confirm)
 

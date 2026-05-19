@@ -73,6 +73,26 @@ function resolveFormatters(option) {
     }
   }
 
+  if (option.tooltipFormatter === "duration_band") {
+    delete option.tooltipFormatter
+    option.tooltip = option.tooltip || {}
+    option.tooltip.formatter = (params) => {
+      if (!params || !params.length) return ""
+      const barParam = params.find(p => p.seriesName === "Total R")
+      const lineParam = params.find(p => p.seriesName === "Win Rate %")
+      if (!barParam) return ""
+      const bin = barParam.axisValue || ""
+      const d = barParam.data || {}
+      const totalR = typeof barParam.value === "number" ? barParam.value.toFixed(2) : barParam.value
+      const avgR = typeof d.avg_r === "number" ? d.avg_r.toFixed(2) : "-"
+      const wins = d.wins ?? "-"
+      const losses = d.losses ?? "-"
+      const count = typeof wins === "number" && typeof losses === "number" ? wins + losses : "-"
+      const winRate = lineParam && typeof lineParam.value === "number" ? lineParam.value.toFixed(1) : "-"
+      return `${bin}<br/>Total R: ${totalR}<br/>Avg R: ${avgR}<br/>Win Rate: ${winRate}%<br/>Trades: ${count} (${wins}W / ${losses}L)`
+    }
+  }
+
   return option
 }
 

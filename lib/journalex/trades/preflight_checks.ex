@@ -45,7 +45,10 @@ defmodule Journalex.Trades.PreflightChecks do
   # ---------------------------------------------------------------------------
 
   def check_win_empty_size(trade, _ctx) do
-    if trade.result == "WIN" and size_empty?(Map.get(trade.metadata || %{}, "size")) do
+    metadata = trade.metadata || %{}
+    size = Map.get(metadata, "size", Map.get(metadata, :size))
+
+    if trade.result == "WIN" and size_empty?(size) do
       [issue(trade, "size", "WIN trade has no position size set", :win_empty_size)]
     else
       []

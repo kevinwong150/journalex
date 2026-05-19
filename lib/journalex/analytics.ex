@@ -460,6 +460,59 @@ defmodule Journalex.Analytics do
   end
 
   # ---------------------------------------------------------------------------
+  # Duration band breakdown
+  # ---------------------------------------------------------------------------
+
+  @duration_bins [
+    {900, "0–15m"},
+    {1800, "15–30m"},
+    {3600, "30–60m"},
+    {5400, "60–90m"},
+    {7200, "90–120m"},
+    {10800, "120–180m"},
+    {:infinity, "180m+"}
+  ]
+
+  @duration_bin_labels Enum.map(@duration_bins, fn {_, label} -> label end)
+
+  @impl true
+  def duration_band_breakdown(opts \\ []) do
+    r_size = Keyword.get(opts, :r_size, Settings.get_r_size())
+
+    rows =
+      Repo.all(
+        from t in base_query(opts),
+          where: not is_nil(t.duration),
+          select: {t.duration, t.result, t.realized_pl}
+      )
+
+    rows
+    |> Enum.group_by(fn {duration, _, _} -> bin_label(duration) end)
+    |> Enum.map(fn {label, group} ->
+      wins = Enum.count(group, fn {_, r, _} -> r == "WIN" end)
+      losses = length(group) - wins
+      r_values = Enum.map(group, fn {_, _, pl} -> to_r(pl, r_size) end)
+      total_r = r_values |> Enum.sum() |> Float.round(3)
+      avg_r = safe_avg(r_values)
+      count = wins + losses
+      win_rate = if count > 0, do: Float.round(wins / count, 3), else: 0.0
+      {label, total_r, avg_r, win_rate, wins, losses}
+    end)
+    |> Enum.sort_by(fn {label, _, _, _, _, _} ->
+      Enum.find_index(@duration_bin_labels, &(&1 == label)) || 99
+    end)
+  end
+
+  defp bin_label(duration) when is_integer(duration) do
+    Enum.find_value(@duration_bins, "180m+", fn
+      {:infinity, label} -> label
+      {threshold, label} -> if duration < threshold, do: label, else: nil
+    end)
+  end
+
+  defp bin_label(_), do: "180m+"
+
+  # ---------------------------------------------------------------------------
   # Scorecard periods
   # ---------------------------------------------------------------------------
 

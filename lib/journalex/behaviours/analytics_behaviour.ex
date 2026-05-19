@@ -39,6 +39,9 @@ defmodule Journalex.AnalyticsBehaviour do
   @callback timeslot_breakdown(atom(), keyword()) ::
               [{String.t(), float(), float(), integer(), integer()}]
 
+  @callback duration_band_breakdown(keyword()) ::
+              [{String.t(), float(), float(), float(), integer(), integer()}]
+
   @callback day_of_week_breakdown(keyword()) ::
               [{String.t(), float(), integer(), integer()}]
 

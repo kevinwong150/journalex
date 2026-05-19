@@ -28,7 +28,8 @@ defmodule JournalexWeb.Analytics.TimeLive do
         dow_option: build_dow_option([]),
         monthly_option: build_monthly_option([]),
         entry_breakdown_option: build_timeslot_breakdown_option([]),
-        close_breakdown_option: build_timeslot_breakdown_option([])
+        close_breakdown_option: build_timeslot_breakdown_option([]),
+        duration_option: build_duration_band_option([])
       )
 
     {:ok, if(connected?(socket), do: reload(socket, []), else: socket)}
@@ -83,18 +84,20 @@ defmodule JournalexWeb.Analytics.TimeLive do
       Analytics.day_of_week_breakdown(opts),
       Analytics.monthly_breakdown(opts),
       Analytics.timeslot_breakdown(:entry_timeslot, opts),
-      Analytics.timeslot_breakdown(:close_timeslot, v2_opts)
+      Analytics.timeslot_breakdown(:close_timeslot, v2_opts),
+      Analytics.duration_band_breakdown(opts)
     }
   end
 
   @impl true
-  def handle_async(:load_charts, {:ok, {entry_heatmap, close_heatmap, dow, monthly, entry_breakdown, close_breakdown}}, socket) do
+  def handle_async(:load_charts, {:ok, {entry_heatmap, close_heatmap, dow, monthly, entry_breakdown, close_breakdown, duration_breakdown}}, socket) do
     entry_option = build_timeslot_heatmap_option(entry_heatmap)
     close_option = build_timeslot_heatmap_option(close_heatmap)
     dow_option = build_dow_option(dow)
     monthly_option = build_monthly_option(monthly)
     entry_breakdown_option = build_timeslot_breakdown_option(entry_breakdown)
     close_breakdown_option = build_timeslot_breakdown_option(close_breakdown)
+    duration_option = build_duration_band_option(duration_breakdown)
 
     socket =
       assign(socket,
@@ -103,7 +106,8 @@ defmodule JournalexWeb.Analytics.TimeLive do
         dow_option: dow_option,
         monthly_option: monthly_option,
         entry_breakdown_option: entry_breakdown_option,
-        close_breakdown_option: close_breakdown_option
+        close_breakdown_option: close_breakdown_option,
+        duration_option: duration_option
       )
       |> push_event("chart-update", %{id: "entry-timeslot-heatmap", option: entry_option})
       |> push_event("chart-update", %{id: "close-timeslot-heatmap", option: close_option})
@@ -111,6 +115,7 @@ defmodule JournalexWeb.Analytics.TimeLive do
       |> push_event("chart-update", %{id: "monthly-chart", option: monthly_option})
       |> push_event("chart-update", %{id: "entry-timeslot-perf", option: entry_breakdown_option})
       |> push_event("chart-update", %{id: "close-timeslot-perf", option: close_breakdown_option})
+      |> push_event("chart-update", %{id: "duration-band-chart", option: duration_option})
 
     {:noreply, socket}
   end
@@ -307,6 +312,78 @@ defmodule JournalexWeb.Analytics.TimeLive do
         },
         %{
           name: "Avg R",
+          type: "line",
+          data: line_data,
+          yAxisIndex: 1,
+          symbol: "circle",
+          symbolSize: 5,
+          lineStyle: %{color: "#3b82f6", width: 2},
+          itemStyle: %{color: "#3b82f6"}
+        }
+      ]
+    }
+  end
+
+  defp build_duration_band_option([]) do
+    %{
+      tooltipFormatter: "duration_band",
+      tooltip: %{trigger: "axis", confine: true},
+      legend: %{data: ["Total R", "Win Rate %"], top: 0},
+      grid: %{left: 55, right: 60, top: 30, bottom: 40},
+      xAxis: %{type: "category", data: []},
+      yAxis: [
+        %{type: "value", name: "Total R", position: "left", nameTextStyle: %{align: "right"}},
+        %{type: "value", name: "Win Rate %", position: "right", min: 0, max: 100, nameTextStyle: %{align: "left"}}
+      ],
+      series: [
+        %{name: "Total R", type: "bar", data: [], yAxisIndex: 0},
+        %{
+          name: "Win Rate %",
+          type: "line",
+          data: [],
+          yAxisIndex: 1,
+          symbol: "circle",
+          symbolSize: 5,
+          lineStyle: %{color: "#3b82f6", width: 2},
+          itemStyle: %{color: "#3b82f6"}
+        }
+      ]
+    }
+  end
+
+  defp build_duration_band_option(data) do
+    labels = Enum.map(data, fn {label, _, _, _, _, _} -> label end)
+
+    bar_data =
+      Enum.map(data, fn {_label, total_r, avg_r, _win_rate, wins, losses} ->
+        color = if total_r >= 0, do: "#22c55e", else: "#ef4444"
+        %{value: Float.round(total_r, 2), itemStyle: %{color: color}, wins: wins, losses: losses, avg_r: Float.round(avg_r, 2)}
+      end)
+
+    line_data =
+      Enum.map(data, fn {_label, _total_r, _avg_r, win_rate, _wins, _losses} ->
+        Float.round(win_rate * 100, 1)
+      end)
+
+    %{
+      tooltipFormatter: "duration_band",
+      tooltip: %{trigger: "axis", confine: true},
+      legend: %{data: ["Total R", "Win Rate %"], top: 0},
+      grid: %{left: 55, right: 60, top: 30, bottom: 40},
+      xAxis: %{type: "category", data: labels},
+      yAxis: [
+        %{type: "value", name: "Total R", position: "left", nameTextStyle: %{align: "right"}},
+        %{type: "value", name: "Win Rate %", position: "right", min: 0, max: 100, nameTextStyle: %{align: "left"}}
+      ],
+      series: [
+        %{
+          name: "Total R",
+          type: "bar",
+          data: bar_data,
+          yAxisIndex: 0
+        },
+        %{
+          name: "Win Rate %",
           type: "line",
           data: line_data,
           yAxisIndex: 1,

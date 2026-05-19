@@ -30,6 +30,10 @@ You are a UI/UX advisor for the Journalex Phoenix LiveView project. Your job is 
 - Keyboard navigation gaps — interactive elements must be reachable via Tab
 - Missing `alt` text on images
 - Form inputs without associated labels
+- Toolbar buttons that are icon-only or have ambiguous labels and are missing a `title` attribute
+- Count badge `<span>` elements without `aria-label` (e.g., `aria-label="3 drafts"`) — numeric badges are meaningless to screen readers without context
+- `<details>/<summary>` elements used as overflow menus where `<summary>` text is a visual placeholder (e.g., `···`) and is missing `title="More options"`
+- Disabled buttons that convey a reason (e.g., "waiting for connection") via color only — recommend dynamic `title` attribute instead
 
 ### Responsive Design (Moderate)
 - Missing mobile breakpoints (`sm:`, `md:`, `lg:` prefixes)
