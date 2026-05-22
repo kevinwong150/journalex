@@ -67,3 +67,9 @@ These are verified mistakes that have occurred or could easily occur in the Jour
 **Wrong**: Passing a string longer than 2000 chars directly as a single `rich_text` span in a block
 **Why**: The Notion API returns a 400 error and silently drops the block write — the push appears to succeed at the HTTP level in some paths but the page is unchanged
 **Fix**: Always route text through `BlockBuilder.rich_text/1`; it automatically chunks into multiple spans of ≤ 2000 chars each. Never bypass `BlockBuilder` when constructing paragraph or toggle blocks.
+
+## 12. Assuming V3 property names follow V2 conventions
+
+**Wrong**: Reusing V2 naming rules or field lists when building `Metadata.V3`
+**Why**: The live V3 datasource already diverges from V2. It includes names like `"Realized P/L"`, duplicate-suffixed properties like `"AlignGlobalTrend? (1)"` and `"AlignSectorTrend? (1)"`, relation fields such as `"TickerLink"` and `"DateLink"`, and extra size/progress metrics like `"SizeNumber"`, `"SizeR"`, `"StoplossProgress"`, and `"TargetProgress"`
+**Fix**: Inspect the live V3 schema first and use the V3 snapshot in `references/property-names.md`; do not derive V3 property names from V2 heuristics
