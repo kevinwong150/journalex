@@ -76,8 +76,6 @@ defmodule Journalex.WriteupDrafts do
     %{"type" => "paragraph", "text" => "Comments:"},
     %{"type" => "paragraph", "text" => "idea:"},
     %{"type" => "paragraph", "text" => ""},
-    %{"type" => "paragraph", "text" => "What's good:"},
-    %{"type" => "paragraph", "text" => ""},
     %{"type" => "paragraph", "text" => "What to improve:"},
     %{"type" => "paragraph", "text" => ""},
   ]

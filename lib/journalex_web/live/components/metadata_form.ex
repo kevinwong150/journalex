@@ -593,9 +593,9 @@ defmodule JournalexWeb.MetadataForm do
 
   defp close_trigger_options do
     [
+      "Automatically - Breakeven",
       "Automatically - Take Profit",
       "Automatically - Stop Loss",
-      "Automatically - Breakeven",
       "Manually - Take Profit",
       "Manually - Stop Loss",
       "Manually - Reverse"
@@ -777,5 +777,630 @@ defmodule JournalexWeb.MetadataForm do
         {"fully_wrong_direction", "Fully Wrong Direction"}
       ]}
     ]
+  end
+
+  # ─── V3 component ────────────────────────────────────────────────────────
+
+  @doc """
+  Renders a V3 metadata form (redesigned Notion DB structure).
+  Two sections: Notion Metadata (synced fields) and App Journal (progression chain).
+  """
+  attr :item, :map, required: true
+  attr :idx, :integer, required: true
+  attr :on_save_event, :string, required: true
+  attr :on_reset_event, :string, default: nil
+  attr :drafts, :list, default: []
+  attr :on_apply_draft_event, :string, default: nil
+  attr :draft_name, :string, default: ""
+  attr :save_label, :string, default: "Save Metadata"
+  attr :on_change_event, :string, default: nil
+  attr :r_size, :float, default: nil
+  attr :journal_data, :map, default: %{}
+
+  def v3(assigns) do
+    ~H"""
+    <div class="rounded-lg border border-violet-200 bg-violet-50 p-4 shadow-sm mb-3">
+      <div class="flex items-start justify-between gap-2 mb-3">
+        <h4 class="text-sm font-semibold text-violet-800">Trade Journal (V3)</h4>
+        <div :if={@on_apply_draft_event && @drafts != []} class="flex flex-wrap justify-end gap-1.5">
+          <%= for draft <- @drafts do %>
+            <button
+              type="button"
+              phx-click={@on_apply_draft_event}
+              phx-value-draft-id={draft.id}
+              phx-value-index={@idx}
+              class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200 transition cursor-pointer"
+              title={"Apply draft: #{draft.name}"}
+            >
+              {draft.name}
+            </button>
+          <% end %>
+        </div>
+      </div>
+
+      <%!-- ── NOTION METADATA section ── --%>
+      <form phx-submit={@on_save_event} phx-change={@on_change_event} phx-value-index={@idx} class="space-y-4">
+        <input type="hidden" id={"hidden-draft-name-#{@idx}"} name="draft_name" value={@draft_name} />
+        <% metadata = Map.get(@item, :metadata) || %{} %>
+
+        <p class="text-xs font-semibold uppercase tracking-wide text-violet-400">Notion Metadata</p>
+
+        <%!-- Done / Lost Data pills --%>
+        <div class="flex flex-wrap gap-1.5">
+          <label class="cursor-pointer">
+            <input type="checkbox" name="done" value="true" checked={Map.get(metadata, :done?) || Map.get(metadata, "done?")} class="sr-only peer" />
+            <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">Done</span>
+          </label>
+          <label class="cursor-pointer">
+            <input type="checkbox" name="lost_data" value="true" checked={Map.get(metadata, :lost_data?) || Map.get(metadata, "lost_data?")} class="sr-only peer" />
+            <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">Lost Data</span>
+          </label>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <%!-- Rank radio pills --%>
+          <div class="col-span-full">
+            <span class="block text-sm font-medium text-gray-700 mb-1">Rank</span>
+            <div class="flex flex-wrap gap-1.5">
+              <label class="cursor-pointer">
+                <input type="radio" name="rank" value="" checked={(Map.get(metadata, :rank) || Map.get(metadata, "rank")) in [nil, ""]} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">None</span>
+              </label>
+              <%= for rank_val <- v3_rank_options() do %>
+                <label class="cursor-pointer">
+                  <input type="radio" name="rank" value={rank_val} checked={Map.get(metadata, :rank) == rank_val || Map.get(metadata, "rank") == rank_val} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{rank_val}</span>
+                </label>
+              <% end %>
+            </div>
+          </div>
+
+          <%!-- Setup select --%>
+          <div>
+            <label for={"setup_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">Setup</label>
+            <select name="setup" id={"setup_#{@idx}"} class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-violet-500 focus:border-violet-500">
+              <option value="">Select setup...</option>
+              <%= for opt <- v3_setup_options() do %>
+                <option value={opt} selected={Map.get(metadata, :setup) == opt || Map.get(metadata, "setup") == opt}>{opt}</option>
+              <% end %>
+            </select>
+          </div>
+
+          <%!-- Close Trigger radio pills --%>
+          <div class="col-span-full">
+            <span class="block text-sm font-medium text-gray-700 mb-1">Close Trigger</span>
+            <div class="flex flex-wrap gap-1.5">
+              <label class="cursor-pointer">
+                <input type="radio" name="close_trigger" value="" checked={(Map.get(metadata, :close_trigger) || Map.get(metadata, "close_trigger")) in [nil, ""]} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">None</span>
+              </label>
+              <%= for opt <- close_trigger_options() do %>
+                <label class="cursor-pointer">
+                  <input type="radio" name="close_trigger" value={opt} checked={Map.get(metadata, :close_trigger) == opt || Map.get(metadata, "close_trigger") == opt} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{opt}</span>
+                </label>
+              <% end %>
+            </div>
+          </div>
+
+          <%!-- Order Type radio pills --%>
+          <div class="col-span-full">
+            <span class="block text-sm font-medium text-gray-700 mb-1">Order Type</span>
+            <div class="flex flex-wrap gap-1.5">
+              <label class="cursor-pointer">
+                <input type="radio" name="order_type" value="" checked={(Map.get(metadata, :order_type) || Map.get(metadata, "order_type")) in [nil, ""]} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">None</span>
+              </label>
+              <%= for opt <- order_type_options() do %>
+                <label class="cursor-pointer">
+                  <input type="radio" name="order_type" value={opt} checked={Map.get(metadata, :order_type) == opt || Map.get(metadata, "order_type") == opt} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{opt}</span>
+                </label>
+              <% end %>
+            </div>
+          </div>
+
+          <%!-- Sector (read-only rollup) --%>
+          <div>
+            <label for={"sector_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
+              Sector <span class="text-xs text-gray-400">(rollup)</span>
+            </label>
+            <input type="text" id={"sector_#{@idx}"} value={Map.get(metadata, :sector) || Map.get(metadata, "sector")} placeholder="Populated via TickerLink" disabled class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
+          </div>
+
+          <%!-- Cap Size (read-only rollup) --%>
+          <div>
+            <label for={"cap_size_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
+              Cap Size <span class="text-xs text-gray-400">(rollup)</span>
+            </label>
+            <input type="text" id={"cap_size_#{@idx}"} value={Map.get(metadata, :cap_size) || Map.get(metadata, "cap_size")} placeholder="Populated via TickerLink" disabled class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
+          </div>
+
+          <%!-- R:R & Size section --%>
+          <div class="col-span-full">
+            <span class="block text-sm font-medium text-gray-700 mb-2">R:R &amp; Size</span>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+
+              <%!-- Initial R:R --%>
+              <div id={"rr_initial_v3_#{@idx}"} phx-hook="RangeNumberSync">
+                <label class="block text-xs text-gray-600 mb-1">Initial R:R</label>
+                <div class="flex items-center gap-2">
+                  <input type="range" min="0" max="20" step="0.01"
+                    value={format_decimal(Map.get(metadata, :initial_risk_reward_ratio) || Map.get(metadata, "initial_risk_reward_ratio"))}
+                    class="flex-1 accent-violet-600 cursor-pointer" />
+                  <input type="number" name="initial_risk_reward_ratio" min="0" step="0.01"
+                    value={format_decimal(Map.get(metadata, :initial_risk_reward_ratio) || Map.get(metadata, "initial_risk_reward_ratio"))}
+                    class="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md text-right focus:ring-violet-500 focus:border-violet-500" />
+                </div>
+              </div>
+
+              <%!-- Best R:R --%>
+              <% best_rr_raw_v3 = Map.get(metadata, :best_risk_reward_ratio) || Map.get(metadata, "best_risk_reward_ratio") %>
+              <% best_rr_on_v3 = best_rr_enabled?(best_rr_raw_v3) %>
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <label class="block text-xs text-gray-600">Best R:R</label>
+                  <label class="cursor-pointer" title="Only applies on win trades">
+                    <input type="checkbox" name="best_rr_enabled" value="true" checked={best_rr_on_v3} class="sr-only peer"
+                      onchange={"document.getElementById('rr_best_v3_#{@idx}').classList.toggle('hidden', !this.checked)"} />
+                    <span class="inline-block border rounded-full px-2 py-0.5 text-xs transition border-gray-300 text-gray-500 peer-checked:bg-green-600 peer-checked:text-white peer-checked:border-green-600">Win</span>
+                  </label>
+                </div>
+                <div id={"rr_best_v3_#{@idx}"} phx-hook="RangeNumberSync" class={if best_rr_on_v3, do: "", else: "hidden"}>
+                  <div class="flex items-center gap-2">
+                    <input type="range" min="0" max="20" step="0.01" value={format_decimal(best_rr_raw_v3, "0")} class="flex-1 accent-violet-600 cursor-pointer" />
+                    <input type="number" name="best_risk_reward_ratio" min="0" step="0.01" value={format_decimal(best_rr_raw_v3, "0")} class="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md text-right focus:ring-violet-500 focus:border-violet-500" />
+                  </div>
+                </div>
+              </div>
+
+              <%!-- SizeInR (auto-computed for losses) --%>
+              <% r_size_v3 = @r_size || Journalex.Settings.get_r_size() %>
+              <% size_in_r_val = compute_size_in_r_value(@item, metadata, r_size_v3) %>
+              <% size_in_r_auto? = is_auto_size_in_r?(@item, metadata) %>
+              <div>
+                <label class="block text-xs text-gray-600 mb-1">Size in R</label>
+                <input type="number" name="size_in_r" min="0" step="0.01"
+                  value={format_decimal(size_in_r_val, "")}
+                  placeholder={if size_in_r_auto?, do: "", else: "Enter size in R..."}
+                  class={[
+                    "w-full px-3 py-1 text-sm border rounded-md text-left focus:ring-violet-500 focus:border-violet-500",
+                    if(size_in_r_auto?, do: "border-violet-300 bg-violet-50 text-violet-800", else: "border-gray-300")
+                  ]} />
+                <div :if={size_in_r_auto?} class="mt-1 flex items-center gap-1.5 rounded-md bg-violet-100 border border-violet-200 px-2 py-1">
+                  <span class="text-violet-500 text-xs">&#9889;</span>
+                  <span class="text-xs text-violet-700 font-medium">Auto-filled:</span>
+                  <span class="text-xs text-violet-600 font-mono">{auto_size_hint(@item, r_size_v3, size_in_r_val)}</span>
+                </div>
+              </div>
+
+              <%!-- RValue (1R dollar amount) — read-only, mirrors R size setting from config --%>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">
+                  R Value ($) <span class="text-xs text-gray-400">(from config)</span>
+                </label>
+                <input type="number" name="r_value"
+                  value={format_decimal(Map.get(metadata, :r_value) || Map.get(metadata, "r_value") || r_size_v3, "")}
+                  disabled
+                  class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
+              </div>
+
+            </div>
+          </div>
+
+          <%!-- Entry / Close Timeslot (read-only, auto-calculated) --%>
+          <div>
+            <label for={"entry_timeslot_v3_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
+              Entry Timeslot <span class="text-xs text-gray-400">(auto)</span>
+            </label>
+            <input type="text" id={"entry_timeslot_v3_#{@idx}"}
+              value={Map.get(metadata, :entry_timeslot) || Map.get(metadata, "entry_timeslot") || Journalex.Notion.compute_entry_timeslot(@item)}
+              placeholder="Auto-calculated from trade data" disabled
+              class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
+          </div>
+
+          <div>
+            <label for={"close_timeslot_v3_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
+              Close Timeslot <span class="text-xs text-gray-400">(auto)</span>
+            </label>
+            <input type="text" id={"close_timeslot_v3_#{@idx}"}
+              value={Map.get(metadata, :close_timeslot) || Map.get(metadata, "close_timeslot") || Journalex.Notion.compute_close_timeslot(@item)}
+              placeholder="Auto-calculated from trade data" disabled
+              class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
+          </div>
+        </div>
+
+        <%!-- Trade Analysis Flags (40 flags in 8 groups) --%>
+        <div>
+          <h5 class="text-sm font-medium text-gray-700 mb-2">Trade Analysis</h5>
+          <div class="space-y-2">
+            <%= for {group_label, flags} <- v3_flag_groups() do %>
+              <div class="rounded border border-violet-100 bg-white px-3 py-2">
+                <span class="block text-xs font-semibold uppercase tracking-wide text-violet-400 mb-1.5">{group_label}</span>
+                <div class="flex flex-wrap gap-1.5">
+                  <%= for {flag_name, label} <- flags do %>
+                    <label class="cursor-pointer">
+                      <input type="checkbox" name={flag_name} value="true" checked={Map.get(metadata, String.to_atom(flag_name <> "?")) || Map.get(metadata, flag_name <> "?")} class="sr-only peer" />
+                      <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{label}</span>
+                    </label>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        </div>
+
+        <%!-- Close Time Comment (multi-select) --%>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Close Time Comment</label>
+          <div class="flex flex-wrap gap-1.5">
+            <%= for option <- merge_current_multi_select_options(v3_close_time_comment_options(), metadata, :close_time_comment) do %>
+              <label class="cursor-pointer">
+                <input type="checkbox" name="close_time_comment[]" value={option} checked={option in parse_multi_select(metadata, :close_time_comment)} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{option}</span>
+              </label>
+            <% end %>
+          </div>
+        </div>
+
+        <%!-- Extra Setup Comment (multi-select) --%>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Extra Setup Comment</label>
+          <div class="flex flex-wrap gap-1.5">
+            <%= for option <- merge_current_multi_select_options(v3_extra_setup_comment_options(), metadata, :extra_setup_comment) do %>
+              <label class="cursor-pointer">
+                <input type="checkbox" name="extra_setup_comment[]" value={option} checked={option in parse_multi_select(metadata, :extra_setup_comment)} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{option}</span>
+              </label>
+            <% end %>
+          </div>
+        </div>
+
+        <%!-- Good Things (multi-select) --%>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Good Things</label>
+          <div class="flex flex-wrap gap-1.5">
+            <%= for option <- merge_current_multi_select_options(v3_good_things_options(), metadata, :good_things) do %>
+              <label class="cursor-pointer">
+                <input type="checkbox" name="good_things[]" value={option} checked={option in parse_multi_select(metadata, :good_things)} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{option}</span>
+              </label>
+            <% end %>
+          </div>
+        </div>
+
+        <%!-- Patterns (multi-select) --%>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Patterns</label>
+          <div class="flex flex-wrap gap-1.5">
+            <%= for option <- merge_current_multi_select_options(v3_patterns_options(), metadata, :patterns) do %>
+              <label class="cursor-pointer">
+                <input type="checkbox" name="patterns[]" value={option} checked={option in parse_multi_select(metadata, :patterns)} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{option}</span>
+              </label>
+            <% end %>
+          </div>
+        </div>
+
+        <%!-- Regular Lessons (multi-select) --%>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Regular Lessons</label>
+          <div class="flex flex-wrap gap-1.5">
+            <%= for option <- merge_current_multi_select_options(v3_regular_lessons_options(), metadata, :regular_lessons) do %>
+              <label class="cursor-pointer">
+                <input type="checkbox" name="regular_lessons[]" value={option} checked={option in parse_multi_select(metadata, :regular_lessons)} class="sr-only peer" />
+                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{option}</span>
+              </label>
+            <% end %>
+          </div>
+        </div>
+
+        <%!-- Action buttons (Notion metadata) --%>
+        <div class="flex justify-end space-x-2 pt-2 border-t border-violet-200">
+          <button
+            :if={not is_nil(@on_reset_event)}
+            type="button"
+            phx-click={@on_reset_event}
+            phx-value-index={@idx}
+            class="inline-flex items-center px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded border border-gray-300 hover:bg-gray-50 transition"
+            data-confirm="Clear all metadata for this trade?"
+          >
+            Reset
+          </button>
+          <button type="submit" class="inline-flex items-center px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded hover:bg-violet-700 transition">
+            {@save_label}
+          </button>
+        </div>
+      </form>
+
+      <%!-- ── APP JOURNAL section ── --%>
+      <div class="mt-4 pt-4 border-t border-violet-200">
+        <p class="text-xs font-semibold uppercase tracking-wide text-violet-400 mb-3">App Journal</p>
+
+        <%!-- Progression Chain --%>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Progression Chain</label>
+          <% chain = Map.get(@journal_data, "progression_chain") || Map.get(@journal_data, :progression_chain) || [] %>
+
+          <%!-- Chain chip display --%>
+          <div class="flex flex-wrap items-center gap-1 min-h-8 mb-3 p-2 bg-white rounded border border-violet-200">
+            <%= if chain == [] do %>
+              <span class="text-xs text-gray-400 italic">No chain yet — add ENTRY to start</span>
+            <% else %>
+              <%= for {token, i} <- Enum.with_index(chain) do %>
+                <%= if i > 0 do %>
+                  <span class="text-gray-400 text-xs">→</span>
+                <% end %>
+                <span class={[
+                  "inline-block rounded-full px-2.5 py-0.5 text-xs font-medium",
+                  v3_chain_token_class(token)
+                ]}>{token}</span>
+              <% end %>
+            <% end %>
+          </div>
+
+          <%!-- Add-token buttons --%>
+          <div class="space-y-1.5">
+            <%!-- ENTRY --%>
+            <div class="flex flex-wrap gap-1.5">
+              <button type="button" phx-click="v3_chain_add_token" phx-value-token="ENTRY" phx-value-index={@idx}
+                class="inline-flex items-center px-3 py-1 rounded text-xs font-medium bg-gray-700 text-white hover:bg-gray-900 transition">
+                ENTRY
+              </button>
+            </div>
+            <%!-- Band tokens --%>
+            <div class="flex flex-wrap gap-1.5">
+              <%= for token <- ["W25", "W50", "W75"] do %>
+                <button type="button" phx-click="v3_chain_add_token" phx-value-token={token} phx-value-index={@idx}
+                  class="inline-flex items-center px-3 py-1 rounded text-xs font-medium bg-green-100 text-green-800 border border-green-200 hover:bg-green-200 transition">
+                  {token}
+                </button>
+              <% end %>
+              <span class="text-gray-300 self-center">|</span>
+              <%= for token <- ["L25", "L50", "L75"] do %>
+                <button type="button" phx-click="v3_chain_add_token" phx-value-token={token} phx-value-index={@idx}
+                  class="inline-flex items-center px-3 py-1 rounded text-xs font-medium bg-red-100 text-red-800 border border-red-200 hover:bg-red-200 transition">
+                  {token}
+                </button>
+              <% end %>
+            </div>
+            <%!-- Terminal tokens --%>
+            <div class="flex flex-wrap gap-1.5">
+              <button type="button" phx-click="v3_chain_add_token" phx-value-token="TARGET" phx-value-index={@idx}
+                class="inline-flex items-center px-3 py-1 rounded text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition">
+                TARGET
+              </button>
+              <button type="button" phx-click="v3_chain_add_token" phx-value-token="STOPLOSS" phx-value-index={@idx}
+                class="inline-flex items-center px-3 py-1 rounded text-xs font-medium bg-rose-600 text-white hover:bg-rose-700 transition">
+                STOPLOSS
+              </button>
+              <button type="button" phx-click="v3_chain_add_token" phx-value-token="MANUAL_WIN" phx-value-index={@idx}
+                class="inline-flex items-center px-3 py-1 rounded text-xs font-medium bg-teal-600 text-white hover:bg-teal-700 transition">
+                MANUAL_WIN
+              </button>
+              <button type="button" phx-click="v3_chain_add_token" phx-value-token="MANUAL_LOSE" phx-value-index={@idx}
+                class="inline-flex items-center px-3 py-1 rounded text-xs font-medium bg-orange-600 text-white hover:bg-orange-700 transition">
+                MANUAL_LOSE
+              </button>
+              <button type="button" phx-click="v3_chain_add_token" phx-value-token="BREAKEVEN" phx-value-index={@idx}
+                class="inline-flex items-center px-3 py-1 rounded text-xs font-medium bg-slate-500 text-white hover:bg-slate-600 transition">
+                BREAKEVEN
+              </button>
+            </div>
+            <%!-- Undo / Clear --%>
+            <div class="flex gap-2 pt-1">
+              <button type="button" phx-click="v3_chain_undo" phx-value-index={@idx}
+                :if={chain != []}
+                class="inline-flex items-center px-3 py-1 rounded text-xs font-medium bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 transition">
+                Undo Last
+              </button>
+              <button type="button" phx-click="v3_chain_clear" phx-value-index={@idx}
+                :if={chain != []}
+                class="inline-flex items-center px-3 py-1 rounded text-xs font-medium bg-white border border-red-200 text-red-600 hover:bg-red-50 transition"
+                data-confirm="Clear the progression chain for this trade?">
+                Clear Chain
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  # ─── V3 helper functions ─────────────────────────────────────────────────
+
+  defp v3_rank_options, do: ["Not Setup", "Bad Setup", "C Trade", "B Trade", "A Trade"]
+
+  defp v3_setup_options do
+    [
+      "Bouncy Ball - Big Seller/Buyer",
+      "Breakout - Day High/Low",
+      "Reversal - Capitulation",
+      "Reversal - Day High/Low",
+      "Reversal - Pullback Reversal",
+      "Testing Setup",
+      "Not Setup"
+    ]
+  end
+
+  # App-defined defaults. If Notion contains additional synced values not listed here,
+  # the form preserves and renders them via merge_current_multi_select_options/3.
+  defp v3_close_time_comment_options do
+    [
+      "Consider stop loss",
+      "Consider lock profit",
+      "Early close",
+      "Correct early close",
+      "Will lose more if not close",
+      "Will win more if not close",
+      "Will hit take profit if not close",
+      "Will hit stop loss if not close"
+    ]
+  end
+
+  defp v3_extra_setup_comment_options do
+    [
+      "Straight losing",
+      "Zero risk play",
+      "Liquidity grab",
+      "Just hit target then reverse",
+      "Just hit stoploss then reverse"
+    ]
+  end
+
+  defp v3_good_things_options do
+    [
+      "Nothing Good",
+      "Good spotting setup",
+      "Good following plan",
+      "Good try",
+      "Good execution",
+      "Good adjusting stop loss",
+      "Good cut",
+      "Good small size",
+      "Good big size",
+      "Good add size",
+      "Good second try",
+      "Good learning from Alvin",
+      "Good learning from Jason"
+    ]
+  end
+
+  defp v3_patterns_options do
+    [
+      "Key level - Intraday",
+      "Key level - Multiday",
+      "Consolidation range",
+      "Capitulation",
+      "Tight Bouncy Ball",
+      "Overbought/Oversold",
+      "Tight selling/buying",
+      "Spike Volume",
+      "Three Inside Down",
+      "Gravestone doji",
+      "Sharp top round top",
+      "Engulfing candle",
+      "Double top/bottom",
+      "Lead Lag",
+      "N/A"
+    ]
+  end
+
+  defp v3_regular_lessons_options do
+    [
+      "Mental",
+      "Discipline",
+      "Risk Management",
+      "Sizing"
+    ]
+  end
+
+  # V3 flag groups — 8 groups, 39 total flags (Done/Lost Data are rendered separately)
+  defp v3_flag_groups do
+    [
+      {"Setup Context", [
+        {"align_global_trend", "Align Global Trend"},
+        {"align_sector_trend", "Align Sector Trend"},
+        {"align_ticker_big_picture_trend", "Align Ticker Big Picture Trend"},
+        {"align_ticker_intraday_trend", "Align Ticker Intraday Trend"},
+        {"hot_sector", "Hot Sector"},
+        {"news", "News"},
+        {"earning_report", "Earning Report"},
+        {"choppy_chart", "Choppy Chart"},
+        {"mid_range", "Mid Range"},
+        {"random_intraday_trend", "Random Intraday Trend"}
+      ]},
+      {"Trade Quality", [
+        {"reasonable_entry_story", "Reasonable Entry Story"},
+        {"reasonable_exit_story", "Reasonable Exit Story"},
+        {"size_matching_story", "Size Matching Story"}
+      ]},
+      {"Sizing Intent", [
+        {"large_size_in_purpose", "Large Size (on purpose)"},
+        {"small_size_in_purpose", "Small Size (on purpose)"},
+        {"averaging_up", "Averaging Up"},
+        {"averaging_down", "Averaging Down"},
+        {"scalp", "Scalp"}
+      ]},
+      {"Execution", [
+        {"slippage_entry", "Slippage Entry"},
+        {"operation_mistake", "Operation Mistake"},
+        {"adjusted_stoploss", "Adjusted Stoploss"},
+        {"adjusted_target", "Adjusted Target"},
+        {"follow_up_trial", "Follow Up Trial"},
+        {"use_draft_order", "Use Draft Order"}
+      ]},
+      {"Risk / R:R", [
+        {"better_risk_reward_ratio", "Better R:R"},
+        {"too_tight_stop_loss", "Too Tight Stop Loss"},
+        {"too_loose_stop_loss", "Too Loose Stop Loss"}
+      ]},
+      {"Psychology", [
+        {"revenge_trade", "Revenge Trade"},
+        {"fomo", "FOMO"},
+        {"lack_confidence", "Lack Confidence"},
+        {"normal_emotion", "Normal Emotion"},
+        {"good_lesson", "Good Lesson"}
+      ]},
+      {"Trade Context", [
+        {"overnight", "Overnight"},
+        {"overnight_in_purpose", "Overnight in Purpose"},
+        {"following_trade", "Following Trade"},
+        {"decision_affected_by_other_trade", "Decision Affected by Other Trade"},
+        {"fully_wrong_direction", "Fully Wrong Direction"}
+      ]},
+      {"Reflection", [
+        {"close_trade_remorse", "Close Trade Remorse"},
+        {"should_record_obsidian", "Should Record Obsidian"}
+      ]}
+    ]
+  end
+
+  # CSS classes for progression chain tokens
+  defp v3_chain_token_class("ENTRY"),       do: "bg-gray-700 text-white"
+  defp v3_chain_token_class("W" <> _),      do: "bg-green-100 text-green-800 border border-green-200"
+  defp v3_chain_token_class("L" <> _),      do: "bg-red-100 text-red-800 border border-red-200"
+  defp v3_chain_token_class("TARGET"),      do: "bg-emerald-600 text-white"
+  defp v3_chain_token_class("STOPLOSS"),    do: "bg-rose-600 text-white"
+  defp v3_chain_token_class("MANUAL_WIN"),  do: "bg-teal-600 text-white"
+  defp v3_chain_token_class("MANUAL_LOSE"), do: "bg-orange-600 text-white"
+  defp v3_chain_token_class("BREAKEVEN"),   do: "bg-slate-500 text-white"
+  defp v3_chain_token_class(_),             do: "bg-gray-200 text-gray-700"
+
+  # Compute SizeInR for V3 (mirrors V2 compute_size_value but uses :size_in_r key)
+  defp compute_size_in_r_value(item, metadata, r_size) do
+    existing = Map.get(metadata, :size_in_r) || Map.get(metadata, "size_in_r")
+    if not is_nil(existing) do
+      existing
+    else
+      result = Map.get(item, :result) || Map.get(item, "result")
+      realized = Map.get(item, :realized_pl) || Map.get(item, "realized_pl")
+      if result == "LOSE" and not is_nil(realized) and r_size > 0 do
+        pl = to_pl_float(realized)
+        computed = Float.round(abs(pl) / r_size, 2)
+        if computed > 0, do: Decimal.from_float(computed), else: nil
+      else
+        nil
+      end
+    end
+  end
+
+  defp is_auto_size_in_r?(item, metadata) do
+    is_nil(Map.get(metadata, :size_in_r)) and
+      is_nil(Map.get(metadata, "size_in_r")) and
+      (Map.get(item, :result) || Map.get(item, "result")) == "LOSE"
+  end
+
+  # Parse a comma-separated multi_select string into a list (generic, replaces parse_close_time_comments)
+  defp parse_multi_select(metadata, field) when is_atom(field) do
+    raw = Map.get(metadata, field) || Map.get(metadata, Atom.to_string(field)) || ""
+    raw |> String.split(",", trim: true) |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+  end
+
+  defp merge_current_multi_select_options(options, metadata, field)
+       when is_list(options) and is_atom(field) do
+    current = parse_multi_select(metadata, field)
+    options ++ Enum.reject(current, &(&1 in options))
   end
 end

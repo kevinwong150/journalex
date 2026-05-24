@@ -147,4 +147,96 @@ defmodule JournalexWeb.MetadataParamsBuilderTest do
       assert result[:close_time_comment] == "First, Third"
     end
   end
+
+  describe "build/2 with version 3" do
+    test "extracts V3 scalar fields from params" do
+      params = %{
+        "done" => "true",
+        "lost_data" => "false",
+        "rank" => "A Trade",
+        "setup" => "Reversal - Day High/Low",
+        "close_trigger" => "Automatically - Take Profit",
+        "order_type" => "Limit Order",
+        "target_progress" => "50%",
+        "stoploss_progress" => "25%",
+        "initial_risk_reward_ratio" => "2.0",
+        "best_rr_enabled" => "true",
+        "best_risk_reward_ratio" => "3.5",
+        "size_in_r" => "1.2",
+        "r_value" => "150.00"
+      }
+
+      result = MetadataParamsBuilder.build(params, 3)
+
+      assert result[:done?] == true
+      assert result[:lost_data?] == false
+      assert result[:rank] == "A Trade"
+      assert result[:setup] == "Reversal - Day High/Low"
+      assert result[:close_trigger] == "Automatically - Take Profit"
+      assert result[:order_type] == "Limit Order"
+      assert result[:target_progress] == "50%"
+      assert result[:stoploss_progress] == "25%"
+      assert result[:initial_risk_reward_ratio] == Decimal.new("2.0")
+      assert result[:best_risk_reward_ratio] == Decimal.new("3.5")
+      assert result[:size_in_r] == Decimal.new("1.2")
+      assert result[:r_value] == Decimal.new("150.00")
+    end
+
+    test "extracts V3 boolean flags" do
+      params = %{
+        "align_global_trend" => "true",
+        "align_sector_trend" => "false",
+        "choppy_chart" => "true",
+        "revenge_trade" => "false",
+        "fomo" => "true",
+        "scalp" => "true",
+        "should_record_obsidian" => "false",
+        "averaging_up" => "true",
+        "averaging_down" => "false"
+      }
+
+      result = MetadataParamsBuilder.build(params, 3)
+
+      assert result[:align_global_trend?] == true
+      assert result[:align_sector_trend?] == false
+      assert result[:choppy_chart?] == true
+      assert result[:revenge_trade?] == false
+      assert result[:fomo?] == true
+      assert result[:scalp?] == true
+      assert result[:should_record_obsidian?] == false
+      assert result[:averaging_up?] == true
+      assert result[:averaging_down?] == false
+    end
+
+    test "extracts V3 multi-select fields" do
+      params = %{
+        "close_time_comment" => ["Consider stop loss", "Will hit stop loss if not close"],
+        "extra_setup_comment" => ["Straight losing"],
+        "good_things" => ["Good spotting setup", "Good execution"],
+        "patterns" => ["Lead Lag"],
+        "regular_lessons" => ["Discipline"]
+      }
+
+      result = MetadataParamsBuilder.build(params, 3)
+
+      assert result[:close_time_comment] == "Consider stop loss, Will hit stop loss if not close"
+      assert result[:extra_setup_comment] == "Straight losing"
+      assert result[:good_things] == "Good spotting setup, Good execution"
+      assert result[:patterns] == "Lead Lag"
+      assert result[:regular_lessons] == "Discipline"
+    end
+
+    test "best_risk_reward_ratio defaults to 0 when best_rr_enabled not set" do
+      result = MetadataParamsBuilder.build(%{"best_risk_reward_ratio" => "2.0"}, 3)
+      assert result[:best_risk_reward_ratio] == Decimal.new("0")
+    end
+
+    test "handles empty V3 params gracefully" do
+      result = MetadataParamsBuilder.build(%{}, 3)
+      assert result[:done?] == false
+      assert result[:rank] == nil
+      assert result[:initial_risk_reward_ratio] == nil
+      assert result[:close_time_comment] == nil
+    end
+  end
 end

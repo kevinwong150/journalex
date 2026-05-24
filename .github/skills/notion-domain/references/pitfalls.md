@@ -71,5 +71,23 @@ These are verified mistakes that have occurred or could easily occur in the Jour
 ## 12. Assuming V3 property names follow V2 conventions
 
 **Wrong**: Reusing V2 naming rules or field lists when building `Metadata.V3`
-**Why**: The live V3 datasource already diverges from V2. It includes names like `"Realized P/L"`, duplicate-suffixed properties like `"AlignGlobalTrend? (1)"` and `"AlignSectorTrend? (1)"`, relation fields such as `"TickerLink"` and `"DateLink"`, and extra size/progress metrics like `"SizeNumber"`, `"SizeR"`, `"StoplossProgress"`, and `"TargetProgress"`
-**Fix**: Inspect the live V3 schema first and use the V3 snapshot in `references/property-names.md`; do not derive V3 property names from V2 heuristics
+**Why**: The live V3 datasource diverges from V2. It includes names like `"Realized P/L"`, relation fields such as `"TickerLink"` and `"DateLink"`. Phase-0 renames changed `"SizeR"` → `"SizeInR"`, added `"RValue"`, and dropped the `(1)` suffix from `"AlignGlobalTrend?"` and `"AlignSectorTrend?"`. Fields can also be added/removed over time (e.g., `"RandomIntradayTrend?"` added; `"StoplossProgress"` and `"TargetProgress"` removed in May 2026).
+**Fix**: Use the current V3 snapshot in `references/property-names.md`; do not derive V3 property names from V2 heuristics
+
+## 13. Introspecting V3 datasource schema via `retrieve-a-database`
+
+**Wrong**: Calling the `retrieve-a-database` endpoint with a datasource ID to inspect V3 property/multi-select option lists
+**Why**: (1) The extended API's `/v1/databases/{datasource_id}` returns 404 — you must use the underlying `database_id` found in page parent objects. (2) Even with the correct `database_id`, the response does NOT include a `properties` field with multi-select option lists (non-standard API behavior).
+**Fix**: To inspect the live property schema, use `mcp_notionapi_API-query-data-source` with the datasource ID and `page_size: 1` — this returns a sample page whose `properties` keys reveal the current field names. For multi-select options, treat hardcoded form arrays as a baseline only: page payloads show values present on returned pages, not a complete unused-option catalog. When rendering V3 multi_select UI, union the persisted values into the option list so already-synced values remain visible/editable even if local defaults lag behind Notion. For fresh/empty datasources, Notion creates the option entries on the first `update_page` write that includes that value — there is no need to pre-seed options.
+
+## 14. Forgetting to wire new datasource ID in docker-compose.yml
+
+**Wrong**: Adding a new `NOTION_TRADES_V3_DATA_SOURCE_ID` config key in `runtime.exs` without also adding it to `docker-compose.yml`
+**Why**: The Docker container reads env vars from `docker-compose.yml`; the container will silently use `nil` and datasource routing will fail
+**Fix**: After adding a new `Application.get_env` key for a Notion datasource, always add the matching `KEY: "${KEY}"` line to `docker-compose.yml` (and `docker-compose.test.yml` if needed)
+
+## 15. Truncating V3 timeslot buckets at 16:00 or using colon-formatted labels
+
+**Wrong**: Treating `16:00` as the exclusive upper bound in `bucket_for_datetime/1`, or generating labels like `"16:00-16:30"`
+**Why**: The live V3 Notion `EntryTimeslot` and `CloseTimeslot` options continue through `"1630-1700"` and use `HHMM-HHMM` labels with no colon separators
+**Fix**: Bucket half-hour slots from `09:30` inclusive to `17:00` exclusive. Examples: `16:05` → `"1600-1630"`, `16:35` → `"1630-1700"`

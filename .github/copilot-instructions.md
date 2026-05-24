@@ -69,12 +69,16 @@ Trades have a single `metadata` JSONB column discriminated by `metadata_version`
 | Version | Module | When used |
 |---|---|---|
 | 1 | `Journalex.Trades.Metadata.V1` | Legacy Notion structure; 6 boolean flags; V1-specific fields like `follow_setup?`, `follow_stop_loss_management?`, `unnecessary_trade?` |
-| 2 | `Journalex.Trades.Metadata.V2` | Current structure; 28+ boolean flags; adds `initial_risk_reward_ratio`, `best_risk_reward_ratio`, `size`, `order_type`, `close_timeslot` |
-| 3 | (schema not yet created) | Config-ready in `DataSources` via `:trades_v3_data_source_id`; no `Metadata.V3` module yet |
+| 2 | `Journalex.Trades.Metadata.V2` | Current production structure; 28+ boolean flags; adds `initial_risk_reward_ratio`, `best_risk_reward_ratio`, `size`, `order_type`, `close_timeslot` |
+| 3 | `Journalex.Trades.Metadata.V3` | Redesigned structure; 41 boolean flags (added `random_intraday_trend?` May 2026); `size_in_r` + `r_value` replace `size`; 5 multi_selects; 5-option rank (no "BAD Trade"); 7-option setup; `entry_timeslot`/`close_timeslot` selects; Phase-0 Notion renames required before sync works |
 
 Entry points:
 - `Trades.cast_polymorphic_metadata/2` — routes to the correct embedded schema based on `metadata_version`; use for version-changing writes
 - `Trades.update_metadata/2` — partial merge that preserves existing version; use for field updates that don't change version
+- `Trades.update_trade/2` with `%{journal_data: ...}` — saves app-only data (progression chain) without touching Notion-mirrored metadata
+
+The `journal_data` JSONB column (added in migration `20260522100000`) stores app-only, non-Notion data. Currently used for:
+- `progression_chain` — list of string tokens (e.g., `["ENTRY", "W25", "TARGET"]`) representing trade lifecycle. Valid tokens: `ENTRY`, `W25`, `W50`, `W75`, `L25`, `L50`, `L75`, `TARGET`, `STOPLOSS`, `MANUAL_WIN`, `MANUAL_LOSE`, `BREAKEVEN`
 
 Never mix V1 fields into a V2 record or vice versa. Never add new fields to V1 (it is legacy). New metadata fields go into V2 only.
 
@@ -220,6 +224,15 @@ The `MetadataForm` component renders V1 or V2 forms via separate function compon
 18. Do not perform blocking I/O (HTTP calls, slow Ecto queries, file processing) inside `handle_info/2` or `mount/3` in a LiveView — the LiveView process IS the Phoenix channel GenServer. Blocking it prevents heartbeat processing and causes the client to disconnect with a "view crashed - undefined" error. Use `start_async/3` + `handle_async/3` (Phoenix LiveView 1.0 built-ins) instead
 19. Do not use a Notion `rich_text: {equals: ...}` filter to look up Market Daily pages by title — those page titles are Notion **date-mention** rich text (not plain text), so the filter always returns 0 results. `fetch_date_ids` must fetch all pages from the datasource (no title filter) and build the date→ID map from the full result set. `fetch_ticker_ids` is not affected because Ticker Details titles are plain text.
 20. Notion's API rejects any `rich_text` span longer than 2000 characters with a 400 error. `BlockBuilder.rich_text/1` handles this automatically by chunking long text into multiple spans (each ≤ 2000 chars). Do not bypass `BlockBuilder` when writing text blocks to Notion.
+21. V3 metadata uses `:choppy_chart?` (with underscore). V2 uses `:choppychart?` (no underscore — legacy typo). Never mix these: form param key for V3 is `"choppy_chart"`, for V2 is `"choppychart"`.
+22. V3 metadata does **not** have a `"BAD Trade"` rank option. V2 does. When writing code that handles rank values across versions, check the metadata version before assuming valid rank values.
+23. Do not use `join_close_time_comments/1` for V3 multi-select fields — use `join_multi_select/1` (same logic, generic name). Both exist in `trades_dump_live.ex` and `metadata_params_builder.ex`.
+24. V3 `journal_data` (progression chain) is stored in a separate JSONB column — not in `metadata`. Always use `Trades.update_trade(trade, %{journal_data: ...})` for progression chain updates. Never put `journal_data` keys into the `metadata` map.
+25. The progression chain event handlers (`v3_chain_add_token`, `v3_chain_undo`, `v3_chain_clear`) are defined in `trades_dump_live.ex`. If other LiveViews need progression chain editing, they must also implement these handlers independently.
+26. `trade_draft_live.ex` has its own `@supported_versions` list and its own template `case @form_version do` block — separate from `metadata_draft_live.ex`. When adding a new metadata version, update **both** files: `@supported_versions`, the template case, and the bulk version `<select>` options. Also update `config.exs` `:default_metadata_version` and the comment.
+27. When removing a Notion field from V3 sync, keep the field in the Ecto embedded schema — JSONB is non-destructive and historical records preserve their data. Only remove from `extract_v3_metadata_from_properties/1`, `build_v3_metadata_properties/1`, and the UI (`v3_flag_groups/0` in `metadata_form.ex`). Never drop the field from the schema on a sync-only removal.
+28. Adding or removing a V3 boolean field requires updating exactly 5 locations: (1) `v3.ex` — field declaration, `@boolean_fields`, and `cast/3`; (2) `notion.ex` — `extract_v3_metadata_from_properties/1`; (3) `notion.ex` — `build_v3_metadata_properties/1`; (4) `metadata_form.ex` — `v3_flag_groups/0` defp function; (5) `trades_dump_live.ex` — `build_v3_metadata_attrs/1` AND `metadata_params_builder.ex` — `build_v3/1`.
+29. V3 multi_select defaults in `metadata_form.ex` are only a baseline, not a full live option catalog. MCP `query-data-source` / page payloads can confirm property names and types, but they do not reliably expose unused select or multi_select options. When rendering V3 multi_select fields (`close_time_comment`, `extra_setup_comment`, `good_things`, `patterns`, `regular_lessons`), merge the trade's currently saved values into the default option list so synced Notion values remain visible and editable even if the hardcoded arrays lag behind.
 
 ---
 

@@ -3,7 +3,7 @@ defmodule JournalexWeb.SettingsLive do
 
   alias Journalex.Settings
 
-  @supported_versions [1, 2]
+  @supported_versions [1, 2, 3]
 
   @impl true
   def mount(_params, _session, socket) do

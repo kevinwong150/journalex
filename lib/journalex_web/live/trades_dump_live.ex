@@ -15,7 +15,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
   @check_chunk_size 25
   @dump_max_retries 3
-  @supported_versions [1, 2]
+  @supported_versions [1, 2, 3]
   @trade_page_size 50
 
   @impl true
@@ -403,6 +403,7 @@ defmodule JournalexWeb.TradesDumpLive do
       metadata_attrs = case version do
         1 -> build_v1_metadata_attrs(params)
         2 -> build_v2_metadata_attrs(params)
+        3 -> build_v3_metadata_attrs(params)
         _ -> %{}
       end
 
@@ -837,6 +838,76 @@ defmodule JournalexWeb.TradesDumpLive do
       {:noreply, assign(socket, :global_metadata_version, version)}
     else
       {:noreply, socket}
+    end
+  end
+
+  @valid_chain_tokens ~w(ENTRY W25 W50 W75 L25 L50 L75 TARGET STOPLOSS MANUAL_WIN MANUAL_LOSE BREAKEVEN)
+
+  @impl true
+  def handle_event("v3_chain_add_token", %{"token" => token, "index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    trade = Enum.at(socket.assigns.trades, idx)
+
+    if trade && token in @valid_chain_tokens do
+      current_chain = get_in(trade.journal_data || %{}, ["progression_chain"]) || []
+
+      # Auto-seed ENTRY as the first token if chain is empty and token is not ENTRY
+      chain_with_entry = if current_chain == [] and token != "ENTRY", do: ["ENTRY"], else: current_chain
+
+      # Prevent adjacent duplicates
+      new_chain =
+        if List.last(chain_with_entry) == token do
+          chain_with_entry
+        else
+          chain_with_entry ++ [token]
+        end
+
+      save_chain(socket, idx, trade, new_chain)
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("v3_chain_undo", %{"index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    trade = Enum.at(socket.assigns.trades, idx)
+
+    if trade do
+      current_chain = get_in(trade.journal_data || %{}, ["progression_chain"]) || []
+      new_chain = List.delete_at(current_chain, -1)
+      save_chain(socket, idx, trade, new_chain)
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("v3_chain_clear", %{"index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    trade = Enum.at(socket.assigns.trades, idx)
+
+    if trade do
+      save_chain(socket, idx, trade, [])
+    else
+      {:noreply, socket}
+    end
+  end
+
+  defp save_chain(socket, idx, trade, new_chain) do
+    updated_journal_data = Map.put(trade.journal_data || %{}, "progression_chain", new_chain)
+
+    case Journalex.Trades.update_trade(trade, %{journal_data: updated_journal_data}) do
+      {:ok, updated_trade} ->
+        trades =
+          socket.assigns.trades
+          |> Enum.with_index()
+          |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+        {:noreply, assign(socket, :trades, trades)}
+
+      {:error, _changeset} ->
+        {:noreply, put_toast(socket, :error, "Failed to save progression chain")}
     end
   end
 
@@ -2197,18 +2268,84 @@ defmodule JournalexWeb.TradesDumpLive do
       initial_risk_reward_ratio: parse_decimal(params["initial_risk_reward_ratio"]),
       best_risk_reward_ratio: (if params["best_rr_enabled"] == "true", do: parse_decimal(params["best_risk_reward_ratio"]), else: Decimal.new("0")),
       size: parse_decimal(params["size"]),
-      close_time_comment: join_close_time_comments(params["close_time_comment"])
+      close_time_comment: join_multi_select(params["close_time_comment"])
     }
   end
 
-  # Join multi-checkbox close_time_comment values into comma-separated string
-  defp join_close_time_comments(nil), do: nil
-  defp join_close_time_comments([]), do: nil
-  defp join_close_time_comments(list) when is_list(list) do
+  # Build V3 metadata attributes from form params
+  defp build_v3_metadata_attrs(params) do
+    %{
+      done?: params["done"] == "true",
+      lost_data?: params["lost_data"] == "true",
+      rank: parse_string(params["rank"]),
+      setup: parse_string(params["setup"]),
+      close_trigger: parse_string(params["close_trigger"]),
+      order_type: parse_string(params["order_type"]),
+      initial_risk_reward_ratio: parse_decimal(params["initial_risk_reward_ratio"]),
+      best_risk_reward_ratio: (if params["best_rr_enabled"] == "true", do: parse_decimal(params["best_risk_reward_ratio"]), else: Decimal.new("0")),
+      size_in_r: parse_decimal(params["size_in_r"]),
+      r_value: parse_decimal(params["r_value"]),
+      # Carried-over boolean flags
+      revenge_trade?: params["revenge_trade"] == "true",
+      fomo?: params["fomo"] == "true",
+      better_risk_reward_ratio?: params["better_risk_reward_ratio"] == "true",
+      choppy_chart?: params["choppy_chart"] == "true",
+      close_trade_remorse?: params["close_trade_remorse"] == "true",
+      earning_report?: params["earning_report"] == "true",
+      follow_up_trial?: params["follow_up_trial"] == "true",
+      fully_wrong_direction?: params["fully_wrong_direction"] == "true",
+      good_lesson?: params["good_lesson"] == "true",
+      hot_sector?: params["hot_sector"] == "true",
+      mid_range?: params["mid_range"] == "true",
+      news?: params["news"] == "true",
+      normal_emotion?: params["normal_emotion"] == "true",
+      operation_mistake?: params["operation_mistake"] == "true",
+      overnight?: params["overnight"] == "true",
+      overnight_in_purpose?: params["overnight_in_purpose"] == "true",
+      too_tight_stop_loss?: params["too_tight_stop_loss"] == "true",
+      # Renamed boolean flags
+      decision_affected_by_other_trade?: params["decision_affected_by_other_trade"] == "true",
+      slippage_entry?: params["slippage_entry"] == "true",
+      align_ticker_big_picture_trend?: params["align_ticker_big_picture_trend"] == "true",
+      align_ticker_intraday_trend?: params["align_ticker_intraday_trend"] == "true",
+      # New V3 boolean flags
+      adjusted_stoploss?: params["adjusted_stoploss"] == "true",
+      adjusted_target?: params["adjusted_target"] == "true",
+      align_global_trend?: params["align_global_trend"] == "true",
+      align_sector_trend?: params["align_sector_trend"] == "true",
+      averaging_down?: params["averaging_down"] == "true",
+      averaging_up?: params["averaging_up"] == "true",
+      following_trade?: params["following_trade"] == "true",
+      lack_confidence?: params["lack_confidence"] == "true",
+      large_size_in_purpose?: params["large_size_in_purpose"] == "true",
+      small_size_in_purpose?: params["small_size_in_purpose"] == "true",
+      reasonable_entry_story?: params["reasonable_entry_story"] == "true",
+      reasonable_exit_story?: params["reasonable_exit_story"] == "true",
+      scalp?: params["scalp"] == "true",
+      should_record_obsidian?: params["should_record_obsidian"] == "true",
+      size_matching_story?: params["size_matching_story"] == "true",
+      too_loose_stop_loss?: params["too_loose_stop_loss"] == "true",
+      use_draft_order?: params["use_draft_order"] == "true",
+      random_intraday_trend?: params["random_intraday_trend"] == "true",
+      # Multi-select fields
+      close_time_comment: join_multi_select(params["close_time_comment"]),
+      extra_setup_comment: join_multi_select(params["extra_setup_comment"]),
+      good_things: join_multi_select(params["good_things"]),
+      patterns: join_multi_select(params["patterns"]),
+      regular_lessons: join_multi_select(params["regular_lessons"])
+    }
+  end
+
+  # Join multi-checkbox values into comma-separated string
+  defp join_close_time_comments(val), do: join_multi_select(val)
+
+  defp join_multi_select(nil), do: nil
+  defp join_multi_select([]), do: nil
+  defp join_multi_select(list) when is_list(list) do
     joined = list |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == "")) |> Enum.join(", ")
     if joined == "", do: nil, else: joined
   end
-  defp join_close_time_comments(str) when is_binary(str), do: parse_string(str)
+  defp join_multi_select(str) when is_binary(str), do: parse_string(str)
 
   # Preserve read-only rollup fields (sector, cap_size) and auto-calculated timeslots from existing metadata
   defp preserve_readonly_fields(attrs, existing) when is_map(attrs) do

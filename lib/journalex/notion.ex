@@ -602,6 +602,9 @@ defmodule Journalex.Notion do
   defp extract_metadata_from_properties(properties, 1),
     do: extract_v1_metadata_from_properties(properties)
 
+  defp extract_metadata_from_properties(properties, 3),
+    do: extract_v3_metadata_from_properties(properties)
+
   defp extract_metadata_from_properties(properties, _),
     do: extract_v2_metadata_from_properties(properties)
 
@@ -689,6 +692,83 @@ defmodule Journalex.Notion do
   end
 
   defp extract_v2_metadata_from_properties(_), do: %{}
+
+  # Extract V3 metadata attributes from Notion page properties.
+  # All property names use CamelCase (no spaces) — post Phase-0 renames applied:
+  #   SizeR → SizeInR, SizeNumber → RValue,
+  #   AlignGlobalTrend? (1) → AlignGlobalTrend?, AlignSectorTrend? (1) → AlignSectorTrend?
+  defp extract_v3_metadata_from_properties(properties) when is_map(properties) do
+    %{}
+    # Status & control
+    |> put_if_present(:done?, get_checkbox(properties, "Done?"))
+    |> put_if_present(:lost_data?, get_checkbox(properties, "LostData?"))
+    # Trade classification
+    |> put_if_present(:rank, get_select(properties, "Rank"))
+    |> put_if_present(:setup, get_select(properties, "Setup"))
+    |> put_if_present(:close_trigger, get_select(properties, "CloseTrigger"))
+    |> put_if_present(:sector, get_rollup_first_select(properties, "Sector"))
+    |> put_if_present(:cap_size, get_rollup_first_select(properties, "CapSize"))
+    |> put_if_present(:order_type, get_select(properties, "OrderType"))
+    # Time
+    |> put_if_present(:entry_timeslot, get_select(properties, "EntryTimeslot"))
+    |> put_if_present(:close_timeslot, get_select(properties, "CloseTimeslot"))
+    # Risk/reward metrics
+    |> put_if_present(:initial_risk_reward_ratio, get_number(properties, "InitialRiskRewardRatio"))
+    |> put_if_present(:best_risk_reward_ratio, get_number(properties, "BestRiskRewardRatio"))
+    # Size fields (renamed from SizeR / SizeNumber in Phase 0)
+    |> put_if_present(:size_in_r, get_number(properties, "SizeInR"))
+    |> put_if_present(:r_value, get_number(properties, "RValue"))
+    # Boolean flags — carried over (17 + done/lost_data above = 19)
+    |> put_if_present(:better_risk_reward_ratio?, get_checkbox(properties, "BetterRiskRewardRatio?"))
+    |> put_if_present(:choppy_chart?, get_checkbox(properties, "ChoppyChart?"))
+    |> put_if_present(:close_trade_remorse?, get_checkbox(properties, "CloseTradeRemorse?"))
+    |> put_if_present(:earning_report?, get_checkbox(properties, "EarningReport?"))
+    |> put_if_present(:fomo?, get_checkbox(properties, "FOMO?"))
+    |> put_if_present(:follow_up_trial?, get_checkbox(properties, "FollowUpTrial?"))
+    |> put_if_present(:fully_wrong_direction?, get_checkbox(properties, "FullyWrongDirection?"))
+    |> put_if_present(:good_lesson?, get_checkbox(properties, "GoodLesson?"))
+    |> put_if_present(:hot_sector?, get_checkbox(properties, "HotSector?"))
+    |> put_if_present(:mid_range?, get_checkbox(properties, "MidRange?"))
+    |> put_if_present(:news?, get_checkbox(properties, "News?"))
+    |> put_if_present(:normal_emotion?, get_checkbox(properties, "NormalEmotion?"))
+    |> put_if_present(:operation_mistake?, get_checkbox(properties, "OperationMistake?"))
+    |> put_if_present(:overnight?, get_checkbox(properties, "Overnight?"))
+    |> put_if_present(:overnight_in_purpose?, get_checkbox(properties, "OvernightInPurpose?"))
+    |> put_if_present(:revenge_trade?, get_checkbox(properties, "RevengeTrade?"))
+    |> put_if_present(:too_tight_stop_loss?, get_checkbox(properties, "TooTightStopLoss?"))
+    # Boolean flags — renamed from V2
+    |> put_if_present(:decision_affected_by_other_trade?, get_checkbox(properties, "DecisionAffectedByOtherTrade?"))
+    |> put_if_present(:slippage_entry?, get_checkbox(properties, "SlippageEntry?"))
+    |> put_if_present(:align_ticker_big_picture_trend?, get_checkbox(properties, "AlignTickerBigPictureTrend?"))
+    |> put_if_present(:align_ticker_intraday_trend?, get_checkbox(properties, "AlignTickerIntradayTrend?"))
+    # Boolean flags — new in V3
+    |> put_if_present(:adjusted_stoploss?, get_checkbox(properties, "AdjustedStoploss?"))
+    |> put_if_present(:adjusted_target?, get_checkbox(properties, "AdjustedTarget?"))
+    |> put_if_present(:align_global_trend?, get_checkbox(properties, "AlignGlobalTrend?"))
+    |> put_if_present(:align_sector_trend?, get_checkbox(properties, "AlignSectorTrend?"))
+    |> put_if_present(:averaging_down?, get_checkbox(properties, "AveragingDown?"))
+    |> put_if_present(:averaging_up?, get_checkbox(properties, "AveragingUp?"))
+    |> put_if_present(:following_trade?, get_checkbox(properties, "FollowingTrade?"))
+    |> put_if_present(:lack_confidence?, get_checkbox(properties, "LackConfidence?"))
+    |> put_if_present(:large_size_in_purpose?, get_checkbox(properties, "LargeSizeInPurpose?"))
+    |> put_if_present(:small_size_in_purpose?, get_checkbox(properties, "SmallSizeInPurpose?"))
+    |> put_if_present(:reasonable_entry_story?, get_checkbox(properties, "ReasonableEntryStory?"))
+    |> put_if_present(:reasonable_exit_story?, get_checkbox(properties, "ReasonableExitStory?"))
+    |> put_if_present(:scalp?, get_checkbox(properties, "Scalp?"))
+    |> put_if_present(:should_record_obsidian?, get_checkbox(properties, "ShouldRecordObsidian?"))
+    |> put_if_present(:size_matching_story?, get_checkbox(properties, "SizeMatchingStory?"))
+    |> put_if_present(:too_loose_stop_loss?, get_checkbox(properties, "TooLooseStopLoss?"))
+    |> put_if_present(:use_draft_order?, get_checkbox(properties, "UseDraftOrder?"))
+    |> put_if_present(:random_intraday_trend?, get_checkbox(properties, "RandomIntradayTrend?"))
+    # Multi-selects (stored as comma-separated strings)
+    |> put_if_present(:close_time_comment, get_multi_select_text(properties, "CloseTimeComment"))
+    |> put_if_present(:extra_setup_comment, get_multi_select_text(properties, "ExtraSetupComment"))
+    |> put_if_present(:good_things, get_multi_select_text(properties, "GoodThings"))
+    |> put_if_present(:patterns, get_multi_select_text(properties, "Patterns"))
+    |> put_if_present(:regular_lessons, get_multi_select_text(properties, "RegularLessons"))
+  end
+
+  defp extract_v3_metadata_from_properties(_), do: %{}
 
   defp put_if_present(map, _key, nil), do: map
   defp put_if_present(map, key, value), do: Map.put(map, key, value)
@@ -916,16 +996,24 @@ defmodule Journalex.Notion do
         {meta, 2} when is_map(meta) and map_size(meta) > 0 ->
           build_v2_metadata_properties(meta)
 
+        {meta, 3} when is_map(meta) and map_size(meta) > 0 ->
+          build_v3_metadata_properties(meta)
+
         _ ->
           %{}
       end
 
-    # For V2 trades: if size wasn't included from metadata (nil or metadata empty),
-    # auto-compute it from realized_pl using the same formula as the form's auto-fill.
-    if version == 2 and not Map.has_key?(base_props, "Size") do
-      maybe_put_number(base_props, "Size", auto_compute_size(row))
-    else
-      base_props
+    cond do
+      # For V2 trades: auto-compute Size if not stored in metadata
+      version == 2 and not Map.has_key?(base_props, "Size") ->
+        maybe_put_number(base_props, "Size", auto_compute_size(row))
+
+      # For V3 trades: auto-compute SizeInR if not stored in metadata
+      version == 3 and not Map.has_key?(base_props, "SizeInR") ->
+        maybe_put_number(base_props, "SizeInR", auto_compute_size(row))
+
+      true ->
+        base_props
     end
   end
 
@@ -1005,6 +1093,80 @@ defmodule Journalex.Notion do
     |> maybe_put_multi_select("CloseTimeComment", get_meta_field(meta, :close_time_comment))
   end
 
+  # Build Notion properties from V3 metadata.
+  # NEVER writes: Sector, CapSize (rollups), Win?, LongTrade?, FormattedDuration (formulas),
+  # Datetime, Side, Result, Realized P/L, Duration, DateLink, TickerLink (inferred by Notion).
+  # SizeInR IS written (auto-computed value persisted in Notion).
+  defp build_v3_metadata_properties(meta) when is_map(meta) do
+    %{}
+    # Status & control
+    |> maybe_put_checkbox("Done?", get_meta_field(meta, :done?))
+    |> maybe_put_checkbox("LostData?", get_meta_field(meta, :lost_data?))
+    # Trade classification
+    |> maybe_put_select("Rank", get_meta_field(meta, :rank))
+    |> maybe_put_select("Setup", get_meta_field(meta, :setup))
+    |> maybe_put_select("CloseTrigger", get_meta_field(meta, :close_trigger))
+    # Sector and CapSize are rollups (read-only in Notion) — never written
+    |> maybe_put_select("OrderType", get_meta_field(meta, :order_type))
+    # Time
+    |> maybe_put_select("EntryTimeslot", get_meta_field(meta, :entry_timeslot))
+    |> maybe_put_select("CloseTimeslot", get_meta_field(meta, :close_timeslot))
+    # Risk/reward metrics
+    |> maybe_put_number("InitialRiskRewardRatio", to_number(get_meta_field(meta, :initial_risk_reward_ratio)))
+    |> maybe_put_number("BestRiskRewardRatio", to_number(get_meta_field(meta, :best_risk_reward_ratio)))
+    # Size fields (post Phase-0 rename: SizeR → SizeInR, SizeNumber → RValue)
+    |> maybe_put_number("SizeInR", to_number(get_meta_field(meta, :size_in_r)))
+    |> maybe_put_number("RValue", to_number(get_meta_field(meta, :r_value)))
+    # Boolean flags — carried over
+    |> maybe_put_checkbox("BetterRiskRewardRatio?", get_meta_field(meta, :better_risk_reward_ratio?))
+    |> maybe_put_checkbox("ChoppyChart?", get_meta_field(meta, :choppy_chart?))
+    |> maybe_put_checkbox("CloseTradeRemorse?", get_meta_field(meta, :close_trade_remorse?))
+    |> maybe_put_checkbox("EarningReport?", get_meta_field(meta, :earning_report?))
+    |> maybe_put_checkbox("FOMO?", get_meta_field(meta, :fomo?))
+    |> maybe_put_checkbox("FollowUpTrial?", get_meta_field(meta, :follow_up_trial?))
+    |> maybe_put_checkbox("FullyWrongDirection?", get_meta_field(meta, :fully_wrong_direction?))
+    |> maybe_put_checkbox("GoodLesson?", get_meta_field(meta, :good_lesson?))
+    |> maybe_put_checkbox("HotSector?", get_meta_field(meta, :hot_sector?))
+    |> maybe_put_checkbox("MidRange?", get_meta_field(meta, :mid_range?))
+    |> maybe_put_checkbox("News?", get_meta_field(meta, :news?))
+    |> maybe_put_checkbox("NormalEmotion?", get_meta_field(meta, :normal_emotion?))
+    |> maybe_put_checkbox("OperationMistake?", get_meta_field(meta, :operation_mistake?))
+    |> maybe_put_checkbox("Overnight?", get_meta_field(meta, :overnight?))
+    |> maybe_put_checkbox("OvernightInPurpose?", get_meta_field(meta, :overnight_in_purpose?))
+    |> maybe_put_checkbox("RevengeTrade?", get_meta_field(meta, :revenge_trade?))
+    |> maybe_put_checkbox("TooTightStopLoss?", get_meta_field(meta, :too_tight_stop_loss?))
+    # Boolean flags — renamed from V2
+    |> maybe_put_checkbox("DecisionAffectedByOtherTrade?", get_meta_field(meta, :decision_affected_by_other_trade?))
+    |> maybe_put_checkbox("SlippageEntry?", get_meta_field(meta, :slippage_entry?))
+    |> maybe_put_checkbox("AlignTickerBigPictureTrend?", get_meta_field(meta, :align_ticker_big_picture_trend?))
+    |> maybe_put_checkbox("AlignTickerIntradayTrend?", get_meta_field(meta, :align_ticker_intraday_trend?))
+    # Boolean flags — new in V3
+    |> maybe_put_checkbox("AdjustedStoploss?", get_meta_field(meta, :adjusted_stoploss?))
+    |> maybe_put_checkbox("AdjustedTarget?", get_meta_field(meta, :adjusted_target?))
+    |> maybe_put_checkbox("AlignGlobalTrend?", get_meta_field(meta, :align_global_trend?))
+    |> maybe_put_checkbox("AlignSectorTrend?", get_meta_field(meta, :align_sector_trend?))
+    |> maybe_put_checkbox("AveragingDown?", get_meta_field(meta, :averaging_down?))
+    |> maybe_put_checkbox("AveragingUp?", get_meta_field(meta, :averaging_up?))
+    |> maybe_put_checkbox("FollowingTrade?", get_meta_field(meta, :following_trade?))
+    |> maybe_put_checkbox("LackConfidence?", get_meta_field(meta, :lack_confidence?))
+    |> maybe_put_checkbox("LargeSizeInPurpose?", get_meta_field(meta, :large_size_in_purpose?))
+    |> maybe_put_checkbox("SmallSizeInPurpose?", get_meta_field(meta, :small_size_in_purpose?))
+    |> maybe_put_checkbox("ReasonableEntryStory?", get_meta_field(meta, :reasonable_entry_story?))
+    |> maybe_put_checkbox("ReasonableExitStory?", get_meta_field(meta, :reasonable_exit_story?))
+    |> maybe_put_checkbox("Scalp?", get_meta_field(meta, :scalp?))
+    |> maybe_put_checkbox("ShouldRecordObsidian?", get_meta_field(meta, :should_record_obsidian?))
+    |> maybe_put_checkbox("SizeMatchingStory?", get_meta_field(meta, :size_matching_story?))
+    |> maybe_put_checkbox("TooLooseStopLoss?", get_meta_field(meta, :too_loose_stop_loss?))
+    |> maybe_put_checkbox("UseDraftOrder?", get_meta_field(meta, :use_draft_order?))
+    |> maybe_put_checkbox("RandomIntradayTrend?", get_meta_field(meta, :random_intraday_trend?))
+    # Multi-selects
+    |> maybe_put_multi_select("CloseTimeComment", get_meta_field(meta, :close_time_comment))
+    |> maybe_put_multi_select("ExtraSetupComment", get_meta_field(meta, :extra_setup_comment))
+    |> maybe_put_multi_select("GoodThings", get_meta_field(meta, :good_things))
+    |> maybe_put_multi_select("Patterns", get_meta_field(meta, :patterns))
+    |> maybe_put_multi_select("RegularLessons", get_meta_field(meta, :regular_lessons))
+  end
+
   # Helper to get field from metadata map (supports both atom and string keys)
   defp get_meta_field(meta, field) when is_map(meta) and is_atom(field) do
     Map.get(meta, field) || Map.get(meta, Atom.to_string(field))
@@ -1036,13 +1198,13 @@ defmodule Journalex.Notion do
   # Map a datetime from the first action in the chain to a half-hour bucket label like "0930-1000".
   @doc """
   Computes the entry timeslot bucket label from a trade row's action_chain.
-  Returns a string like \"09:30-10:00\" or nil.
+  Returns a string like \"0930-1000\" or nil.
   """
   def compute_entry_timeslot(row), do: entry_timeslot_bucket(row)
 
   @doc """
   Computes the close timeslot bucket label from a trade row's action_chain.
-  Returns a string like \"14:30-15:00\" or nil.
+  Returns a string like \"1430-1500\" or nil.
   """
   def compute_close_timeslot(row), do: close_timeslot_bucket(row)
 
@@ -1085,8 +1247,8 @@ defmodule Journalex.Notion do
     minutes = dt.hour * 60 + dt.minute
     # 09:30
     start_min = 9 * 60 + 30
-    # 16:00 (exclusive)
-    end_min = 16 * 60
+    # 17:00 (exclusive)
+    end_min = 17 * 60
 
     cond do
       minutes < start_min or minutes >= end_min ->

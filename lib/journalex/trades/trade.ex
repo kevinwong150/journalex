@@ -5,6 +5,7 @@ defmodule Journalex.Trades.Trade do
 
   alias Journalex.Trades.Metadata.V1, as: MetadataV1
   alias Journalex.Trades.Metadata.V2, as: MetadataV2
+  alias Journalex.Trades.Metadata.V3, as: MetadataV3
 
   @moduledoc """
   Trade schema storing aggregated close trades for analysis.
@@ -30,11 +31,14 @@ defmodule Journalex.Trades.Trade do
     # Writeup blocks (list of block maps) for Notion page body content
     field :writeup, {:array, :map}
 
+    # App-owned journal data (progression chain etc.) — never synced to Notion
+    field :journal_data, :map, default: %{}
+
     timestamps(type: :utc_datetime_usec)
   end
 
   @required ~w(datetime ticker aggregated_side result realized_pl)a
-  @optional ~w(action_chain duration metadata_version metadata writeup)a
+  @optional ~w(action_chain duration metadata_version metadata writeup journal_data)a
 
   def changeset(trade, attrs) do
     trade
@@ -70,6 +74,15 @@ defmodule Journalex.Trades.Trade do
               changeset
           end
 
+        3 ->
+          case MetadataV3.changeset(%MetadataV3{}, metadata_attrs) |> apply_action(:insert) do
+            {:ok, metadata_struct} ->
+              put_change(changeset, :metadata, Map.from_struct(metadata_struct))
+            {:error, meta_changeset} ->
+              Logger.warning("V3 metadata validation failed: #{inspect(meta_changeset.errors)}")
+              changeset
+          end
+
         _ ->
           changeset
       end
@@ -96,6 +109,22 @@ defmodule Journalex.Trades.Trade do
     merged = Map.merge(current_metadata, metadata_changes)
 
     changeset(trade, %{metadata: merged})
+  end
+
+  @doc """
+  Partially update app-owned journal_data fields without touching Notion-mirrored metadata.
+
+  This is the correct entry point for progression chain and any other app-only trade data.
+  Never call update_metadata/2 for journal_data.
+
+  ## Examples
+
+      iex> trade |> Trade.update_journal_data(%{"progression_chain" => ["ENTRY", "W25"]})
+  """
+  def update_journal_data(%__MODULE__{} = trade, journal_changes) when is_map(journal_changes) do
+    current = trade.journal_data || %{}
+    merged = Map.merge(current, journal_changes)
+    changeset(trade, %{journal_data: merged})
   end
 
   @doc """

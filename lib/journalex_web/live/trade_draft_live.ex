@@ -15,7 +15,7 @@ defmodule JournalexWeb.TradeDraftLive do
   alias Journalex.Settings
   alias JournalexWeb.BlockHelpers
 
-  @supported_versions [1, 2]
+  @supported_versions [1, 2, 3]
 
   # ── Mount ───────────────────────────────────────────────────────────
 
@@ -302,12 +302,12 @@ defmodule JournalexWeb.TradeDraftLive do
   end
 
   @impl true
-  def handle_event("bulk_set_version", %{"value" => v}, socket) do
+  def handle_event("bulk_set_version", %{"version" => v}, socket) do
     {:noreply, assign(socket, :bulk_version, String.to_integer(v))}
   end
 
   @impl true
-  def handle_event("bulk_set_writeup_template", %{"value" => v}, socket) do
+  def handle_event("bulk_set_writeup_template", %{"template_id" => v}, socket) do
     template_id = case v do
       "none" -> nil
       str -> String.to_integer(str)
@@ -969,16 +969,18 @@ defmodule JournalexWeb.TradeDraftLive do
                     ]} />
                   </button>
                   <span class="text-xs font-medium text-amber-700">Metadata Draft</span>
-                  <div :if={@bulk_auto_meta} class="inline-flex items-center gap-1.5">
+                  <form :if={@bulk_auto_meta} phx-change="bulk_set_version" class="inline-flex items-center gap-1.5">
                     <span class="text-[10px] text-amber-600 font-medium">Version:</span>
                     <select
-                      phx-change="bulk_set_version"
+                      id="bulk_version"
+                      name="version"
                       class="px-1.5 py-0.5 text-xs border border-amber-200 rounded focus:outline-none focus:ring-1 focus:ring-amber-400"
                     >
                       <option value="1" selected={@bulk_version == 1}>V1</option>
                       <option value="2" selected={@bulk_version == 2}>V2</option>
+                      <option value="3" selected={@bulk_version == 3}>V3</option>
                     </select>
-                  </div>
+                  </form>
                 </div>
                 <%!-- Writeup row --%>
                 <div class="flex flex-wrap items-center gap-3 px-3 py-2">
@@ -996,10 +998,11 @@ defmodule JournalexWeb.TradeDraftLive do
                     ]} />
                   </button>
                   <span class="text-xs font-medium text-violet-700">Writeup Draft</span>
-                  <div :if={@bulk_auto_writeup} class="inline-flex items-center gap-1.5">
+                  <form :if={@bulk_auto_writeup} phx-change="bulk_set_writeup_template" class="inline-flex items-center gap-1.5">
                     <span class="text-[10px] text-violet-600 font-medium">Template:</span>
                     <select
-                      phx-change="bulk_set_writeup_template"
+                      id="bulk_writeup_template"
+                      name="template_id"
                       class="px-1.5 py-0.5 text-xs border border-violet-200 rounded focus:outline-none focus:ring-1 focus:ring-violet-400"
                     >
                       <option value="none" selected={is_nil(@bulk_writeup_template_id)}>None (empty)</option>
@@ -1009,7 +1012,7 @@ defmodule JournalexWeb.TradeDraftLive do
                         </option>
                       <% end %>
                     </select>
-                  </div>
+                  </form>
                 </div>
               </div>
               <div class="space-y-2">
@@ -1344,6 +1347,14 @@ defmodule JournalexWeb.TradeDraftLive do
                       />
                     <% 2 -> %>
                       <JournalexWeb.MetadataForm.v2
+                        item={synthetic_item}
+                        idx={0}
+                        on_save_event="save_metadata"
+                        on_change_event="metadata_changed"
+                        save_label="Save Metadata"
+                      />
+                    <% 3 -> %>
+                      <JournalexWeb.MetadataForm.v3
                         item={synthetic_item}
                         idx={0}
                         on_save_event="save_metadata"

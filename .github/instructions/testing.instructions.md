@@ -15,11 +15,13 @@ applyTo: "test/**"
 
 ## Mox mocks (available but not widely used yet)
 
-Four Mox mocks are defined in `test/test_helper.exs`:
+Six Mox mocks are defined in `test/test_helper.exs`:
 - `Journalex.MockActivity` for `Journalex.ActivityBehaviour`
 - `Journalex.MockTrades` for `Journalex.TradesBehaviour`
 - `Journalex.MockSettings` for `Journalex.SettingsBehaviour`
 - `Journalex.MockParser` for `Journalex.ParserBehaviour`
+- `Journalex.MockWriteupDrafts` for `Journalex.WriteupDraftsBehaviour`
+- `Journalex.MockCombinedDrafts` for `Journalex.CombinedDraftsBehaviour`
 
 Currently, the existing LiveView test (`ActivityStatementUploadResultLiveTest`) calls real modules with CSV fixtures and a real DB — it does **not** use Mox. Context unit tests also call real implementations.
 
@@ -68,6 +70,21 @@ Use only helpers from `test/support/fixtures.ex`. Do NOT read arbitrary file pat
 ## File placement
 
 Test files go under `test/journalex/` mirroring the path in `lib/journalex/`.
+
+## Upsert and post-insert fetching
+
+`Trades.upsert_trade_rows/1` does **not** support `returning: true`. After calling it in tests, fetch the inserted record with `Repo.one!` + `Ecto.Query`:
+
+```elixir
+import Ecto.Query
+trade = Repo.one!(from t in Trade, where: t.ibkr_trade_id == ^id)
+```
+
+Never assume a `{:ok, trade}` tuple from `upsert_trade_rows/1`.
+
+## Running tests — DB requirement
+
+Even tests declared `use ExUnit.Case, async: true` (pure function tests) still require the Docker test DB at port 6544. The full application — including Ecto/Repo — starts when the test suite runs. Always have the test DB running.
 
 ## Constraints
 

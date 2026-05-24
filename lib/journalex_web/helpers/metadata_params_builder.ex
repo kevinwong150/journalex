@@ -15,6 +15,7 @@ defmodule JournalexWeb.MetadataParamsBuilder do
     case version do
       1 -> build_v1(params)
       2 -> build_v2(params)
+      3 -> build_v3(params)
       _ -> %{}
     end
   end
@@ -98,13 +99,82 @@ defmodule JournalexWeb.MetadataParamsBuilder do
     end
   end
 
-  defp join_close_time_comments(nil), do: nil
-  defp join_close_time_comments([]), do: nil
+  defp join_close_time_comments(val), do: join_multi_select(val)
 
-  defp join_close_time_comments(list) when is_list(list) do
+  defp join_multi_select(nil), do: nil
+  defp join_multi_select([]), do: nil
+
+  defp join_multi_select(list) when is_list(list) do
     joined = list |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == "")) |> Enum.join(", ")
     if joined == "", do: nil, else: joined
   end
 
-  defp join_close_time_comments(str) when is_binary(str), do: parse_string(str)
+  defp join_multi_select(str) when is_binary(str), do: parse_string(str)
+
+  defp build_v3(params) do
+    %{
+      done?: params["done"] == "true",
+      lost_data?: params["lost_data"] == "true",
+      rank: parse_string(params["rank"]),
+      setup: parse_string(params["setup"]),
+      close_trigger: parse_string(params["close_trigger"]),
+      order_type: parse_string(params["order_type"]),
+      initial_risk_reward_ratio: parse_decimal(params["initial_risk_reward_ratio"]),
+      best_risk_reward_ratio:
+        if(params["best_rr_enabled"] == "true",
+          do: parse_decimal(params["best_risk_reward_ratio"]),
+          else: Decimal.new("0")
+        ),
+      size_in_r: parse_decimal(params["size_in_r"]),
+      r_value: parse_decimal(params["r_value"]),
+      # Carried-over boolean flags
+      revenge_trade?: params["revenge_trade"] == "true",
+      fomo?: params["fomo"] == "true",
+      better_risk_reward_ratio?: params["better_risk_reward_ratio"] == "true",
+      choppy_chart?: params["choppy_chart"] == "true",
+      close_trade_remorse?: params["close_trade_remorse"] == "true",
+      earning_report?: params["earning_report"] == "true",
+      follow_up_trial?: params["follow_up_trial"] == "true",
+      fully_wrong_direction?: params["fully_wrong_direction"] == "true",
+      good_lesson?: params["good_lesson"] == "true",
+      hot_sector?: params["hot_sector"] == "true",
+      mid_range?: params["mid_range"] == "true",
+      news?: params["news"] == "true",
+      normal_emotion?: params["normal_emotion"] == "true",
+      operation_mistake?: params["operation_mistake"] == "true",
+      overnight?: params["overnight"] == "true",
+      overnight_in_purpose?: params["overnight_in_purpose"] == "true",
+      too_tight_stop_loss?: params["too_tight_stop_loss"] == "true",
+      # Renamed boolean flags
+      decision_affected_by_other_trade?: params["decision_affected_by_other_trade"] == "true",
+      slippage_entry?: params["slippage_entry"] == "true",
+      align_ticker_big_picture_trend?: params["align_ticker_big_picture_trend"] == "true",
+      align_ticker_intraday_trend?: params["align_ticker_intraday_trend"] == "true",
+      # New V3 boolean flags
+      adjusted_stoploss?: params["adjusted_stoploss"] == "true",
+      adjusted_target?: params["adjusted_target"] == "true",
+      align_global_trend?: params["align_global_trend"] == "true",
+      align_sector_trend?: params["align_sector_trend"] == "true",
+      averaging_down?: params["averaging_down"] == "true",
+      averaging_up?: params["averaging_up"] == "true",
+      following_trade?: params["following_trade"] == "true",
+      lack_confidence?: params["lack_confidence"] == "true",
+      large_size_in_purpose?: params["large_size_in_purpose"] == "true",
+      small_size_in_purpose?: params["small_size_in_purpose"] == "true",
+      reasonable_entry_story?: params["reasonable_entry_story"] == "true",
+      reasonable_exit_story?: params["reasonable_exit_story"] == "true",
+      scalp?: params["scalp"] == "true",
+      should_record_obsidian?: params["should_record_obsidian"] == "true",
+      size_matching_story?: params["size_matching_story"] == "true",
+      too_loose_stop_loss?: params["too_loose_stop_loss"] == "true",
+      use_draft_order?: params["use_draft_order"] == "true",
+      random_intraday_trend?: params["random_intraday_trend"] == "true",
+      # Multi-select fields
+      close_time_comment: join_multi_select(params["close_time_comment"]),
+      extra_setup_comment: join_multi_select(params["extra_setup_comment"]),
+      good_things: join_multi_select(params["good_things"]),
+      patterns: join_multi_select(params["patterns"]),
+      regular_lessons: join_multi_select(params["regular_lessons"])
+    }
+  end
 end

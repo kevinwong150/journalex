@@ -133,7 +133,7 @@ defmodule JournalexWeb.AggregatedTradeList do
     doc: "Event name to emit when sync from Notion is requested for a trade"
 
   attr :global_metadata_version, :integer,
-    default: 2,
+    default: 3,
     doc: "Global version for metadata forms (all rows use same version)"
 
   attr :drafts, :list,
@@ -1595,6 +1595,17 @@ defmodule JournalexWeb.AggregatedTradeList do
           drafts={@drafts}
           on_apply_draft_event={@on_apply_draft_event}
           r_size={@r_size}
+        />
+      <% 3 -> %>
+        <JournalexWeb.MetadataForm.v3
+          item={@item}
+          idx={@idx}
+          on_save_event={@on_save_event}
+          on_reset_event={@on_reset_event}
+          drafts={@drafts}
+          on_apply_draft_event={@on_apply_draft_event}
+          r_size={@r_size}
+          journal_data={Map.get(@item, :journal_data) || Map.get(@item, "journal_data") || %{}}
         />
       <% _ -> %>
         <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center text-sm text-gray-500">

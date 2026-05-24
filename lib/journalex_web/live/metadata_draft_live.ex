@@ -12,7 +12,7 @@ defmodule JournalexWeb.MetadataDraftLive do
   alias Journalex.MetadataDrafts.Draft
   alias JournalexWeb.MetadataParamsBuilder
 
-  @supported_versions [1, 2]
+  @supported_versions [1, 2, 3]
 
   @impl true
   def mount(_params, _session, socket) do
@@ -693,6 +693,13 @@ defmodule JournalexWeb.MetadataDraftLive do
                   />
                 <% 2 -> %>
                   <JournalexWeb.MetadataForm.v2
+                    item={synthetic_item}
+                    idx={0}
+                    on_save_event="save_draft"
+                    draft_name={@draft_name}
+                  />
+                <% 3 -> %>
+                  <JournalexWeb.MetadataForm.v3
                     item={synthetic_item}
                     idx={0}
                     on_save_event="save_draft"

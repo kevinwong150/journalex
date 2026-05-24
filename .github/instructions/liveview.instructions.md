@@ -64,6 +64,8 @@ end
 - When the same control block needs to appear in multiple places within one LiveView, extract it into a local function component so labels, event wiring, and disabled states stay behavior-identical
 - For LiveView pages with multiple mutually exclusive UI modes (e.g., bulk-create mode vs select mode), use two boolean assigns as a "toolbar state" controller: each toggle handler resets the other boolean to `false`. Use `:if` blocks in the header area to render the correct toolbar. Example: `bulk_mode` and `select_mode` — toggling `bulk_mode` does `assign(socket, bulk_mode: true, select_mode: false)` and vice versa
 - For selection-mode UX: toggle checkbox visibility with `:if={@select_mode}` on each row's `<input>` element (no JS required). Gate the action bar on `@select_mode && MapSet.size(@selected_ids) > 0` to prevent accidental trigger from residual selection state when outside select mode
+- For standalone `<input>` / `<select>` controls involved in `phx-change`, always set a `name` attribute and match `handle_event/3` params on that name (for example `%{"version" => value}`), not `%{"value" => value}`. LiveView change payloads are keyed by input name
+- Prefer wrapping standalone controls in their own small `<form phx-change=...>` instead of putting `phx-change` directly on the control. Require the wrapper form when the control sets LiveView state that must survive later rerenders from other events (for example bulk selectors followed by add/remove row clicks). Name-only standalone controls proved brittle in real browser paths and can snap back to the assigned default after a later rerender
 
 ## Toolbar and button accessibility
 

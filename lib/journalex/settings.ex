@@ -144,15 +144,16 @@ defmodule Journalex.Settings do
   @doc """
   Returns the R size (dollar risk per trade).
   Used to auto-compute position size on losing trades: size = |realized_pl| / r_size.
-  Default: 8.
+  Default: 10.0.
   """
   def get_r_size do
+    default = 10.0
     case get(@r_size_key) do
-      nil -> 8.0
+      nil -> default
       raw ->
         case Float.parse(raw) do
           {n, _} -> n
-          :error  -> 8.0
+          :error  -> default
         end
     end
   end
