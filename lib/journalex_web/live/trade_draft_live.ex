@@ -46,6 +46,7 @@ defmodule JournalexWeb.TradeDraftLive do
       |> assign(:supported_versions, @supported_versions)
       |> assign(:form_version, default_version)
       |> assign(:draft_metadata, %{})
+      |> assign(:draft_journal_data, %{})
       # Writeup editor
       |> assign(:blocks, [])
       |> assign(:preset_blocks, WriteupDrafts.list_preset_blocks())
@@ -90,6 +91,63 @@ defmodule JournalexWeb.TradeDraftLive do
     {:noreply, assign(socket, :metadata_dirty, true)}
   end
 
+  # ── V3 progression chain ────────────────────────────────────────────
+
+  @valid_chain_tokens ~w(ENTRY W25 W50 W75 L25 L50 L75 TARGET STOPLOSS MANUAL_WIN MANUAL_LOSE BREAKEVEN)
+
+  @impl true
+  def handle_event("v3_chain_add_token", %{"token" => token, "index" => _idx_str}, socket) do
+    if token in @valid_chain_tokens do
+      current_chain = get_in(socket.assigns.draft_journal_data || %{}, ["progression_chain"]) || []
+
+      # Auto-seed ENTRY as the first token if chain is empty and token is not ENTRY
+      chain_with_entry = if current_chain == [] and token != "ENTRY", do: ["ENTRY"], else: current_chain
+
+      # Prevent adjacent duplicates
+      new_chain =
+        if List.last(chain_with_entry) == token do
+          chain_with_entry
+        else
+          chain_with_entry ++ [token]
+        end
+
+      save_draft_chain(socket, new_chain)
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("v3_chain_undo", %{"index" => _idx_str}, socket) do
+    current_chain = get_in(socket.assigns.draft_journal_data || %{}, ["progression_chain"]) || []
+    new_chain = List.delete_at(current_chain, -1)
+    save_draft_chain(socket, new_chain)
+  end
+
+  @impl true
+  def handle_event("v3_chain_clear", %{"index" => _idx_str}, socket) do
+    save_draft_chain(socket, [])
+  end
+
+  defp save_draft_chain(socket, new_chain) do
+    updated_journal_data = Map.put(socket.assigns.draft_journal_data || %{}, "progression_chain", new_chain)
+    socket = assign(socket, :draft_journal_data, updated_journal_data)
+
+    md = socket.assigns.selected_draft && socket.assigns.selected_draft.metadata_draft
+
+    if md do
+      case MetadataDrafts.update_draft(md, %{journal_data: updated_journal_data}) do
+        {:ok, _} ->
+          {:noreply, socket}
+
+        {:error, _} ->
+          {:noreply, put_toast(socket, :error, "Failed to save progression chain")}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
   # ── Combined draft selection ────────────────────────────────────────
 
   @impl true
@@ -108,6 +166,7 @@ defmodule JournalexWeb.TradeDraftLive do
       # Load metadata state
       |> assign(:form_version, if(md, do: md.metadata_version, else: Settings.get_default_metadata_version()))
       |> assign(:draft_metadata, if(md, do: md.metadata || %{}, else: %{}))
+      |> assign(:draft_journal_data, if(md, do: md.journal_data || %{}, else: %{}))
       # Load writeup state
       |> assign(:blocks, if(wd, do: wd.blocks || [], else: []))
       |> assign(:active_block_index, nil)
@@ -450,7 +509,8 @@ defmodule JournalexWeb.TradeDraftLive do
       attrs = %{
         name: selected.name,
         metadata_version: version,
-        metadata: metadata
+        metadata: metadata,
+        journal_data: socket.assigns.draft_journal_data
       }
 
       md = selected.metadata_draft
@@ -788,6 +848,7 @@ defmodule JournalexWeb.TradeDraftLive do
     |> assign(:cd_name, "")
     |> assign(:form_version, Settings.get_default_metadata_version())
     |> assign(:draft_metadata, %{})
+    |> assign(:draft_journal_data, %{})
     |> assign(:blocks, [])
     |> assign(:active_block_index, nil)
     |> assign(:metadata_dirty, false)
@@ -803,6 +864,7 @@ defmodule JournalexWeb.TradeDraftLive do
     |> assign(:selected_draft, draft)
     |> assign(:form_version, if(md, do: md.metadata_version, else: Settings.get_default_metadata_version()))
     |> assign(:draft_metadata, if(md, do: md.metadata || %{}, else: %{}))
+    |> assign(:draft_journal_data, if(md, do: md.journal_data || %{}, else: %{}))
     |> assign(:blocks, if(wd, do: wd.blocks || [], else: []))
     |> assign(:active_block_index, nil)
     |> assign(:metadata_dirty, false)
@@ -1360,6 +1422,7 @@ defmodule JournalexWeb.TradeDraftLive do
                         on_save_event="save_metadata"
                         on_change_event="metadata_changed"
                         save_label="Save Metadata"
+                        journal_data={@draft_journal_data}
                       />
                     <% _ -> %>
                       <div class="text-center text-sm text-zinc-500 py-4">

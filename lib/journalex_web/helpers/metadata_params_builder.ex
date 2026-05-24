@@ -121,7 +121,7 @@ defmodule JournalexWeb.MetadataParamsBuilder do
       order_type: parse_string(params["order_type"]),
       initial_risk_reward_ratio: parse_decimal(params["initial_risk_reward_ratio"]),
       best_risk_reward_ratio:
-        if(params["best_rr_enabled"] == "true",
+        if(params["better_risk_reward_ratio"] == "true",
           do: parse_decimal(params["best_risk_reward_ratio"]),
           else: Decimal.new("0")
         ),

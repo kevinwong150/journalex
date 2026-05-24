@@ -13,19 +13,20 @@ defmodule Journalex.MetadataDrafts.Draft do
     field :name, :string
     field :metadata_version, :integer
     field :metadata, :map, default: %{}
+    field :journal_data, :map, default: %{}
 
     timestamps(type: :utc_datetime_usec)
   end
 
   @required ~w(name metadata_version)a
-  @optional ~w(metadata)a
+  @optional ~w(metadata journal_data)a
 
   def changeset(draft, attrs) do
     draft
     |> cast(attrs, @required ++ @optional)
     |> validate_required(@required)
     |> validate_length(:name, min: 1, max: 100)
-    |> validate_inclusion(:metadata_version, [1, 2])
+    |> validate_inclusion(:metadata_version, [1, 2, 3])
     |> unique_constraint([:name, :metadata_version],
       name: :metadata_drafts_name_metadata_version_index,
       message: "a draft with this name already exists for this version"

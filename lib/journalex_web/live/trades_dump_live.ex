@@ -2282,7 +2282,7 @@ defmodule JournalexWeb.TradesDumpLive do
       close_trigger: parse_string(params["close_trigger"]),
       order_type: parse_string(params["order_type"]),
       initial_risk_reward_ratio: parse_decimal(params["initial_risk_reward_ratio"]),
-      best_risk_reward_ratio: (if params["best_rr_enabled"] == "true", do: parse_decimal(params["best_risk_reward_ratio"]), else: Decimal.new("0")),
+      best_risk_reward_ratio: (if params["better_risk_reward_ratio"] == "true", do: parse_decimal(params["best_risk_reward_ratio"]), else: Decimal.new("0")),
       size_in_r: parse_decimal(params["size_in_r"]),
       r_value: parse_decimal(params["r_value"]),
       # Carried-over boolean flags

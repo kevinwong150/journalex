@@ -825,212 +825,258 @@ defmodule JournalexWeb.MetadataForm do
 
         <p class="text-xs font-semibold uppercase tracking-wide text-violet-400">Notion Metadata</p>
 
-        <%!-- Done / Lost Data pills --%>
-        <div class="flex flex-wrap gap-1.5">
-          <label class="cursor-pointer">
-            <input type="checkbox" name="done" value="true" checked={Map.get(metadata, :done?) || Map.get(metadata, "done?")} class="sr-only peer" />
-            <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">Done</span>
-          </label>
-          <label class="cursor-pointer">
-            <input type="checkbox" name="lost_data" value="true" checked={Map.get(metadata, :lost_data?) || Map.get(metadata, "lost_data?")} class="sr-only peer" />
-            <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">Lost Data</span>
-          </label>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <%!-- Rank radio pills --%>
-          <div class="col-span-full">
-            <span class="block text-sm font-medium text-gray-700 mb-1">Rank</span>
+        <%!-- ── PRE-TRADE zone (fill before / during trade) ── --%>
+        <div class="rounded-lg border border-sky-200 bg-sky-50 p-3 space-y-3">
+          <p class="text-xs font-semibold uppercase tracking-wide text-sky-500">Pre-Trade</p>
+          <%!-- Trade Nature sub-group --%>
+          <% {_, trade_nature_flags} = Enum.find(v3_flag_groups(), fn {name, _} -> name == "Trade Nature" end) %>
+          <div class="rounded border border-sky-100 bg-white px-3 py-2">
+            <span class="block text-xs font-semibold uppercase tracking-wide text-sky-400 mb-1.5">Trade Nature</span>
             <div class="flex flex-wrap gap-1.5">
-              <label class="cursor-pointer">
-                <input type="radio" name="rank" value="" checked={(Map.get(metadata, :rank) || Map.get(metadata, "rank")) in [nil, ""]} class="sr-only peer" />
-                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">None</span>
-              </label>
-              <%= for rank_val <- v3_rank_options() do %>
+              <%= for {flag_name, label} <- trade_nature_flags do %>
                 <label class="cursor-pointer">
-                  <input type="radio" name="rank" value={rank_val} checked={Map.get(metadata, :rank) == rank_val || Map.get(metadata, "rank") == rank_val} class="sr-only peer" />
-                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{rank_val}</span>
+                  <input type="checkbox" name={flag_name} value="true" checked={Map.get(metadata, String.to_atom(flag_name <> "?")) || Map.get(metadata, flag_name <> "?")} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-sky-600 peer-checked:text-white peer-checked:border-sky-600 transition">{label}</span>
                 </label>
               <% end %>
             </div>
           </div>
 
-          <%!-- Setup select --%>
-          <div>
-            <label for={"setup_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">Setup</label>
-            <select name="setup" id={"setup_#{@idx}"} class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-violet-500 focus:border-violet-500">
-              <option value="">Select setup...</option>
-              <%= for opt <- v3_setup_options() do %>
-                <option value={opt} selected={Map.get(metadata, :setup) == opt || Map.get(metadata, "setup") == opt}>{opt}</option>
-              <% end %>
-            </select>
-          </div>
-
-          <%!-- Close Trigger radio pills --%>
-          <div class="col-span-full">
-            <span class="block text-sm font-medium text-gray-700 mb-1">Close Trigger</span>
-            <div class="flex flex-wrap gap-1.5">
-              <label class="cursor-pointer">
-                <input type="radio" name="close_trigger" value="" checked={(Map.get(metadata, :close_trigger) || Map.get(metadata, "close_trigger")) in [nil, ""]} class="sr-only peer" />
-                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">None</span>
-              </label>
-              <%= for opt <- close_trigger_options() do %>
-                <label class="cursor-pointer">
-                  <input type="radio" name="close_trigger" value={opt} checked={Map.get(metadata, :close_trigger) == opt || Map.get(metadata, "close_trigger") == opt} class="sr-only peer" />
-                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{opt}</span>
-                </label>
-              <% end %>
+          <%!-- Setup + Order Type --%>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for={"setup_#{@idx}"} class="block text-sm font-medium text-gray-700 mb-1">Setup</label>
+              <select name="setup" id={"setup_#{@idx}"} class="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-sky-500 focus:border-sky-500">
+                <option value="">Select setup...</option>
+                <%= for opt <- v3_setup_options() do %>
+                  <option value={opt} selected={Map.get(metadata, :setup) == opt || Map.get(metadata, "setup") == opt}>{opt}</option>
+                <% end %>
+              </select>
             </div>
-          </div>
-
-          <%!-- Order Type radio pills --%>
-          <div class="col-span-full">
-            <span class="block text-sm font-medium text-gray-700 mb-1">Order Type</span>
-            <div class="flex flex-wrap gap-1.5">
-              <label class="cursor-pointer">
-                <input type="radio" name="order_type" value="" checked={(Map.get(metadata, :order_type) || Map.get(metadata, "order_type")) in [nil, ""]} class="sr-only peer" />
-                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">None</span>
-              </label>
-              <%= for opt <- order_type_options() do %>
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-sm font-medium text-gray-700">Order Type</span>
                 <label class="cursor-pointer">
-                  <input type="radio" name="order_type" value={opt} checked={Map.get(metadata, :order_type) == opt || Map.get(metadata, "order_type") == opt} class="sr-only peer" />
-                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{opt}</span>
+                  <input type="checkbox" name="use_draft_order" value="true" checked={Map.get(metadata, :use_draft_order?) || Map.get(metadata, "use_draft_order?")} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-sky-600 peer-checked:text-white peer-checked:border-sky-600 transition">Use Draft Order</span>
                 </label>
-              <% end %>
-            </div>
-          </div>
-
-          <%!-- Sector (read-only rollup) --%>
-          <div>
-            <label for={"sector_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
-              Sector <span class="text-xs text-gray-400">(rollup)</span>
-            </label>
-            <input type="text" id={"sector_#{@idx}"} value={Map.get(metadata, :sector) || Map.get(metadata, "sector")} placeholder="Populated via TickerLink" disabled class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
-          </div>
-
-          <%!-- Cap Size (read-only rollup) --%>
-          <div>
-            <label for={"cap_size_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
-              Cap Size <span class="text-xs text-gray-400">(rollup)</span>
-            </label>
-            <input type="text" id={"cap_size_#{@idx}"} value={Map.get(metadata, :cap_size) || Map.get(metadata, "cap_size")} placeholder="Populated via TickerLink" disabled class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
-          </div>
-
-          <%!-- R:R & Size section --%>
-          <div class="col-span-full">
-            <span class="block text-sm font-medium text-gray-700 mb-2">R:R &amp; Size</span>
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-
-              <%!-- Initial R:R --%>
-              <div id={"rr_initial_v3_#{@idx}"} phx-hook="RangeNumberSync">
-                <label class="block text-xs text-gray-600 mb-1">Initial R:R</label>
-                <div class="flex items-center gap-2">
-                  <input type="range" min="0" max="20" step="0.01"
-                    value={format_decimal(Map.get(metadata, :initial_risk_reward_ratio) || Map.get(metadata, "initial_risk_reward_ratio"))}
-                    class="flex-1 accent-violet-600 cursor-pointer" />
-                  <input type="number" name="initial_risk_reward_ratio" min="0" step="0.01"
-                    value={format_decimal(Map.get(metadata, :initial_risk_reward_ratio) || Map.get(metadata, "initial_risk_reward_ratio"))}
-                    class="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md text-right focus:ring-violet-500 focus:border-violet-500" />
-                </div>
               </div>
-
-              <%!-- Best R:R --%>
-              <% best_rr_raw_v3 = Map.get(metadata, :best_risk_reward_ratio) || Map.get(metadata, "best_risk_reward_ratio") %>
-              <% best_rr_on_v3 = best_rr_enabled?(best_rr_raw_v3) %>
-              <div>
-                <div class="flex items-center gap-2 mb-1">
-                  <label class="block text-xs text-gray-600">Best R:R</label>
-                  <label class="cursor-pointer" title="Only applies on win trades">
-                    <input type="checkbox" name="best_rr_enabled" value="true" checked={best_rr_on_v3} class="sr-only peer"
-                      onchange={"document.getElementById('rr_best_v3_#{@idx}').classList.toggle('hidden', !this.checked)"} />
-                    <span class="inline-block border rounded-full px-2 py-0.5 text-xs transition border-gray-300 text-gray-500 peer-checked:bg-green-600 peer-checked:text-white peer-checked:border-green-600">Win</span>
+              <div class="flex flex-wrap gap-1.5">
+                <label class="cursor-pointer">
+                  <input type="radio" name="order_type" value="" checked={(Map.get(metadata, :order_type) || Map.get(metadata, "order_type")) in [nil, ""]} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">None</span>
+                </label>
+                <%= for opt <- order_type_options() do %>
+                  <label class="cursor-pointer">
+                    <input type="radio" name="order_type" value={opt} checked={Map.get(metadata, :order_type) == opt || Map.get(metadata, "order_type") == opt} class="sr-only peer" />
+                    <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-sky-600 peer-checked:text-white peer-checked:border-sky-600 transition">{opt}</span>
                   </label>
-                </div>
-                <div id={"rr_best_v3_#{@idx}"} phx-hook="RangeNumberSync" class={if best_rr_on_v3, do: "", else: "hidden"}>
-                  <div class="flex items-center gap-2">
-                    <input type="range" min="0" max="20" step="0.01" value={format_decimal(best_rr_raw_v3, "0")} class="flex-1 accent-violet-600 cursor-pointer" />
-                    <input type="number" name="best_risk_reward_ratio" min="0" step="0.01" value={format_decimal(best_rr_raw_v3, "0")} class="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md text-right focus:ring-violet-500 focus:border-violet-500" />
+                <% end %>
+              </div>
+            </div>
+          </div>
+
+          <%!-- Setup Context flags --%>
+          <% {_, setup_ctx_flags} = Enum.find(v3_flag_groups(), fn {name, _} -> name == "Setup Context" end) %>
+          <div class="rounded border border-sky-100 bg-white px-3 py-2">
+            <span class="block text-xs font-semibold uppercase tracking-wide text-sky-400 mb-1.5">Setup Context</span>
+            <div class="flex flex-wrap gap-1.5">
+              <%= for {flag_name, label} <- setup_ctx_flags do %>
+                <label class="cursor-pointer">
+                  <input type="checkbox" name={flag_name} value="true" checked={Map.get(metadata, String.to_atom(flag_name <> "?")) || Map.get(metadata, flag_name <> "?")} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-sky-600 peer-checked:text-white peer-checked:border-sky-600 transition">{label}</span>
+                </label>
+              <% end %>
+            </div>
+          </div>
+
+          <%!-- Patterns (multi-select, grouped) --%>
+          <% patterns_selected = parse_multi_select(metadata, :patterns) %>
+          <% patterns_known = Enum.flat_map(v3_patterns_options(), fn {_, opts} -> opts end) %>
+          <% patterns_extra = Enum.reject(patterns_selected, &(&1 in patterns_known)) %>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Patterns</label>
+            <div class="space-y-1.5">
+              <%= for {group_label, options} <- v3_patterns_options() do %>
+                <div>
+                  <span class="block text-xs font-medium text-sky-500 mb-1">{group_label}</span>
+                  <div class="flex flex-wrap gap-1.5">
+                    <%= for option <- options do %>
+                      <label class="cursor-pointer">
+                        <input type="checkbox" name="patterns[]" value={option} checked={option in patterns_selected} class="sr-only peer" />
+                        <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-sky-600 peer-checked:text-white peer-checked:border-sky-600 transition">{option}</span>
+                      </label>
+                    <% end %>
                   </div>
                 </div>
-              </div>
-
-              <%!-- SizeInR (auto-computed for losses) --%>
-              <% r_size_v3 = @r_size || Journalex.Settings.get_r_size() %>
-              <% size_in_r_val = compute_size_in_r_value(@item, metadata, r_size_v3) %>
-              <% size_in_r_auto? = is_auto_size_in_r?(@item, metadata) %>
-              <div>
-                <label class="block text-xs text-gray-600 mb-1">Size in R</label>
-                <input type="number" name="size_in_r" min="0" step="0.01"
-                  value={format_decimal(size_in_r_val, "")}
-                  placeholder={if size_in_r_auto?, do: "", else: "Enter size in R..."}
-                  class={[
-                    "w-full px-3 py-1 text-sm border rounded-md text-left focus:ring-violet-500 focus:border-violet-500",
-                    if(size_in_r_auto?, do: "border-violet-300 bg-violet-50 text-violet-800", else: "border-gray-300")
-                  ]} />
-                <div :if={size_in_r_auto?} class="mt-1 flex items-center gap-1.5 rounded-md bg-violet-100 border border-violet-200 px-2 py-1">
-                  <span class="text-violet-500 text-xs">&#9889;</span>
-                  <span class="text-xs text-violet-700 font-medium">Auto-filled:</span>
-                  <span class="text-xs text-violet-600 font-mono">{auto_size_hint(@item, r_size_v3, size_in_r_val)}</span>
-                </div>
-              </div>
-
-              <%!-- RValue (1R dollar amount) — read-only, mirrors R size setting from config --%>
-              <div>
-                <label class="block text-xs text-gray-500 mb-1">
-                  R Value ($) <span class="text-xs text-gray-400">(from config)</span>
-                </label>
-                <input type="number" name="r_value"
-                  value={format_decimal(Map.get(metadata, :r_value) || Map.get(metadata, "r_value") || r_size_v3, "")}
-                  disabled
-                  class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
-              </div>
-
-            </div>
-          </div>
-
-          <%!-- Entry / Close Timeslot (read-only, auto-calculated) --%>
-          <div>
-            <label for={"entry_timeslot_v3_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
-              Entry Timeslot <span class="text-xs text-gray-400">(auto)</span>
-            </label>
-            <input type="text" id={"entry_timeslot_v3_#{@idx}"}
-              value={Map.get(metadata, :entry_timeslot) || Map.get(metadata, "entry_timeslot") || Journalex.Notion.compute_entry_timeslot(@item)}
-              placeholder="Auto-calculated from trade data" disabled
-              class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
-          </div>
-
-          <div>
-            <label for={"close_timeslot_v3_#{@idx}"} class="block text-sm font-medium text-gray-500 mb-1">
-              Close Timeslot <span class="text-xs text-gray-400">(auto)</span>
-            </label>
-            <input type="text" id={"close_timeslot_v3_#{@idx}"}
-              value={Map.get(metadata, :close_timeslot) || Map.get(metadata, "close_timeslot") || Journalex.Notion.compute_close_timeslot(@item)}
-              placeholder="Auto-calculated from trade data" disabled
-              class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
-          </div>
-        </div>
-
-        <%!-- Trade Analysis Flags (40 flags in 8 groups) --%>
-        <div>
-          <h5 class="text-sm font-medium text-gray-700 mb-2">Trade Analysis</h5>
-          <div class="space-y-2">
-            <%= for {group_label, flags} <- v3_flag_groups() do %>
-              <div class="rounded border border-violet-100 bg-white px-3 py-2">
-                <span class="block text-xs font-semibold uppercase tracking-wide text-violet-400 mb-1.5">{group_label}</span>
+              <% end %>
+              <%!-- Overflow: any saved values synced from Notion not in known groups --%>
+              <div :if={patterns_extra != []}>
+                <span class="block text-xs font-medium text-sky-400 mb-1">Other (synced)</span>
                 <div class="flex flex-wrap gap-1.5">
-                  <%= for {flag_name, label} <- flags do %>
+                  <%= for option <- patterns_extra do %>
                     <label class="cursor-pointer">
-                      <input type="checkbox" name={flag_name} value="true" checked={Map.get(metadata, String.to_atom(flag_name <> "?")) || Map.get(metadata, flag_name <> "?")} class="sr-only peer" />
-                      <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{label}</span>
+                      <input type="checkbox" name="patterns[]" value={option} checked={option in patterns_selected} class="sr-only peer" />
+                      <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-sky-600 peer-checked:text-white peer-checked:border-sky-600 transition">{option}</span>
                     </label>
                   <% end %>
                 </div>
               </div>
-            <% end %>
+            </div>
           </div>
         </div>
 
-        <%!-- Close Time Comment (multi-select) --%>
+        <%!-- ── Divider ── --%>
+        <div class="relative">
+          <div class="absolute inset-0 flex items-center" aria-hidden="true">
+            <div class="w-full border-t border-dashed border-violet-300"></div>
+          </div>
+          <div class="relative flex justify-center">
+            <span class="bg-violet-50 px-3 text-xs font-medium text-violet-500">After trade closes</span>
+          </div>
+        </div>
+
+        <%!-- ── Zone 1: Trade Outcome ── --%>
+        <div class="space-y-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <span class="block text-sm font-medium text-gray-700 mb-1">Rank</span>
+              <div class="flex flex-wrap gap-1.5">
+                <label class="cursor-pointer">
+                  <input type="radio" name="rank" value="" checked={(Map.get(metadata, :rank) || Map.get(metadata, "rank")) in [nil, ""]} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">None</span>
+                </label>
+                <%= for rank_val <- v3_rank_options() do %>
+                  <label class="cursor-pointer">
+                    <input type="radio" name="rank" value={rank_val} checked={Map.get(metadata, :rank) == rank_val || Map.get(metadata, "rank") == rank_val} class="sr-only peer" />
+                    <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{rank_val}</span>
+                  </label>
+                <% end %>
+              </div>
+            </div>
+            <div>
+              <span class="block text-sm font-medium text-gray-700 mb-1">Close Trigger</span>
+              <div class="flex flex-wrap gap-1.5">
+                <label class="cursor-pointer">
+                  <input type="radio" name="close_trigger" value="" checked={(Map.get(metadata, :close_trigger) || Map.get(metadata, "close_trigger")) in [nil, ""]} class="sr-only peer" />
+                  <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-500 peer-checked:bg-gray-500 peer-checked:text-white peer-checked:border-gray-500 transition">None</span>
+                </label>
+                <%= for opt <- close_trigger_options() do %>
+                  <label class="cursor-pointer">
+                    <input type="radio" name="close_trigger" value={opt} checked={Map.get(metadata, :close_trigger) == opt || Map.get(metadata, "close_trigger") == opt} class="sr-only peer" />
+                    <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{opt}</span>
+                  </label>
+                <% end %>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <label for={"entry_timeslot_v3_#{@idx}"} class="block text-xs font-medium text-gray-500 mb-1">Entry Timeslot <span class="text-xs text-gray-400">(auto)</span></label>
+              <input type="text" id={"entry_timeslot_v3_#{@idx}"}
+                value={Map.get(metadata, :entry_timeslot) || Map.get(metadata, "entry_timeslot") || Journalex.Notion.compute_entry_timeslot(@item)}
+                placeholder="Auto" disabled
+                class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
+            </div>
+            <div>
+              <label for={"close_timeslot_v3_#{@idx}"} class="block text-xs font-medium text-gray-500 mb-1">Close Timeslot <span class="text-xs text-gray-400">(auto)</span></label>
+              <input type="text" id={"close_timeslot_v3_#{@idx}"}
+                value={Map.get(metadata, :close_timeslot) || Map.get(metadata, "close_timeslot") || Journalex.Notion.compute_close_timeslot(@item)}
+                placeholder="Auto" disabled
+                class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
+            </div>
+            <div>
+              <label for={"sector_#{@idx}"} class="block text-xs font-medium text-gray-500 mb-1">Sector <span class="text-xs text-gray-400">(rollup)</span></label>
+              <input type="text" id={"sector_#{@idx}"} value={Map.get(metadata, :sector) || Map.get(metadata, "sector")} placeholder="Via TickerLink" disabled class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
+            </div>
+            <div>
+              <label for={"cap_size_#{@idx}"} class="block text-xs font-medium text-gray-500 mb-1">Cap Size <span class="text-xs text-gray-400">(rollup)</span></label>
+              <input type="text" id={"cap_size_#{@idx}"} value={Map.get(metadata, :cap_size) || Map.get(metadata, "cap_size")} placeholder="Via TickerLink" disabled class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
+            </div>
+          </div>
+        </div>
+
+        <%!-- ── Zone 2: Risk & R:R ── --%>
+        <div class="rounded-lg border border-violet-200 bg-violet-50 p-3 space-y-3">
+          <p class="text-xs font-semibold uppercase tracking-wide text-violet-500">Risk &amp; R:R</p>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <%!-- Initial R:R --%>
+            <div id={"rr_initial_v3_#{@idx}"} phx-hook="RangeNumberSync">
+              <label class="block text-xs text-gray-600 mb-1">Initial R:R</label>
+              <div class="flex items-center gap-2">
+                <input type="range" min="0" max="20" step="0.01"
+                  value={format_decimal(Map.get(metadata, :initial_risk_reward_ratio) || Map.get(metadata, "initial_risk_reward_ratio"))}
+                  class="flex-1 accent-violet-600 cursor-pointer" />
+                <input type="number" name="initial_risk_reward_ratio" min="0" step="0.01"
+                  value={format_decimal(Map.get(metadata, :initial_risk_reward_ratio) || Map.get(metadata, "initial_risk_reward_ratio"))}
+                  class="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md text-right focus:ring-violet-500 focus:border-violet-500" />
+              </div>
+            </div>
+            <%!-- Better R:R? + Best R:R (compound) --%>
+            <% best_rr_raw_v3 = Map.get(metadata, :best_risk_reward_ratio) || Map.get(metadata, "best_risk_reward_ratio") %>
+            <% better_rr_checked = Map.get(metadata, :better_risk_reward_ratio?) || Map.get(metadata, "better_risk_reward_ratio?") || false %>
+            <% best_rr_visible = better_rr_checked || best_rr_enabled?(best_rr_raw_v3) %>
+            <div>
+              <div class="flex items-center gap-2 mb-1.5">
+                <label class="block text-xs text-gray-600">Better R:R?</label>
+                <label class="cursor-pointer" title="Check when a better R:R was achievable; fill Best R:R below">
+                  <input type="checkbox" name="better_risk_reward_ratio" value="true" checked={best_rr_visible} class="sr-only peer"
+                    onchange={"document.getElementById('rr_best_v3_#{@idx}').classList.toggle('hidden', !this.checked)"} />
+                  <span class="inline-block border rounded-full px-2.5 py-0.5 text-xs transition border-gray-300 text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600">Better R:R</span>
+                </label>
+              </div>
+              <div id={"rr_best_v3_#{@idx}"} phx-hook="RangeNumberSync" class={if best_rr_visible, do: "", else: "hidden"}>
+                <label class="block text-xs text-gray-500 mb-1 pl-1">Best R:R achieved</label>
+                <div class="flex items-center gap-2">
+                  <input type="range" min="0" max="20" step="0.01" value={format_decimal(best_rr_raw_v3, "0")} class="flex-1 accent-violet-600 cursor-pointer" />
+                  <input type="number" name="best_risk_reward_ratio" min="0" step="0.01" value={format_decimal(best_rr_raw_v3, "0")} class="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md text-right focus:ring-violet-500 focus:border-violet-500" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <%!-- Stop Loss quality --%>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-gray-500">Stop Loss:</span>
+            <label class="cursor-pointer">
+              <input type="checkbox" name="too_tight_stop_loss" value="true" checked={Map.get(metadata, :too_tight_stop_loss?) || Map.get(metadata, "too_tight_stop_loss?")} class="sr-only peer" />
+              <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">Too Tight</span>
+            </label>
+            <label class="cursor-pointer">
+              <input type="checkbox" name="too_loose_stop_loss" value="true" checked={Map.get(metadata, :too_loose_stop_loss?) || Map.get(metadata, "too_loose_stop_loss?")} class="sr-only peer" />
+              <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">Too Loose</span>
+            </label>
+          </div>
+          <%!-- Size in R + R Value --%>
+          <% r_size_v3 = @r_size || Journalex.Settings.get_r_size() %>
+          <% size_in_r_val = compute_size_in_r_value(@item, metadata, r_size_v3) %>
+          <% size_in_r_auto? = is_auto_size_in_r?(@item, metadata) %>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-600 mb-1">Size in R</label>
+              <input type="number" name="size_in_r" min="0" step="0.01"
+                value={format_decimal(size_in_r_val, "")}
+                placeholder={if size_in_r_auto?, do: "", else: "Enter size in R..."}
+                class={[
+                  "w-full px-3 py-1 text-sm border rounded-md text-left focus:ring-violet-500 focus:border-violet-500",
+                  if(size_in_r_auto?, do: "border-violet-300 bg-violet-50 text-violet-800", else: "border-gray-300")
+                ]} />
+              <div :if={size_in_r_auto?} class="mt-1 flex items-center gap-1.5 rounded-md bg-violet-100 border border-violet-200 px-2 py-1">
+                <span class="text-violet-500 text-xs">&#9889;</span>
+                <span class="text-xs text-violet-700 font-medium">Auto-filled:</span>
+                <span class="text-xs text-violet-600 font-mono">{auto_size_hint(@item, r_size_v3, size_in_r_val)}</span>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">R Value ($) <span class="text-xs text-gray-400">(from config)</span></label>
+              <input type="number" name="r_value"
+                value={format_decimal(Map.get(metadata, :r_value) || Map.get(metadata, "r_value") || r_size_v3, "")}
+                disabled
+                class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
+            </div>
+          </div>
+        </div>
+
+        <%!-- Close Time Comment + Extra Setup Comment (factual, before analysis flags) --%>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Close Time Comment</label>
           <div class="flex flex-wrap gap-1.5">
@@ -1042,8 +1088,6 @@ defmodule JournalexWeb.MetadataForm do
             <% end %>
           </div>
         </div>
-
-        <%!-- Extra Setup Comment (multi-select) --%>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Extra Setup Comment</label>
           <div class="flex flex-wrap gap-1.5">
@@ -1056,7 +1100,43 @@ defmodule JournalexWeb.MetadataForm do
           </div>
         </div>
 
-        <%!-- Good Things (multi-select) --%>
+        <%!-- ── Zone 3: Execution & Sizing ── --%>
+        <div class="rounded-lg border border-violet-100 p-3 space-y-2">
+          <p class="text-xs font-semibold uppercase tracking-wide text-violet-400">Execution &amp; Sizing</p>
+          <%= for {group_label, flags} <- Enum.filter(v3_flag_groups(), fn {n, _} -> n in ["Self Assessment", "Sizing Intent", "Deviations"] end) do %>
+            <div class="rounded border border-violet-100 bg-white px-3 py-2">
+              <span class="block text-xs font-semibold uppercase tracking-wide text-violet-400 mb-1.5">{group_label}</span>
+              <div class="flex flex-wrap gap-1.5">
+                <%= for {flag_name, label} <- flags do %>
+                  <label class="cursor-pointer">
+                    <input type="checkbox" name={flag_name} value="true" checked={Map.get(metadata, String.to_atom(flag_name <> "?")) || Map.get(metadata, flag_name <> "?")} class="sr-only peer" />
+                    <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{label}</span>
+                  </label>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+        </div>
+
+        <%!-- ── Zone 4: Context & Psychology ── --%>
+        <div class="rounded-lg border border-violet-100 p-3 space-y-2">
+          <p class="text-xs font-semibold uppercase tracking-wide text-violet-400">Context &amp; Psychology</p>
+          <%= for {group_label, flags} <- Enum.filter(v3_flag_groups(), fn {n, _} -> n in ["Trade Context", "Psychology", "Follow Up"] end) do %>
+            <div class="rounded border border-violet-100 bg-white px-3 py-2">
+              <span class="block text-xs font-semibold uppercase tracking-wide text-violet-400 mb-1.5">{group_label}</span>
+              <div class="flex flex-wrap gap-1.5">
+                <%= for {flag_name, label} <- flags do %>
+                  <label class="cursor-pointer">
+                    <input type="checkbox" name={flag_name} value="true" checked={Map.get(metadata, String.to_atom(flag_name <> "?")) || Map.get(metadata, flag_name <> "?")} class="sr-only peer" />
+                    <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{label}</span>
+                  </label>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+        </div>
+
+        <%!-- ── Zone 5: Review & Notes ── --%>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Good Things</label>
           <div class="flex flex-wrap gap-1.5">
@@ -1068,21 +1148,6 @@ defmodule JournalexWeb.MetadataForm do
             <% end %>
           </div>
         </div>
-
-        <%!-- Patterns (multi-select) --%>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Patterns</label>
-          <div class="flex flex-wrap gap-1.5">
-            <%= for option <- merge_current_multi_select_options(v3_patterns_options(), metadata, :patterns) do %>
-              <label class="cursor-pointer">
-                <input type="checkbox" name="patterns[]" value={option} checked={option in parse_multi_select(metadata, :patterns)} class="sr-only peer" />
-                <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">{option}</span>
-              </label>
-            <% end %>
-          </div>
-        </div>
-
-        <%!-- Regular Lessons (multi-select) --%>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Regular Lessons</label>
           <div class="flex flex-wrap gap-1.5">
@@ -1094,7 +1159,17 @@ defmodule JournalexWeb.MetadataForm do
             <% end %>
           </div>
         </div>
-
+        <%!-- Done / Lost Data (rarely used, at bottom) --%>
+        <div class="flex flex-wrap gap-1.5 pt-1">
+          <label class="cursor-pointer">
+            <input type="checkbox" name="done" value="true" checked={Map.get(metadata, :done?) || Map.get(metadata, "done?")} class="sr-only peer" />
+            <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">Done</span>
+          </label>
+          <label class="cursor-pointer">
+            <input type="checkbox" name="lost_data" value="true" checked={Map.get(metadata, :lost_data?) || Map.get(metadata, "lost_data?")} class="sr-only peer" />
+            <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:border-violet-600 transition">Lost Data</span>
+          </label>
+        </div>
         <%!-- Action buttons (Notion metadata) --%>
         <div class="flex justify-end space-x-2 pt-2 border-t border-violet-200">
           <button
@@ -1269,21 +1344,29 @@ defmodule JournalexWeb.MetadataForm do
 
   defp v3_patterns_options do
     [
-      "Key level - Intraday",
-      "Key level - Multiday",
-      "Consolidation range",
-      "Capitulation",
-      "Tight Bouncy Ball",
-      "Overbought/Oversold",
-      "Tight selling/buying",
-      "Spike Volume",
-      "Three Inside Down",
-      "Gravestone doji",
-      "Sharp top round top",
-      "Engulfing candle",
-      "Double top/bottom",
-      "Lead Lag",
-      "N/A"
+      {"Chart Structure", [
+        "Key level - Intraday",
+        "Key level - Multiday",
+        "Consolidation range",
+        "Double top/bottom"
+      ]},
+      {"Candle Patterns", [
+        "Three Inside Down",
+        "Gravestone doji",
+        "Engulfing candle",
+        "Sharp top round top"
+      ]},
+      {"Momentum", [
+        "Tight Bouncy Ball",
+        "Overbought/Oversold",
+        "Tight selling/buying",
+        "Capitulation",
+        "Spike Volume"
+      ]},
+      {"Other", [
+        "Lead Lag",
+        "N/A"
+      ]}
     ]
   end
 
@@ -1299,6 +1382,10 @@ defmodule JournalexWeb.MetadataForm do
   # V3 flag groups — 8 groups, 39 total flags (Done/Lost Data are rendered separately)
   defp v3_flag_groups do
     [
+      {"Trade Nature", [
+        {"follow_up_trial", "Follow Up Trial"},
+        {"scalp", "Scalp"}
+      ]},
       {"Setup Context", [
         {"align_global_trend", "Align Global Trend"},
         {"align_sector_trend", "Align Sector Trend"},
@@ -1311,7 +1398,8 @@ defmodule JournalexWeb.MetadataForm do
         {"mid_range", "Mid Range"},
         {"random_intraday_trend", "Random Intraday Trend"}
       ]},
-      {"Trade Quality", [
+      {"Self Assessment", [
+        {"normal_emotion", "Normal Emotion"},
         {"reasonable_entry_story", "Reasonable Entry Story"},
         {"reasonable_exit_story", "Reasonable Exit Story"},
         {"size_matching_story", "Size Matching Story"}
@@ -1320,16 +1408,13 @@ defmodule JournalexWeb.MetadataForm do
         {"large_size_in_purpose", "Large Size (on purpose)"},
         {"small_size_in_purpose", "Small Size (on purpose)"},
         {"averaging_up", "Averaging Up"},
-        {"averaging_down", "Averaging Down"},
-        {"scalp", "Scalp"}
+        {"averaging_down", "Averaging Down"}
       ]},
-      {"Execution", [
+      {"Deviations", [
         {"slippage_entry", "Slippage Entry"},
         {"operation_mistake", "Operation Mistake"},
         {"adjusted_stoploss", "Adjusted Stoploss"},
-        {"adjusted_target", "Adjusted Target"},
-        {"follow_up_trial", "Follow Up Trial"},
-        {"use_draft_order", "Use Draft Order"}
+        {"adjusted_target", "Adjusted Target"}
       ]},
       {"Risk / R:R", [
         {"better_risk_reward_ratio", "Better R:R"},
@@ -1340,18 +1425,17 @@ defmodule JournalexWeb.MetadataForm do
         {"revenge_trade", "Revenge Trade"},
         {"fomo", "FOMO"},
         {"lack_confidence", "Lack Confidence"},
-        {"normal_emotion", "Normal Emotion"},
-        {"good_lesson", "Good Lesson"}
+        {"close_trade_remorse", "Close Trade Remorse"},
+        {"decision_affected_by_other_trade", "Decision Affected by Other Trade"}
       ]},
       {"Trade Context", [
         {"overnight", "Overnight"},
         {"overnight_in_purpose", "Overnight in Purpose"},
-        {"following_trade", "Following Trade"},
-        {"decision_affected_by_other_trade", "Decision Affected by Other Trade"},
         {"fully_wrong_direction", "Fully Wrong Direction"}
       ]},
-      {"Reflection", [
-        {"close_trade_remorse", "Close Trade Remorse"},
+      {"Follow Up", [
+        {"following_trade", "Following Trade"},
+        {"good_lesson", "Good Lesson"},
         {"should_record_obsidian", "Should Record Obsidian"}
       ]}
     ]

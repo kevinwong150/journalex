@@ -12,3 +12,4 @@
 - V3 fully wired end-to-end (Notion properties confirmed, docker-compose env var added, compile passes): `default_metadata_version` bumped to `3` in `config.exs` (May 2026)
 - `trade_draft_live.ex` V3 form fix: `@supported_versions` updated to `[1, 2, 3]`, V3 case added to template, V3 option added to bulk version select — separate from `metadata_draft_live.ex`
 - Web compile with warnings-as-errors passes
+- V3 `random_intraday_trend?` boolean added (May 2026): all 5 required locations updated (`v3.ex`, `notion.ex` extract + build, `metadata_form.ex` v3_flag_groups, `trades_dump_live.ex` + `metadata_params_builder.ex`); V3 now has 41 boolean flags total
