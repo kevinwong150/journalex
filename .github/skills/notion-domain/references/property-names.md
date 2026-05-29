@@ -84,6 +84,7 @@ Both V1 and V2 use **CamelCase** property names with no spaces, except for one V
 - **May 2026 update**: `"RandomIntradayTrend?"` added; `"StoplossProgress"` and `"TargetProgress"` removed from Notion. Ecto schema retains the removed fields (JSONB is safe for historical data) — only extract/build and UI were updated.
 - Unlike V1/V2, V3 is not a strict CamelCase/no-space schema. Exception: `"Realized P/L"`.
 - **Phase-0 renames completed**: `"AlignGlobalTrend? (1)"` → `"AlignGlobalTrend?"`, `"AlignSectorTrend? (1)"` → `"AlignSectorTrend?"`, `"SizeR"` → `"SizeInR"`, `"RValue"` added. The snapshot list below reflects post-rename state.
+- `"ProgressionChain"` is the V3 rich_text backup property for `trade.journal_data.progression_chain`. The canonical value still lives in `journal_data`; Notion stores an arrow-serialized mirror such as `ENTRY→W25→TARGET`.
 
 ### Known V3 property names
 
@@ -134,6 +135,7 @@ Both V1 and V2 use **CamelCase** property names with no spaces, except for one V
 | `"Overnight?"` |
 | `"OvernightInPurpose?"` |
 | `"Patterns"` |
+| `"ProgressionChain"` |
 | `"Rank"` |
 | `"Realized P/L"` |
 | `"ReasonableEntryStory?"` |

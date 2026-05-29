@@ -550,6 +550,22 @@ defmodule Journalex.Notion do
       trade
       |> Trade.changeset(%{metadata: merged_meta, metadata_version: version})
       |> Repo.update()
+      |> case do
+        {:ok, updated_trade} when version == 3 ->
+          chain_text = get_rich_text_plain(properties, "ProgressionChain")
+          chain = parse_progression_chain(chain_text)
+
+          if chain != [] do
+            updated_trade
+            |> Trade.update_journal_data(%{"progression_chain" => chain})
+            |> Repo.update()
+          else
+            {:ok, updated_trade}
+          end
+
+        other ->
+          other
+      end
     end
   end
 
@@ -796,6 +812,32 @@ defmodule Journalex.Notion do
 
   # get_rich_text/2 removed — unused. Recoverable from git.
 
+  # Read plain text from a Notion rich text property (used for ProgressionChain)
+  defp get_rich_text_plain(properties, key) do
+    case Map.get(properties, key) do
+      %{"rich_text" => [first | _]} when is_map(first) ->
+        Map.get(first, "plain_text") || get_in(first, ["text", "content"])
+
+      _ ->
+        nil
+    end
+  end
+
+  defp maybe_put_rich_text_property(map, _key, nil), do: map
+  defp maybe_put_rich_text_property(map, _key, ""), do: map
+
+  defp maybe_put_rich_text_property(map, key, text) when is_binary(text) do
+    Map.put(map, key, %{"rich_text" => [%{"text" => %{"content" => text}}]})
+  end
+
+  defp format_progression_chain(nil), do: nil
+  defp format_progression_chain([]), do: nil
+  defp format_progression_chain(chain) when is_list(chain), do: Enum.join(chain, "→")
+
+  defp parse_progression_chain(nil), do: []
+  defp parse_progression_chain(""), do: []
+  defp parse_progression_chain(text) when is_binary(text), do: String.split(text, "→")
+
   # --- local compare helpers ---
   defp first_rich_text(list) when is_list(list) and list != [] do
     first = hd(list)
@@ -997,7 +1039,10 @@ defmodule Journalex.Notion do
           build_v2_metadata_properties(meta)
 
         {meta, 3} when is_map(meta) and map_size(meta) > 0 ->
+            journal_data = Map.get(row, :journal_data) || Map.get(row, "journal_data") || %{}
+            chain = Map.get(journal_data, "progression_chain") || Map.get(journal_data, :progression_chain) || []
           build_v3_metadata_properties(meta)
+          |> maybe_put_rich_text_property("ProgressionChain", format_progression_chain(chain))
 
         _ ->
           %{}

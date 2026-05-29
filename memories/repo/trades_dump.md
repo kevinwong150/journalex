@@ -26,3 +26,13 @@
 
 - `bulk_push_to_notion` eligible list: `{idx, trade, draft}` tuples — extract trades with `Enum.map(eligible, fn {_idx, trade, _draft} -> trade end)`
 - `insert_missing_notion` queue: `{row, idx}` tuples — extract rows with `Enum.map(queue, fn {row, _idx} -> row end)`
+
+## Inline metadata pending state
+
+- `TradesDumpLive` keeps unsaved inline metadata in `:pending_metadata_by_idx`, keyed by rendered row index; populate it from `"metadata_changed"` params and clear the row entry on save/reset/apply-draft/sync, or clear the whole map on global version switch
+- `AggregatedTradeList` must overlay `pending_metadata_by_idx[idx]` onto the persisted trade before rendering `MetadataForm`; progression-chain rerenders otherwise reset unsaved metadata selections back to the saved record
+
+## Draft application semantics
+
+- `handle_event("apply_draft", ...)` and `handle_event("bind_combined_draft", ...)` must propagate `metadata_draft.journal_data["progression_chain"]` into `trade.journal_data["progression_chain"]` when the draft actually contains that key
+- If the draft does not contain a `"progression_chain"` key, preserve the trade's existing `journal_data`; a missing key means "leave app-owned progression data untouched", not "clear it"

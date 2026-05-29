@@ -124,6 +124,10 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: nil,
     doc: "Event name to emit when metadata form is saved"
 
+  attr :on_change_metadata_event, :string,
+    default: nil,
+    doc: "Event name to emit when metadata form fields change"
+
   attr :on_reset_metadata_event, :string,
     default: nil,
     doc: "Event name to emit when metadata form reset is requested"
@@ -143,6 +147,10 @@ defmodule JournalexWeb.AggregatedTradeList do
   attr :on_apply_draft_event, :string,
     default: nil,
     doc: "Event name to emit when a draft is applied to a trade row"
+
+  attr :pending_metadata_map, :map,
+    default: %{},
+    doc: "Map of row index => unsaved metadata attrs used to preserve form state across rerenders"
 
   attr :writeup_drafts, :list,
     default: [],
@@ -854,9 +862,11 @@ defmodule JournalexWeb.AggregatedTradeList do
                         item={item}
                         idx={idx}
                         on_save_event={@on_save_metadata_event}
+                        on_change_event={@on_change_metadata_event}
                         on_reset_event={@on_reset_metadata_event}
                         drafts={@drafts}
                         on_apply_draft_event={@on_apply_draft_event}
+                        pending_metadata={Map.get(@pending_metadata_map, idx)}
                         r_size={r_size}
                       />
                     </div>
@@ -1569,28 +1579,34 @@ defmodule JournalexWeb.AggregatedTradeList do
   attr :item, :map, required: true
   attr :idx, :integer, required: true
   attr :on_save_event, :string, default: nil
+  attr :on_change_event, :string, default: nil
   attr :on_reset_event, :string, default: nil
   attr :drafts, :list, default: []
   attr :on_apply_draft_event, :string, default: nil
+  attr :pending_metadata, :map, default: nil
   attr :r_size, :float, default: nil
 
   defp render_metadata_form(assigns) do
+    assigns = assign(assigns, :display_item, overlay_pending_metadata(assigns.item, assigns.pending_metadata))
+
     ~H"""
     <%= case @version do %>
       <% 1 -> %>
         <JournalexWeb.MetadataForm.v1
-          item={@item}
+          item={@display_item}
           idx={@idx}
           on_save_event={@on_save_event}
+          on_change_event={@on_change_event}
           on_reset_event={@on_reset_event}
           drafts={@drafts}
           on_apply_draft_event={@on_apply_draft_event}
         />
       <% 2 -> %>
         <JournalexWeb.MetadataForm.v2
-          item={@item}
+          item={@display_item}
           idx={@idx}
           on_save_event={@on_save_event}
+          on_change_event={@on_change_event}
           on_reset_event={@on_reset_event}
           drafts={@drafts}
           on_apply_draft_event={@on_apply_draft_event}
@@ -1598,14 +1614,15 @@ defmodule JournalexWeb.AggregatedTradeList do
         />
       <% 3 -> %>
         <JournalexWeb.MetadataForm.v3
-          item={@item}
+          item={@display_item}
           idx={@idx}
           on_save_event={@on_save_event}
+          on_change_event={@on_change_event}
           on_reset_event={@on_reset_event}
           drafts={@drafts}
           on_apply_draft_event={@on_apply_draft_event}
           r_size={@r_size}
-          journal_data={Map.get(@item, :journal_data) || Map.get(@item, "journal_data") || %{}}
+          journal_data={Map.get(@display_item, :journal_data) || Map.get(@display_item, "journal_data") || %{}}
         />
       <% _ -> %>
         <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center text-sm text-gray-500">
@@ -1614,4 +1631,7 @@ defmodule JournalexWeb.AggregatedTradeList do
     <% end %>
     """
   end
+
+  defp overlay_pending_metadata(item, nil), do: item
+  defp overlay_pending_metadata(item, pending_metadata) when is_map(pending_metadata), do: Map.put(item, :metadata, pending_metadata)
 end

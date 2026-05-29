@@ -25,6 +25,7 @@ defmodule JournalexWeb.TradesDumpLive do
     socket =
       socket
       |> assign(:trades, trades)
+      |> assign(:pending_metadata_by_idx, %{})
       |> assign(:selected_idx, MapSet.new())
       |> assign(:all_selected?, false)
       |> assign(:row_statuses, %{})
@@ -392,6 +393,23 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   @impl true
+  def handle_event("metadata_changed", %{"index" => idx_str} = params, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    trade = Enum.at(socket.assigns.trades, idx)
+
+    if trade do
+      metadata_attrs =
+        params
+        |> build_metadata_attrs(socket.assigns.global_metadata_version)
+        |> preserve_readonly_fields(trade.metadata)
+
+      {:noreply, update(socket, :pending_metadata_by_idx, &Map.put(&1, idx, metadata_attrs))}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_event("save_metadata", %{"index" => idx_str} = params, socket) do
     {idx, _} = Integer.parse(idx_str)
     version = socket.assigns.global_metadata_version
@@ -400,12 +418,7 @@ defmodule JournalexWeb.TradesDumpLive do
 
     if trade do
       # Build metadata from form params based on global version
-      metadata_attrs = case version do
-        1 -> build_v1_metadata_attrs(params)
-        2 -> build_v2_metadata_attrs(params)
-        3 -> build_v3_metadata_attrs(params)
-        _ -> %{}
-      end
+      metadata_attrs = build_metadata_attrs(params, version)
 
       # Preserve read-only rollup fields from existing metadata
       metadata_attrs = preserve_readonly_fields(metadata_attrs, trade.metadata)
@@ -425,6 +438,7 @@ defmodule JournalexWeb.TradesDumpLive do
           socket =
             socket
             |> assign(:trades, trades)
+            |> clear_pending_metadata(idx)
             |> put_toast(:info, "Metadata saved as V#{version}")
 
           {:noreply, socket}
@@ -458,10 +472,11 @@ defmodule JournalexWeb.TradesDumpLive do
         # Preserve read-only rollup fields from existing trade metadata
         metadata_attrs = preserve_readonly_fields(metadata_attrs, trade.metadata)
 
-        case Journalex.Trades.update_trade(trade, %{
-          metadata: metadata_attrs,
-          metadata_version: draft.metadata_version
-        }) do
+        update_attrs =
+          %{metadata: metadata_attrs, metadata_version: draft.metadata_version}
+          |> maybe_put_draft_journal_data(trade, draft.journal_data)
+
+        case Journalex.Trades.update_trade(trade, update_attrs) do
           {:ok, updated_trade} ->
             trades =
               socket.assigns.trades
@@ -471,6 +486,7 @@ defmodule JournalexWeb.TradesDumpLive do
             {:noreply,
              socket
              |> assign(:trades, trades)
+             |> clear_pending_metadata(idx)
              |> put_toast(:info, "Applied draft \"#{draft.name}\" to trade")}
 
           {:error, changeset} ->
@@ -591,7 +607,9 @@ defmodule JournalexWeb.TradesDumpLive do
           |> then(fn a ->
             if md do
               metadata_attrs = preserve_readonly_fields(md.metadata || %{}, trade.metadata)
-              Map.merge(a, %{metadata: metadata_attrs, metadata_version: md.metadata_version})
+              a
+              |> Map.merge(%{metadata: metadata_attrs, metadata_version: md.metadata_version})
+              |> maybe_put_draft_journal_data(trade, md.journal_data)
             else
               a
             end
@@ -743,6 +761,7 @@ defmodule JournalexWeb.TradesDumpLive do
           socket =
             socket
             |> assign(:trades, trades)
+            |> clear_pending_metadata(idx)
             |> put_toast(:info, "Metadata cleared")
 
           {:noreply, socket}
@@ -785,6 +804,7 @@ defmodule JournalexWeb.TradesDumpLive do
             {:noreply,
              socket
              |> assign(:trades, trades)
+             |> clear_pending_metadata(idx)
              |> assign(:row_inconsistencies, row_incons)
              |> put_toast(:info, "Metadata synced from Notion")}
 
@@ -835,7 +855,10 @@ defmodule JournalexWeb.TradesDumpLive do
     {version, _} = Integer.parse(version_str)
 
     if version in @supported_versions do
-      {:noreply, assign(socket, :global_metadata_version, version)}
+      {:noreply,
+       socket
+       |> assign(:global_metadata_version, version)
+       |> assign(:pending_metadata_by_idx, %{})}
     else
       {:noreply, socket}
     end
@@ -1929,9 +1952,11 @@ defmodule JournalexWeb.TradesDumpLive do
         show_inconsistency_column?={true}
         show_metadata_column?={true}
         on_save_metadata_event="save_metadata"
+        on_change_metadata_event="metadata_changed"
         on_reset_metadata_event="reset_metadata"
         on_sync_metadata_event="sync_metadata_from_notion"
         global_metadata_version={@global_metadata_version}
+        pending_metadata_map={@pending_metadata_by_idx}
         drafts={Enum.filter(@drafts, & &1.metadata_version == @global_metadata_version)}
         on_apply_draft_event="apply_draft"
         writeup_drafts={@writeup_drafts}
@@ -2228,6 +2253,15 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   # Build V2 metadata attributes from form params
+  defp build_metadata_attrs(params, version) do
+    case version do
+      1 -> build_v1_metadata_attrs(params)
+      2 -> build_v2_metadata_attrs(params)
+      3 -> build_v3_metadata_attrs(params)
+      _ -> %{}
+    end
+  end
+
   defp build_v2_metadata_attrs(params) do
     %{
       done?: params["done"] == "true",
@@ -2356,6 +2390,33 @@ defmodule JournalexWeb.TradesDumpLive do
     end)
   end
   defp preserve_readonly_fields(attrs, _), do: attrs
+
+  defp maybe_put_draft_journal_data(attrs, _trade, nil), do: attrs
+
+  defp maybe_put_draft_journal_data(attrs, trade, draft_journal_data) when is_map(draft_journal_data) do
+    case draft_progression_chain(draft_journal_data) do
+      :missing ->
+        attrs
+
+      chain ->
+        current_journal_data = trade.journal_data || %{}
+        Map.put(attrs, :journal_data, Map.put(current_journal_data, "progression_chain", chain))
+    end
+  end
+
+  defp maybe_put_draft_journal_data(attrs, _trade, _), do: attrs
+
+  defp draft_progression_chain(journal_data) when is_map(journal_data) do
+    cond do
+      Map.has_key?(journal_data, "progression_chain") -> Map.get(journal_data, "progression_chain") || []
+      Map.has_key?(journal_data, :progression_chain) -> Map.get(journal_data, :progression_chain) || []
+      true -> :missing
+    end
+  end
+
+  defp clear_pending_metadata(socket, idx) do
+    update(socket, :pending_metadata_by_idx, &Map.delete(&1, idx))
+  end
 
   # Build %{trade_id => draft} map from list of combined drafts for quick lookup
   defp build_bound_drafts_map(drafts) do

@@ -39,6 +39,7 @@ Read only the files relevant to the code being reviewed (e.g., skip migrations.i
 - `alias JournalexWeb.SomeComponent` used with `<.component_func />` syntax — `alias` does NOT bring the function into scope; must use `import JournalexWeb.SomeComponent` instead
 - Blocking I/O (HTTP calls, `Finch.request`, slow Ecto queries, file reads) called directly inside `handle_info/2` or `mount/3` — must use `start_async/3` + `handle_async/3` to avoid blocking the channel process and dropping heartbeats
 - Standalone `<input>` / `<select>` controls using `phx-change` without a `name` attribute, handlers matching `%{"value" => ...}` instead of the control name, or persistent standalone controls that keep `phx-change` on the control instead of a tiny wrapper `<form phx-change=...>` — LiveView change payloads are keyed by input name, and name-only standalone controls proved brittle in real browser rerender paths when later events re-render the view
+- Forms or row editors that can rerender from sibling events before save but whose `phx-change` handler only flips a dirty flag or discards the current params while render still uses persisted/stale assigns — unsaved checkbox/select state will revert on rerender; LiveView must cache a normalized pending form snapshot in assigns and prefer it in render until save/reset
 
 ### Context modules (`lib/journalex/**`, excluding `lib/journalex_web/**`)
 
@@ -58,6 +59,7 @@ Read only the files relevant to the code being reviewed (e.g., skip migrations.i
 - Wrong property names (spaces in V2 names, missing spaces in V1's `"Entry Timeslot"`)
 - References to removed helpers (`get_rich_text/2`, `maybe_put_rich_text/3`)
 - Building `rich_text` spans inline instead of via `BlockBuilder.rich_text/1` — bypassing chunking risks 400 errors for texts > 2000 chars
+- `get_in/2` used on Ecto schema structs such as `%Journalex.Trades.Trade{}` to read top-level fields (for example `[:journal_data, "progression_chain"]`) — schema structs do not implement `Access`; read the struct field with `Map.get/2` first, then traverse nested maps
 
 ### General (all files)
 

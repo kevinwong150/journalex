@@ -66,6 +66,7 @@ end
 - For selection-mode UX: toggle checkbox visibility with `:if={@select_mode}` on each row's `<input>` element (no JS required). Gate the action bar on `@select_mode && MapSet.size(@selected_ids) > 0` to prevent accidental trigger from residual selection state when outside select mode
 - For standalone `<input>` / `<select>` controls involved in `phx-change`, always set a `name` attribute and match `handle_event/3` params on that name (for example `%{"version" => value}`), not `%{"value" => value}`. LiveView change payloads are keyed by input name
 - Prefer wrapping standalone controls in their own small `<form phx-change=...>` instead of putting `phx-change` directly on the control. Require the wrapper form when the control sets LiveView state that must survive later rerenders from other events (for example bulk selectors followed by add/remove row clicks). Name-only standalone controls proved brittle in real browser paths and can snap back to the assigned default after a later rerender
+- When a form or row can rerender from sibling events before save, `phx-change` must store the current normalized form snapshot in assigns and render must prefer that pending snapshot over persisted data until save/reset. A dirty flag alone is not enough; otherwise unrelated rerenders can snap unsaved checkbox/select state back to the last saved values. Preserve readonly fields that browsers omit when rebuilding the snapshot
 
 ## Toolbar and button accessibility
 

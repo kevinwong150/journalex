@@ -87,8 +87,16 @@ defmodule JournalexWeb.TradeDraftLive do
   end
 
   @impl true
-  def handle_event("metadata_changed", _params, socket) do
-    {:noreply, assign(socket, :metadata_dirty, true)}
+  def handle_event("metadata_changed", params, socket) do
+    metadata =
+      params
+      |> JournalexWeb.MetadataParamsBuilder.build(socket.assigns.form_version)
+      |> preserve_draft_readonly_fields(socket.assigns.draft_metadata)
+
+    {:noreply,
+     socket
+     |> assign(:draft_metadata, metadata)
+     |> assign(:metadata_dirty, true)}
   end
 
   # ── V3 progression chain ────────────────────────────────────────────
@@ -593,6 +601,17 @@ defmodule JournalexWeb.TradeDraftLive do
       end
     end
   end
+
+  defp preserve_draft_readonly_fields(attrs, existing) when is_map(attrs) do
+    existing = existing || %{}
+
+    Enum.reduce([:sector, :cap_size, :entry_timeslot, :close_timeslot, :notion_page_id], attrs, fn field, acc ->
+      val = Map.get(existing, field) || Map.get(existing, Atom.to_string(field))
+      if val, do: Map.put(acc, field, val), else: acc
+    end)
+  end
+
+  defp preserve_draft_readonly_fields(attrs, _), do: attrs
 
   # ── Notion placeholder ──────────────────────────────────────────────
 

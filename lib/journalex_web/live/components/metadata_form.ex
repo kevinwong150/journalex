@@ -1320,7 +1320,9 @@ defmodule JournalexWeb.MetadataForm do
       "Zero risk play",
       "Liquidity grab",
       "Just hit target then reverse",
-      "Just hit stoploss then reverse"
+      "Just hit stoploss then reverse",
+      "Reverse right before hitting target",
+      "Reverse right before hitting stoploss"
     ]
   end
 
@@ -1337,6 +1339,7 @@ defmodule JournalexWeb.MetadataForm do
       "Good big size",
       "Good add size",
       "Good second try",
+      "Good target",
       "Good learning from Alvin",
       "Good learning from Jason"
     ]
