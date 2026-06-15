@@ -372,6 +372,7 @@ defmodule Journalex.Notion do
       |> maybe_put_diff(:entry_timeslot, entry_slot_label, normalize_string(actual_entry_slot))
 
     # Add close_timeslot comparison for V2 (computed from action_chain)
+    # For V3, close_timeslot is stored directly in metadata — handled in metadata_diff_fields(3)
     base_diffs =
       if version == 2 do
         close_slot_label = close_timeslot_bucket(row)
@@ -388,7 +389,7 @@ defmodule Journalex.Notion do
 
     metadata_diff_fields(version)
     |> Enum.reduce(base_diffs, fn {field, type}, acc ->
-      db_val = get_meta_field(db_meta, field)
+      db_val = effective_diff_meta_field(row, db_meta, version, field)
       notion_val = Map.get(notion_meta, field)
 
       case type do
@@ -870,8 +871,10 @@ defmodule Journalex.Notion do
   defp normalize_string(other), do: other
 
   # Metadata fields to compare per version in diff_trade_vs_page.
-  # Excludes: entry_timeslot/close_timeslot (in base comparison),
-  # sector/cap_size (rollups, read-only), notion_page_id (internal), trademark (title in base).
+  # Excludes: entry_timeslot (in base comparison for all versions),
+  # close_timeslot (in base comparison for V2; in metadata_diff_fields for V3),
+  # sector/cap_size (rollups, read-only), notion_page_id (internal), trademark (title in base),
+  # auto_calculate_from_winning_trade? (app-only, not synced to Notion).
   defp metadata_diff_fields(1) do
     [
       {:done?, :boolean},
@@ -886,6 +889,74 @@ defmodule Journalex.Notion do
       {:fomo?, :boolean},
       {:unnecessary_trade?, :boolean},
       {:close_time_comment, :multi_select}
+    ]
+  end
+
+  defp metadata_diff_fields(3) do
+    [
+      # Status & control
+      {:done?, :boolean},
+      {:lost_data?, :boolean},
+      # Trade classification
+      {:rank, :select},
+      {:setup, :select},
+      {:close_trigger, :select},
+      {:order_type, :select},
+      # close_timeslot stored in metadata for V3 (not computed from action_chain)
+      {:close_timeslot, :select},
+      # Risk/reward metrics
+      {:initial_risk_reward_ratio, :number},
+      {:best_risk_reward_ratio, :number},
+      {:size_in_r, :number},
+      {:r_value, :number},
+      # Boolean flags — carried over from V2
+      {:better_risk_reward_ratio?, :boolean},
+      {:choppy_chart?, :boolean},
+      {:close_trade_remorse?, :boolean},
+      {:earning_report?, :boolean},
+      {:fomo?, :boolean},
+      {:follow_up_trial?, :boolean},
+      {:fully_wrong_direction?, :boolean},
+      {:good_lesson?, :boolean},
+      {:hot_sector?, :boolean},
+      {:mid_range?, :boolean},
+      {:news?, :boolean},
+      {:normal_emotion?, :boolean},
+      {:operation_mistake?, :boolean},
+      {:overnight?, :boolean},
+      {:overnight_in_purpose?, :boolean},
+      {:revenge_trade?, :boolean},
+      {:too_tight_stop_loss?, :boolean},
+      # Boolean flags — renamed from V2
+      {:decision_affected_by_other_trade?, :boolean},
+      {:slippage_entry?, :boolean},
+      {:align_ticker_big_picture_trend?, :boolean},
+      {:align_ticker_intraday_trend?, :boolean},
+      # Boolean flags — new in V3
+      {:adjusted_stoploss?, :boolean},
+      {:adjusted_target?, :boolean},
+      {:align_global_trend?, :boolean},
+      {:align_sector_trend?, :boolean},
+      {:averaging_down?, :boolean},
+      {:averaging_up?, :boolean},
+      {:following_trade?, :boolean},
+      {:lack_confidence?, :boolean},
+      {:large_size_in_purpose?, :boolean},
+      {:small_size_in_purpose?, :boolean},
+      {:reasonable_entry_story?, :boolean},
+      {:reasonable_exit_story?, :boolean},
+      {:scalp?, :boolean},
+      {:should_record_obsidian?, :boolean},
+      {:size_matching_story?, :boolean},
+      {:too_loose_stop_loss?, :boolean},
+      {:use_draft_order?, :boolean},
+      {:random_intraday_trend?, :boolean},
+      # Multi-selects
+      {:close_time_comment, :multi_select},
+      {:extra_setup_comment, :multi_select},
+      {:good_things, :multi_select},
+      {:patterns, :multi_select},
+      {:regular_lessons, :multi_select}
     ]
   end
 
@@ -1055,7 +1126,21 @@ defmodule Journalex.Notion do
 
       # For V3 trades: auto-compute SizeInR if not stored in metadata
       version == 3 and not Map.has_key?(base_props, "SizeInR") ->
-        maybe_put_number(base_props, "SizeInR", auto_compute_size(row))
+        base_props
+        |> maybe_put_number("SizeInR", auto_compute_size(row))
+        |> then(fn props ->
+          if not Map.has_key?(props, "RValue") do
+            r_size = Journalex.Settings.get_r_size()
+            maybe_put_number(props, "RValue", if(is_number(r_size) and r_size > 0, do: r_size * 1.0))
+          else
+            props
+          end
+        end)
+
+      # For V3 trades: RValue not yet stored — fill from current r_size setting
+      version == 3 and not Map.has_key?(base_props, "RValue") ->
+        r_size = Journalex.Settings.get_r_size()
+        maybe_put_number(base_props, "RValue", if(is_number(r_size) and r_size > 0, do: r_size * 1.0))
 
       true ->
         base_props
@@ -1217,6 +1302,23 @@ defmodule Journalex.Notion do
     Map.get(meta, field) || Map.get(meta, Atom.to_string(field))
   end
   defp get_meta_field(_, _), do: nil
+
+  defp effective_diff_meta_field(row, meta, 3, :size_in_r) do
+    get_meta_field(meta, :size_in_r) || auto_compute_size(row)
+  end
+
+  defp effective_diff_meta_field(_row, meta, 3, :r_value) do
+    get_meta_field(meta, :r_value) || current_r_value()
+  end
+
+  defp effective_diff_meta_field(_row, meta, _version, field), do: get_meta_field(meta, field)
+
+  defp current_r_value do
+    case Journalex.Settings.get_r_size() do
+      r_size when is_number(r_size) and r_size > 0 -> r_size * 1.0
+      _ -> nil
+    end
+  end
 
   # Auto-compute size for LOSE trades when not stored in metadata.
   # Mirrors compute_size_value/3 in the metadata form component:

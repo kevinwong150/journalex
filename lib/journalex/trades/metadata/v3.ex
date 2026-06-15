@@ -104,6 +104,7 @@ defmodule Journalex.Trades.Metadata.V3 do
     field :too_loose_stop_loss?, :boolean, default: false
     field :use_draft_order?, :boolean, default: false
     field :random_intraday_trend?, :boolean, default: false
+    field :auto_calculate_from_winning_trade?, :boolean, default: false
   end
 
   @rank_values ["Not Setup", "Bad Setup", "C Trade", "B Trade", "A Trade"]
@@ -146,6 +147,7 @@ defmodule Journalex.Trades.Metadata.V3 do
     scalp? should_record_obsidian? size_matching_story?
     too_loose_stop_loss? use_draft_order?
     random_intraday_trend?
+    auto_calculate_from_winning_trade?
   )a
 
   @doc """

@@ -86,8 +86,20 @@ These are verified mistakes that have occurred or could easily occur in the Jour
 **Why**: The Docker container reads env vars from `docker-compose.yml`; the container will silently use `nil` and datasource routing will fail
 **Fix**: After adding a new `Application.get_env` key for a Notion datasource, always add the matching `KEY: "${KEY}"` line to `docker-compose.yml` (and `docker-compose.test.yml` if needed)
 
-## 15. Truncating V3 timeslot buckets at 16:00 or using colon-formatted labels
+## 15. `RValue` silently omitted from V3 push payload when nil in DB
+
+**Wrong**: Relying on `maybe_put_number("RValue", nil)` to forward the `r_value` field — it is a no-op and drops the key from the payload
+**Why**: Trades imported before the `r_value` column existed (or before the fix) have `nil` in the metadata JSONB. The push pipeline had auto-fill for `SizeInR` via `auto_compute_size(row)` but no parallel fallback for `RValue`, so `"RValue"` was silently omitted on those trades
+**Fix**: In the `build_metadata_properties` cond block, add two explicit branches: (1) `size_in_r == nil and r_value == nil` → fill `SizeInR` from `auto_compute_size(row)` AND `RValue` from `Settings.get_r_size() |> Float.parse() |> elem(0)`; (2) `r_value == nil` (size already present) → fill `RValue` from `Settings.get_r_size()`. Semantic invariant: `r_value` is the 1R dollar amount and always equals `Settings.get_r_size()` cast to float.
+
+## 16. Truncating V3 timeslot buckets at 16:00 or using colon-formatted labels
 
 **Wrong**: Treating `16:00` as the exclusive upper bound in `bucket_for_datetime/1`, or generating labels like `"16:00-16:30"`
 **Why**: The live V3 Notion `EntryTimeslot` and `CloseTimeslot` options continue through `"1630-1700"` and use `HHMM-HHMM` labels with no colon separators
 **Fix**: Bucket half-hour slots from `09:30` inclusive to `17:00` exclusive. Examples: `16:05` → `"1600-1630"`, `16:35` → `"1630-1700"`
+
+## 17. Comparing raw V3 `size_in_r`/`r_value` in Check Notion or bulk-update eligibility
+
+**Wrong**: Letting `diff_trade_vs_page` compare raw DB metadata values for V3 `size_in_r` / `r_value`, or letting `update_all_selected` queue only from cached `row_inconsistencies`
+**Why**: Both DB and Notion can be `nil`, which looks "in sync" even though the V3 push pipeline would synthesize effective values from app state (`auto_compute_size(row)` for `SizeInR` when applicable and `Settings.get_r_size()` for `RValue`). Those rows then disappear from bulk update and never get repaired
+**Fix**: Reuse the push pipeline's effective-value rules in `diff_trade_vs_page`, persist any missing computed/fallback V3 size/r values back into DB before pushing, and include selected V3 rows with known page IDs when those effective fields are still missing even if `row_inconsistencies` is stale or empty

@@ -12,7 +12,7 @@ All sync logic lives in `lib/journalex/notion.ex`. LiveViews call context-level 
 
 1. Fetches page via `Client.get_page(page_id)`
 2. Detects version via `DataSources.get_version(parent_data_source_id)`
-3. Routes to `extract_v1_metadata_from_properties/1` or `extract_v2_metadata_from_properties/1`
+3. Routes to `extract_v1_metadata_from_properties/1`, `extract_v2_metadata_from_properties/1`, or `extract_v3_metadata_from_properties/1`
 4. Returns atom-keyed map: `%{done?: true, rank: "S", ...}`
 5. Converts to string keys before Ecto update
 6. Calls `Trades.update_metadata/2` to merge into existing record
@@ -29,7 +29,7 @@ All sync logic lives in `lib/journalex/notion.ex`. LiveViews call context-level 
 ### `push_trade_metadata(page_id, trade)`
 
 1. Reads `trade.metadata` (string-keyed map from Ecto)
-2. Routes to `build_v1_metadata_properties/1` or `build_v2_metadata_properties/1`
+2. Routes to `build_v1_metadata_properties/1`, `build_v2_metadata_properties/1`, or `build_v3_metadata_properties/1`
 3. Generates Notion property map with correct API shapes
 4. Calls `Client.update_page(page_id, %{properties: props})`
 
@@ -69,10 +69,17 @@ All `maybe_put_*` helpers are no-ops when the value is `nil` or empty — they r
 ## Version Detection Pattern
 
 ```
-page_properties → parent.data_source_id → DataSources.get_version(id) → 1 or 2
+page_properties → parent.data_source_id → DataSources.get_version(id) → 1, 2, or 3
 ```
 
 This determines which extract/build function pair to use. The routing is **automatic** — callers pass a page ID, and the system detects the version.
+
+## Current-Production V3 Alignment Rule
+
+- V3 is the latest production metadata version. New metadata work should assume V3 unless the task is explicitly legacy maintenance.
+- A V3 migration is incomplete until schema/cast, form submission, Notion extract/build/diff, and bulk repair/update flows all agree on field names, storage ownership, and fallback semantics.
+- If V3 push logic synthesizes an effective value, `diff_trade_vs_page` and bulk update must reuse that same effective-value rule. `metadata_diff_fields(3)` is part of that contract.
+- V3 `close_timeslot` is metadata-owned. Do not reuse V2 `action_chain`-derived close-timeslot assumptions in V3 sync code.
 
 ## Bulk Check Pattern — `fetch_pages_for_check/3`
 

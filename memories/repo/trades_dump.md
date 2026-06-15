@@ -36,3 +36,12 @@
 
 - `handle_event("apply_draft", ...)` and `handle_event("bind_combined_draft", ...)` must propagate `metadata_draft.journal_data["progression_chain"]` into `trade.journal_data["progression_chain"]` when the draft actually contains that key
 - If the draft does not contain a `"progression_chain"` key, preserve the trade's existing `journal_data`; a missing key means "leave app-owned progression data untouched", not "clear it"
+
+## Auto-compute size_in_r pattern
+
+- `maybe_auto_compute_size_in_r/2` in `trades_dump_live.ex` returns `{updated_attrs, warning_or_nil}` — called from both `apply_draft` and `bind_combined_draft` handlers
+- Formula: `size_in_r = round(|realized_pl| / (r_size × initial_risk_reward_ratio), 2)` — runs at bind/apply time, not at form display time
+- Triggered only when `auto_calculate_from_winning_trade?` is `true` in the draft metadata
+- `decimal_to_float_or_nil/1` helper handles `Decimal`, float, integer, binary string, and `nil` safely for numeric JSONB fields
+- **String keys required**: when injecting computed values into the JSONB-sourced attrs map (e.g. `Map.put(attrs, "size_in_r", value)`), always use string keys — atom keys are silently dropped by Ecto's `convert_params/1` when the map's first key is a string (see pitfall #32 in copilot-instructions.md)
+- The "Compute Size in R" button lives in `aggregated_trade_list.ex` (injected before `render_metadata_form`) — not inside the metadata form component; keeps MetadataForm props stable and avoids prop-drilling

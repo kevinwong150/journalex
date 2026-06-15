@@ -196,6 +196,10 @@ defmodule JournalexWeb.AggregatedTradeList do
     default: nil,
     doc: "Event name to emit when creating a Notion placeholder for a bound draft that has none"
 
+  attr :on_recalculate_size_event, :string,
+    default: nil,
+    doc: "Event name to emit when recalculating size_in_r for a V3 trade with auto-calculate enabled"
+
   def aggregated_trade_list(assigns) do
     ~H"""
     <% chain_key = @action_chain_key %>
@@ -868,6 +872,7 @@ defmodule JournalexWeb.AggregatedTradeList do
                         on_apply_draft_event={@on_apply_draft_event}
                         pending_metadata={Map.get(@pending_metadata_map, idx)}
                         r_size={r_size}
+                        on_recalculate_size_event={@on_recalculate_size_event}
                       />
                     </div>
 
@@ -1585,6 +1590,7 @@ defmodule JournalexWeb.AggregatedTradeList do
   attr :on_apply_draft_event, :string, default: nil
   attr :pending_metadata, :map, default: nil
   attr :r_size, :float, default: nil
+  attr :on_recalculate_size_event, :string, default: nil
 
   defp render_metadata_form(assigns) do
     assigns = assign(assigns, :display_item, overlay_pending_metadata(assigns.item, assigns.pending_metadata))
@@ -1622,6 +1628,7 @@ defmodule JournalexWeb.AggregatedTradeList do
           drafts={@drafts}
           on_apply_draft_event={@on_apply_draft_event}
           r_size={@r_size}
+          on_recalculate_size_event={@on_recalculate_size_event}
           journal_data={Map.get(@display_item, :journal_data) || Map.get(@display_item, "journal_data") || %{}}
         />
       <% _ -> %>

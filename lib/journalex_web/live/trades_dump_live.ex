@@ -319,11 +319,23 @@ defmodule JournalexWeb.TradesDumpLive do
   def handle_event("update_all_selected", _params, socket) do
     selected = socket.assigns.selected_idx || MapSet.new()
     rows = socket.assigns.trades || []
+    page_ids = socket.assigns.notion_page_ids || %{}
 
     idx_with_diffs =
       socket.assigns.row_inconsistencies
       |> Map.keys()
       |> Enum.filter(&MapSet.member?(selected, &1))
+      |> Kernel.++(
+        rows
+        |> Enum.with_index()
+        |> Enum.filter(fn {row, idx} ->
+          MapSet.member?(selected, idx) and
+            is_binary(Map.get(page_ids, row_title(row))) and
+            needs_v3_effective_field_sync?(row)
+        end)
+        |> Enum.map(&elem(&1, 1))
+      )
+      |> Enum.uniq()
       |> Enum.sort()
 
     queue = Enum.map(idx_with_diffs, fn idx -> {Enum.at(rows, idx), idx} end)
@@ -471,6 +483,7 @@ defmodule JournalexWeb.TradesDumpLive do
         metadata_attrs = draft.metadata || %{}
         # Preserve read-only rollup fields from existing trade metadata
         metadata_attrs = preserve_readonly_fields(metadata_attrs, trade.metadata)
+        {metadata_attrs, size_warning} = maybe_auto_compute_size_in_r(metadata_attrs, trade)
 
         update_attrs =
           %{metadata: metadata_attrs, metadata_version: draft.metadata_version}
@@ -487,11 +500,47 @@ defmodule JournalexWeb.TradesDumpLive do
              socket
              |> assign(:trades, trades)
              |> clear_pending_metadata(idx)
+             |> then(fn s -> if size_warning, do: put_toast(s, :warning, size_warning), else: s end)
              |> put_toast(:info, "Applied draft \"#{draft.name}\" to trade")}
 
           {:error, changeset} ->
             {:noreply, put_toast(socket, :error, "Failed to apply draft: #{inspect(changeset.errors)}")}
         end
+    end
+  end
+
+  @impl true
+  def handle_event("recalculate_size_in_r", %{"index" => idx_str}, socket) do
+    {idx, _} = Integer.parse(idx_str)
+    trade = Enum.at(socket.assigns.trades, idx)
+
+    if is_nil(trade) do
+      {:noreply, put_toast(socket, :error, "Trade not found")}
+    else
+      {updated_attrs, warning} = maybe_auto_compute_size_in_r(trade.metadata || %{}, trade)
+
+      case Journalex.Trades.update_trade(trade, %{
+             metadata: updated_attrs,
+             metadata_version: trade.metadata_version
+           }) do
+        {:ok, updated_trade} ->
+          trades =
+            socket.assigns.trades
+            |> Enum.with_index()
+            |> Enum.map(fn {t, i} -> if i == idx, do: updated_trade, else: t end)
+
+          socket = assign(socket, :trades, trades)
+
+          {:noreply,
+           if warning do
+             put_toast(socket, :warning, warning)
+           else
+             put_toast(socket, :info, "Size in R computed and saved")
+           end}
+
+        {:error, changeset} ->
+          {:noreply, put_toast(socket, :error, "Failed to save: #{inspect(changeset.errors)}")}
+      end
     end
   end
 
@@ -601,14 +650,22 @@ defmodule JournalexWeb.TradesDumpLive do
         md = combined.metadata_draft
         wd = combined.writeup_draft
 
+        # Auto-compute size_in_r if the flag is set in the draft metadata
+        {processed_metadata_attrs, size_warning} =
+          if md do
+            ma = preserve_readonly_fields(md.metadata || %{}, trade.metadata)
+            maybe_auto_compute_size_in_r(ma, trade)
+          else
+            {nil, nil}
+          end
+
         # Build update attrs from whichever references exist
         attrs =
           %{}
           |> then(fn a ->
             if md do
-              metadata_attrs = preserve_readonly_fields(md.metadata || %{}, trade.metadata)
               a
-              |> Map.merge(%{metadata: metadata_attrs, metadata_version: md.metadata_version})
+              |> Map.merge(%{metadata: processed_metadata_attrs, metadata_version: md.metadata_version})
               |> maybe_put_draft_journal_data(trade, md.journal_data)
             else
               a
@@ -638,6 +695,7 @@ defmodule JournalexWeb.TradesDumpLive do
            |> assign(:trades, trades)
            |> assign(:combined_drafts, CombinedDrafts.list_drafts())
            |> assign(:bound_drafts_map, Map.put(socket.assigns.bound_drafts_map, trade.id, bound_draft))
+           |> then(fn s -> if size_warning, do: put_toast(s, :warning, size_warning), else: s end)
            |> put_toast(:info, "Bound \"#{combined.name}\" to #{trade.ticker}@#{DateTime.to_iso8601(trade.datetime)}#{suffix}")}
         else
           {:error, %Ecto.Changeset{} = cs} ->
@@ -1453,6 +1511,10 @@ defmodule JournalexWeb.TradesDumpLive do
         title = row_title(row)
         page_id = Map.get(socket.assigns.notion_page_ids || %{}, title)
 
+        # For V3 LOSE trades with nil size_in_r/r_value, persist computed values
+        # before pushing so DB and Notion stay consistent after the update.
+        {row, socket} = maybe_persist_computed_size_r(row, idx, socket)
+
         {next_queue, increment_processed?} =
           case page_id do
             id when is_binary(id) ->
@@ -1465,7 +1527,7 @@ defmodule JournalexWeb.TradesDumpLive do
               {rest, true}
           end
 
-        # Recompute diffs for this row
+        # Recompute diffs for this row (uses updated row so DB matches Notion)
         row_incons = socket.assigns.row_inconsistencies || %{}
         row_incons = recompute_row_diffs(row_incons, page_id, idx, row)
 
@@ -1970,6 +2032,7 @@ defmodule JournalexWeb.TradesDumpLive do
         on_clear_writeup_event="clear_writeup"
         on_sync_writeup_event="sync_writeup_from_notion"
         on_open_writeup_modal_event="open_writeup_modal"
+        on_recalculate_size_event="recalculate_size_in_r"
       />
 
       <.trade_pagination_controls
@@ -2361,6 +2424,7 @@ defmodule JournalexWeb.TradesDumpLive do
       too_loose_stop_loss?: params["too_loose_stop_loss"] == "true",
       use_draft_order?: params["use_draft_order"] == "true",
       random_intraday_trend?: params["random_intraday_trend"] == "true",
+      auto_calculate_from_winning_trade?: params["auto_calculate_from_winning_trade"] == "true",
       # Multi-select fields
       close_time_comment: join_multi_select(params["close_time_comment"]),
       extra_setup_comment: join_multi_select(params["extra_setup_comment"]),
@@ -2405,6 +2469,154 @@ defmodule JournalexWeb.TradesDumpLive do
   end
 
   defp maybe_put_draft_journal_data(attrs, _trade, _), do: attrs
+
+  # For V3 trades, persist any missing computed/fallback size fields before pushing
+  # to Notion so DB, diffing, and Notion stay consistent.
+  defp maybe_persist_computed_size_r(%{metadata_version: 3} = row, idx, socket) do
+    meta = row.metadata || %{}
+    size_in_r = Map.get(meta, "size_in_r") || Map.get(meta, :size_in_r)
+
+    r_value_nil? =
+      is_nil(Map.get(meta, "r_value")) and is_nil(Map.get(meta, :r_value))
+
+    updated_meta =
+      meta
+      |> maybe_put_v3_size_in_r(row, size_in_r)
+      |> maybe_put_v3_r_value(r_value_nil?)
+
+    if updated_meta == meta do
+      {row, socket}
+    else
+      case Journalex.Trades.update_trade(row, %{
+             metadata: updated_meta,
+             metadata_version: 3
+           }) do
+        {:ok, updated_row} ->
+          trades =
+            socket.assigns.trades
+            |> Enum.with_index()
+            |> Enum.map(fn {t, i} -> if i == idx, do: updated_row, else: t end)
+
+          {updated_row, assign(socket, :trades, trades)}
+
+        _ ->
+          {row, socket}
+      end
+    end
+  end
+
+  defp maybe_persist_computed_size_r(row, _idx, socket), do: {row, socket}
+
+  defp needs_v3_effective_field_sync?(%{metadata_version: 3} = row) do
+    meta = row.metadata || %{}
+    size_in_r = Map.get(meta, "size_in_r") || Map.get(meta, :size_in_r)
+    r_value = Map.get(meta, "r_value") || Map.get(meta, :r_value)
+    r_size = Journalex.Settings.get_r_size()
+    pl = decimal_to_float_or_nil(row.realized_pl)
+
+    r_value_missing? = is_nil(r_value) and is_number(r_size) and r_size > 0
+
+    size_in_r_missing? =
+      is_nil(size_in_r) and row.result == "LOSE" and is_number(r_size) and r_size > 0 and
+        not is_nil(pl)
+
+    r_value_missing? or size_in_r_missing?
+  end
+
+  defp needs_v3_effective_field_sync?(_), do: false
+
+  defp maybe_put_v3_size_in_r(meta, row, size_in_r) do
+    r_size = Journalex.Settings.get_r_size()
+    pl = decimal_to_float_or_nil(row.realized_pl)
+
+    cond do
+      not is_nil(size_in_r) ->
+        meta
+
+      row.result != "LOSE" ->
+        meta
+
+      not (is_number(r_size) and r_size > 0) ->
+        meta
+
+      is_nil(pl) ->
+        meta
+
+      true ->
+        computed = Float.round(abs(pl) / r_size, 2)
+
+        if computed > 0 do
+          Map.put(meta, "size_in_r", Decimal.from_float(computed))
+        else
+          meta
+        end
+    end
+  end
+
+  defp maybe_put_v3_r_value(meta, false), do: meta
+
+  defp maybe_put_v3_r_value(meta, true) do
+    case Journalex.Settings.get_r_size() do
+      r_size when is_number(r_size) and r_size > 0 ->
+        Map.put(meta, "r_value", Decimal.from_float(r_size * 1.0))
+
+      _ ->
+        meta
+    end
+  end
+
+  defp maybe_auto_compute_size_in_r(metadata_attrs, trade) do
+    auto? =
+      Map.get(metadata_attrs, :auto_calculate_from_winning_trade?) ||
+        Map.get(metadata_attrs, "auto_calculate_from_winning_trade?")
+
+    if not auto? do
+      {metadata_attrs, nil}
+    else
+      existing_size = Map.get(metadata_attrs, :size_in_r) || Map.get(metadata_attrs, "size_in_r")
+      existing_float = decimal_to_float_or_nil(existing_size)
+
+      if not is_nil(existing_float) and existing_float != 0.0 do
+        {metadata_attrs, nil}
+      else
+        pl_float = decimal_to_float_or_nil(trade.realized_pl)
+
+        irr_raw =
+          Map.get(metadata_attrs, :initial_risk_reward_ratio) ||
+            Map.get(metadata_attrs, "initial_risk_reward_ratio")
+
+        irr_float = decimal_to_float_or_nil(irr_raw)
+        r_size = Journalex.Settings.get_r_size()
+
+        cond do
+          is_nil(pl_float) or pl_float <= 0 ->
+            {metadata_attrs, "Auto-calculation skipped: trade P/L is not positive"}
+
+          is_nil(irr_float) or irr_float <= 0 ->
+            {metadata_attrs, "Auto-calculation skipped: initial R:R not set in draft"}
+
+          not (is_number(r_size) and r_size > 0) ->
+            {metadata_attrs, "Auto-calculation skipped: R size setting is invalid"}
+
+          true ->
+            computed = Float.round(abs(pl_float) / (r_size * irr_float), 2)
+            {Map.put(metadata_attrs, "size_in_r", Decimal.from_float(computed)), nil}
+        end
+      end
+    end
+  end
+
+  defp decimal_to_float_or_nil(nil), do: nil
+  defp decimal_to_float_or_nil(%Decimal{} = d), do: Decimal.to_float(d)
+  defp decimal_to_float_or_nil(n) when is_float(n), do: n
+  defp decimal_to_float_or_nil(n) when is_integer(n), do: n * 1.0
+
+  defp decimal_to_float_or_nil(s) when is_binary(s) do
+    case Float.parse(s) do
+      {f, _} -> f
+      :error -> nil
+    end
+  end
 
   defp draft_progression_chain(journal_data) when is_map(journal_data) do
     cond do

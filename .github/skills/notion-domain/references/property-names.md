@@ -186,6 +186,7 @@ These option lists were user-confirmed against the live V3 Notion datasource. Pr
 ## Critical Rules
 
 1. **V1 is frozen** — never add new fields or properties to V1
-2. **V3 is the current production version** — new fields go into `Metadata.V3`; `extract_v3_metadata_from_properties` and `build_v3_metadata_properties` in `notion.ex`. When a V3 boolean is added/removed, update all 5 locations: `v3.ex` (field + cast), `notion.ex` (extract + build), `metadata_form.ex` (`v3_flag_groups/0`), `trades_dump_live.ex` + `metadata_params_builder.ex` (`build_v3_metadata_attrs`/`build_v3`)
+2. **V3 is the current production version** — new fields go into `Metadata.V3`; `extract_v3_metadata_from_properties` and `build_v3_metadata_properties` in `notion.ex`. When a V3 Notion-synced field is added/removed, update all 6 locations: `v3.ex` (field + cast), `notion.ex` (extract + build + `metadata_diff_fields(3)`), `metadata_form.ex` (V3 UI), `trades_dump_live.ex` + `metadata_params_builder.ex` (`build_v3_metadata_attrs`/`build_v3`)
 3. **Always verify** the exact property name in `lib/journalex/notion.ex` before using it
 4. **The CamelCase/no-space rule only applies to V1/V2** — V3 has naming exceptions such as `"Realized P/L"`
+5. **V3 `CloseTimeslot` is metadata-owned** — unlike V2, do not derive it from `action_chain`; include it in `metadata_diff_fields(3)` and the V3 form/push pipeline

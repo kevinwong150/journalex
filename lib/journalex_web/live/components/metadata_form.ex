@@ -796,6 +796,7 @@ defmodule JournalexWeb.MetadataForm do
   attr :on_change_event, :string, default: nil
   attr :r_size, :float, default: nil
   attr :journal_data, :map, default: %{}
+  attr :on_recalculate_size_event, :string, default: nil
 
   def v3(assigns) do
     ~H"""
@@ -1068,11 +1069,37 @@ defmodule JournalexWeb.MetadataForm do
             </div>
             <div>
               <label class="block text-xs text-gray-500 mb-1">R Value ($) <span class="text-xs text-gray-400">(from config)</span></label>
-              <input type="number" name="r_value"
+              <%!-- Hidden input submits r_value; visible input is display-only (disabled does not submit) --%>
+              <input type="hidden" name="r_value" value={format_decimal(Map.get(metadata, :r_value) || Map.get(metadata, "r_value") || r_size_v3, "")} />
+              <input type="number"
                 value={format_decimal(Map.get(metadata, :r_value) || Map.get(metadata, "r_value") || r_size_v3, "")}
                 disabled
                 class="w-full px-3 py-1 text-sm border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" />
             </div>
+          </div>
+          <%!-- Auto-calculate size_in_r when bound to a winning trade --%>
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <label class="cursor-pointer">
+              <input type="checkbox" name="auto_calculate_from_winning_trade" value="true"
+                checked={Map.get(metadata, :auto_calculate_from_winning_trade?) || Map.get(metadata, "auto_calculate_from_winning_trade?")}
+                class="sr-only peer" />
+              <span class="inline-block border border-gray-300 rounded-full px-2.5 py-0.5 text-xs text-gray-600 peer-checked:bg-amber-500 peer-checked:text-white peer-checked:border-amber-500 transition">
+                Auto-calc from winning trade
+              </span>
+            </label>
+            <span class="text-xs text-gray-400 italic">on bind: |P/L| ÷ (r_size × initial R:R)</span>
+            <% auto_calc_checked? = Map.get(metadata, :auto_calculate_from_winning_trade?) || Map.get(metadata, "auto_calculate_from_winning_trade?") %>
+            <% v3_size_nil? = is_nil(Map.get(metadata, :size_in_r)) && is_nil(Map.get(metadata, "size_in_r")) %>
+            <button
+              :if={@on_recalculate_size_event && auto_calc_checked? && v3_size_nil?}
+              type="button"
+              phx-click={@on_recalculate_size_event}
+              phx-value-index={@idx}
+              class="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-medium text-amber-800 bg-amber-100 border border-amber-300 rounded-full hover:bg-amber-200 transition"
+              title="Auto-calculate is enabled but Size in R is empty — compute now"
+            >
+              &#9889; Compute now
+            </button>
           </div>
         </div>
 

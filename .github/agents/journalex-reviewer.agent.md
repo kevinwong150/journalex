@@ -40,6 +40,7 @@ Read only the files relevant to the code being reviewed (e.g., skip migrations.i
 - Blocking I/O (HTTP calls, `Finch.request`, slow Ecto queries, file reads) called directly inside `handle_info/2` or `mount/3` — must use `start_async/3` + `handle_async/3` to avoid blocking the channel process and dropping heartbeats
 - Standalone `<input>` / `<select>` controls using `phx-change` without a `name` attribute, handlers matching `%{"value" => ...}` instead of the control name, or persistent standalone controls that keep `phx-change` on the control instead of a tiny wrapper `<form phx-change=...>` — LiveView change payloads are keyed by input name, and name-only standalone controls proved brittle in real browser rerender paths when later events re-render the view
 - Forms or row editors that can rerender from sibling events before save but whose `phx-change` handler only flips a dirty flag or discards the current params while render still uses persisted/stale assigns — unsaved checkbox/select state will revert on rerender; LiveView must cache a normalized pending form snapshot in assigns and prefer it in render until save/reset
+- Disabled display-only inputs relied on for persisted values without a companion hidden input — browsers omit disabled controls from form submission; persisted computed values need a hidden `<input>` alongside the visible display control
 
 ### Context modules (`lib/journalex/**`, excluding `lib/journalex_web/**`)
 
@@ -57,6 +58,8 @@ Read only the files relevant to the code being reviewed (e.g., skip migrations.i
 
 - Hardcoded Notion datasource IDs — must use `Journalex.Notion.DataSources`
 - Wrong property names (spaces in V2 names, missing spaces in V1's `"Entry Timeslot"`)
+- Current-production V3 metadata changes that update only part of the pipeline — schema/cast, form submission, Notion extract/build/diff, and bulk repair/update flows must stay aligned; missing `metadata_diff_fields(3)` is a real correctness bug
+- Reusing V2 `action_chain`-derived `close_timeslot` logic in V3 code — V3 `close_timeslot` is stored in metadata and must be diffed via `metadata_diff_fields(3)`
 - References to removed helpers (`get_rich_text/2`, `maybe_put_rich_text/3`)
 - Building `rich_text` spans inline instead of via `BlockBuilder.rich_text/1` — bypassing chunking risks 400 errors for texts > 2000 chars
 - `get_in/2` used on Ecto schema structs such as `%Journalex.Trades.Trade{}` to read top-level fields (for example `[:journal_data, "progression_chain"]`) — schema structs do not implement `Access`; read the struct field with `Map.get/2` first, then traverse nested maps

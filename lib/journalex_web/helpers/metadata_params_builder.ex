@@ -169,6 +169,7 @@ defmodule JournalexWeb.MetadataParamsBuilder do
       too_loose_stop_loss?: params["too_loose_stop_loss"] == "true",
       use_draft_order?: params["use_draft_order"] == "true",
       random_intraday_trend?: params["random_intraday_trend"] == "true",
+      auto_calculate_from_winning_trade?: params["auto_calculate_from_winning_trade"] == "true",
       # Multi-select fields
       close_time_comment: join_multi_select(params["close_time_comment"]),
       extra_setup_comment: join_multi_select(params["extra_setup_comment"]),
