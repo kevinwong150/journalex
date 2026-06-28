@@ -46,3 +46,5 @@
 - `kpi_summary/1`, `equity_curve/1`, `calendar_heatmap/2`, `rr_analysis/1`, `available_versions/0`, `breakdown_by_dimension/2`, `long_vs_short/1`, `flags_impact/1`, `time_heatmap/2`, `day_of_week_breakdown/1`, `monthly_breakdown/1`, `scorecard_periods/2`, `streak_data/1`, `ticker_summary/1`
 - `flags_impact/1` compares ON vs OFF only within metadata versions that actually support the stored flag key; unsupported versions are excluded from the OFF baseline
 - `scorecard_periods/2` derives `top_flag` from the flag catalog for each row's metadata version so V3-only or renamed V3 flags surface correctly in mixed-version datasets
+- `multi_select_breakdown/2` is the V3 multi-select analytics path; it splits comma-separated values, trims blanks, deduplicates labels, and supports `patterns` plus `regular_lessons`
+- When analytics buckets can tie on the primary metric, keep ordering deterministic with a secondary sort key so chart output does not depend on map iteration order

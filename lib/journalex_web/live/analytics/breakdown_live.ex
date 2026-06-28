@@ -6,7 +6,7 @@ defmodule JournalexWeb.Analytics.BreakdownLive do
   import JournalexWeb.AnalyticsFilterBar
   import JournalexWeb.ChartComponent
 
-  @tabs [:rank, :setup, :sector, :close_trigger, :cap_size, :long_vs_short]
+  @tabs [:rank, :setup, :sector, :close_trigger, :cap_size, :patterns, :regular_lessons, :long_vs_short]
 
   @impl true
   def mount(_params, _session, socket) do
@@ -69,10 +69,15 @@ defmodule JournalexWeb.Analytics.BreakdownLive do
     opts = build_opts(a.selected_versions, a.from, a.to)
 
     {breakdown, ls} =
-      if a.active_tab == :long_vs_short do
-        {[], Analytics.long_vs_short(opts)}
-      else
-        {Analytics.breakdown_by_dimension(a.active_tab, opts), %{long: %{}, short: %{}}}
+      case a.active_tab do
+        :long_vs_short ->
+          {[], Analytics.long_vs_short(opts)}
+
+        tab when tab in [:patterns, :regular_lessons] ->
+          {Analytics.multi_select_breakdown(tab, opts), %{long: %{}, short: %{}}}
+
+        _ ->
+          {Analytics.breakdown_by_dimension(a.active_tab, opts), %{long: %{}, short: %{}}}
       end
 
     chart_option = if a.active_tab == :long_vs_short, do: %{}, else: build_chart(breakdown)
@@ -126,6 +131,8 @@ defmodule JournalexWeb.Analytics.BreakdownLive do
   defp tab_label(:sector), do: "Sector"
   defp tab_label(:close_trigger), do: "Close Trigger"
   defp tab_label(:cap_size), do: "Cap Size"
+  defp tab_label(:patterns), do: "Patterns"
+  defp tab_label(:regular_lessons), do: "Regular Lessons"
   defp tab_label(:long_vs_short), do: "Long vs Short"
 
   defp tabs, do: @tabs

@@ -507,6 +507,19 @@ test/test_helper.exs                    ← add MockAnalytics defmock
 
 **Deferred on purpose:** multi-select analytics dimensions (`patterns`, `regular_lessons`, `extra_setup_comment`, `good_things`) and humanized flag labels in Behavior/Scorecard remain separate follow-up work.
 
+### 2026-06-28 — Breakdown page extended for V3 multi-select dimensions
+
+**New breakdown path for comma-separated metadata fields:** `Journalex.Analytics` now has a dedicated `multi_select_breakdown/2` helper for V3 multi-select fields. It splits comma-separated values, trims whitespace, ignores blanks, and counts each selected option as its own bucket membership instead of treating the whole string as one label.
+
+**Breakdown LiveView now exposes the first multi-select tabs:** `JournalexWeb.Analytics.BreakdownLive` includes `patterns` and `regular_lessons` alongside the existing scalar tabs, and routes those two tabs through the new multi-select helper while leaving the scalar `breakdown_by_dimension/2` path untouched.
+
+**Tests added:** Focused regression coverage now exists for:
+- comma-separated bucket splitting and multi-bucket membership
+- whitespace trimming and empty-segment filtering
+- render-visible Breakdown LiveView tabs for `patterns` and `regular_lessons`
+
+**Deferred on purpose:** `extra_setup_comment` and `good_things` stay out of this pass until the first multi-select rollout is validated in the UI and test suite.
+
 ### 2026-04-23 — Planning session complete
 
 - Full analytics plan established: 11 pages across 8 categories (A–H)

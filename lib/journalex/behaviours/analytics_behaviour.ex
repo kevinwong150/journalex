@@ -21,6 +21,9 @@ defmodule Journalex.AnalyticsBehaviour do
   @callback breakdown_by_dimension(atom(), keyword()) ::
               [{String.t(), float(), float(), integer()}]
 
+  @callback multi_select_breakdown(atom(), keyword()) ::
+              [{String.t(), float(), float(), integer()}]
+
   @callback long_vs_short(keyword()) :: %{long: map(), short: map()}
 
   @callback flags_impact(keyword()) ::

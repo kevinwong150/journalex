@@ -1,0 +1,2 @@
+- V3 multi-select analytics now treats `patterns` and `regular_lessons` as comma-separated multi-select fields and flattens them into per-label buckets.
+- Analytics ranking output should use a deterministic tie-break key when totals are equal; relying on map iteration order makes chart ordering unstable.

@@ -277,6 +277,36 @@ defmodule Journalex.Analytics do
       win_rate = if count > 0, do: Float.round(wins / count, 4), else: 0.0
       {label, total_r, win_rate, count}
     end)
+    |> Enum.sort_by(fn {label, total_r, _, _} -> {-total_r, label} end)
+  end
+
+  @impl true
+  def multi_select_breakdown(dimension, opts \\ []) do
+    field = multi_select_field(dimension)
+    r_size = Keyword.get(opts, :r_size, Settings.get_r_size())
+
+    rows =
+      Repo.all(
+        from t in base_query(opts),
+          where: not is_nil(fragment("?->>?", t.metadata, ^field)),
+          select: {fragment("?->>?", t.metadata, ^field), t.result, t.realized_pl}
+      )
+
+    rows
+    |> Enum.flat_map(fn {raw_value, result, pl} ->
+      raw_value
+      |> split_multi_select_values()
+      |> Enum.map(fn label -> {label, result, pl} end)
+    end)
+    |> Enum.group_by(fn {label, _, _} -> label end)
+    |> Enum.map(fn {label, group} ->
+      count = length(group)
+      wins = Enum.count(group, fn {_, result, _} -> result == "WIN" end)
+      r_values = Enum.map(group, fn {_, _, pl} -> to_r(pl, r_size) end)
+      total_r = r_values |> Enum.sum() |> Float.round(3)
+      win_rate = if count > 0, do: Float.round(wins / count, 4), else: 0.0
+      {label, total_r, win_rate, count}
+    end)
     |> Enum.sort_by(fn {_, total_r, _, _} -> -total_r end)
   end
 
@@ -286,6 +316,20 @@ defmodule Journalex.Analytics do
   defp dimension_field(:close_trigger), do: "close_trigger"
   defp dimension_field(:cap_size), do: "cap_size"
   defp dimension_field(:order_type), do: "order_type"
+
+  defp multi_select_field(:patterns), do: "patterns"
+  defp multi_select_field(:regular_lessons), do: "regular_lessons"
+
+  defp split_multi_select_values(nil), do: []
+  defp split_multi_select_values(""), do: []
+
+  defp split_multi_select_values(value) when is_binary(value) do
+    value
+    |> String.split(",")
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+  end
 
   # ---------------------------------------------------------------------------
   # Long vs short
