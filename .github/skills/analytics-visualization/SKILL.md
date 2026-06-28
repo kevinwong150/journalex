@@ -492,6 +492,21 @@ test/test_helper.exs                    ← add MockAnalytics defmock
 
 > **Living Document Rule:** This file is the source of truth for the analytics visualization phase. After completing any analytics-related task — implementing a page, establishing a code pattern, discovering a pitfall, creating a component, or making a design decision — append a dated entry to this Changelog section. Future agents and sessions depend on this log to understand what has been built, what patterns are established, and what decisions were made along the way.
 
+### 2026-06-28 — V3 flag alignment and same-version analytics semantics
+
+**Behavior + Scorecard correctness updated for V3 metadata:** `Journalex.Analytics` now has an explicit V3 flag catalog, including `following_rule?` and renamed V3 keys such as `slippage_entry?`, `choppy_chart?`, and `decision_affected_by_other_trade?`.
+
+**Same-version rule established for flag impact:** `flags_impact/1` no longer treats unsupported versions as implicit OFF rows. For each flag, ON/OFF comparison is computed only across trades whose `metadata_version` supports that exact stored key. This prevents V3-only flags from being diluted by V1/V2 rows and keeps renamed V2/V3 flags separate unless a future explicit normalization pass is added.
+
+**Scorecard top_flag updated for V3:** `scorecard_periods/2` now derives `top_flag` from the flag catalog that matches each row's metadata version, so V3-only flags can surface in mixed-version datasets without relying on stale V2 lists.
+
+**Tests added:** Focused regression coverage now exists for:
+- V3-only flag `following_rule?`
+- Renamed V3 flag `slippage_entry?`
+- Mixed-version exclusion from the OFF baseline for version-specific flags
+
+**Deferred on purpose:** multi-select analytics dimensions (`patterns`, `regular_lessons`, `extra_setup_comment`, `good_things`) and humanized flag labels in Behavior/Scorecard remain separate follow-up work.
+
 ### 2026-04-23 — Planning session complete
 
 - Full analytics plan established: 11 pages across 8 categories (A–H)

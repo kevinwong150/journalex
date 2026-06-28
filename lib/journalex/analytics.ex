@@ -19,8 +19,41 @@ defmodule Journalex.Analytics do
   alias Journalex.Trades.Trade
 
   @v1_flags ~w(revenge_trade? fomo? operation_mistake? follow_setup? follow_stop_loss_management? unnecessary_trade?)
+
   @v2_flags ~w(revenge_trade? fomo? operation_mistake? add_size? adjusted_risk_reward? align_with_trend? better_risk_reward_ratio? big_picture? earning_report? follow_up_trial? good_lesson? hot_sector? momentum? news? normal_emotion? overnight? overnight_in_purpose? slipped_position? choppychart? close_trade_remorse? no_luck? no_risk? clear_liquidity_grab? entry_after_liquidity_grab? instant_lose? too_tight_stop_loss? affected_by_other_trade? mid_range? fully_wrong_direction?)
-  @all_flags Enum.uniq(@v1_flags ++ @v2_flags)
+
+  @v3_flags ~w(
+    revenge_trade? fomo? operation_mistake? better_risk_reward_ratio?
+    choppy_chart? close_trade_remorse? earning_report? follow_up_trial?
+    fully_wrong_direction? good_lesson? hot_sector? mid_range?
+    news? normal_emotion? overnight? overnight_in_purpose?
+    too_tight_stop_loss? decision_affected_by_other_trade?
+    slippage_entry? align_ticker_big_picture_trend?
+    align_ticker_intraday_trend? adjusted_stoploss? adjusted_target?
+    align_global_trend? align_sector_trend? averaging_down?
+    averaging_up? following_trade? following_rule? lack_confidence?
+    large_size_in_purpose? small_size_in_purpose?
+    reasonable_entry_story? reasonable_exit_story? scalp?
+    should_record_obsidian? size_matching_story?
+    too_loose_stop_loss? use_draft_order? random_intraday_trend?
+  )
+
+  @flags_by_version %{
+    1 => @v1_flags,
+    2 => @v2_flags,
+    3 => @v3_flags
+  }
+
+  @flag_versions (
+    @flags_by_version
+    |> Enum.reduce(%{}, fn {version, flags}, acc ->
+      Enum.reduce(flags, acc, fn flag, inner_acc ->
+        Map.update(inner_acc, flag, [version], fn versions -> [version | versions] end)
+      end)
+    end)
+    |> Map.new(fn {flag, versions} -> {flag, Enum.sort(versions)} end)
+  )
+
   @weekday_names ~w(Sun Mon Tue Wed Thu Fri Sat)
 
   # ---------------------------------------------------------------------------
@@ -304,16 +337,19 @@ defmodule Journalex.Analytics do
 
     flags =
       versions_present
-      |> Enum.flat_map(fn
-        1 -> @v1_flags
-        _ -> @v2_flags
-      end)
+      |> Enum.flat_map(&flags_for_version/1)
       |> Enum.uniq()
 
     Enum.map(flags, fn flag ->
+      comparable_rows =
+        rows
+        |> Enum.filter(fn {version, _, _, _} ->
+          version in supported_versions_for_flag(flag)
+        end)
+
       {on_rows, off_rows} =
-        Enum.split_with(rows, fn {_, _, _, meta} ->
-          is_map(meta) and Map.get(meta, flag) == true
+        Enum.split_with(comparable_rows, fn {_, _, _, meta} ->
+          flag_enabled?(meta, flag)
         end)
 
       on_r = Enum.map(on_rows, fn {_, _, pl, _} -> to_r(pl, r_size) end)
@@ -534,21 +570,24 @@ defmodule Journalex.Analytics do
             t.result,
             t.realized_pl,
             fragment("?->>'rank'", t.metadata),
+            t.metadata_version,
             t.metadata
           }
       )
 
     rows
-    |> Enum.group_by(fn {period, _, _, _, _} -> period end)
+    |> Enum.group_by(fn {period, _, _, _, _, _} -> period end)
     |> Enum.map(fn {period, group} ->
       count = length(group)
-      wins = Enum.count(group, fn {_, r, _, _, _} -> r == "WIN" end)
-      r_values = Enum.map(group, fn {_, _, pl, _, _} -> to_r(pl, r_size) end)
+      wins = Enum.count(group, fn {_, r, _, _, _, _} -> r == "WIN" end)
+      r_values = Enum.map(group, fn {_, _, pl, _, _, _} -> to_r(pl, r_size) end)
       total_r = r_values |> Enum.sum() |> Float.round(3)
       avg_r = safe_avg(r_values)
       win_pct = if count > 0, do: Float.round(wins / count, 4), else: 0.0
-      top_rank = most_common(Enum.map(group, fn {_, _, _, rank, _} -> rank end))
-      top_flag = most_frequent_flag(Enum.map(group, fn {_, _, _, _, meta} -> meta end))
+      top_rank = most_common(Enum.map(group, fn {_, _, _, rank, _, _} -> rank end))
+
+      top_flag =
+        most_frequent_flag(Enum.map(group, fn {_, _, _, _, version, meta} -> {version, meta} end))
 
       %{
         period: period,
@@ -571,19 +610,26 @@ defmodule Journalex.Analytics do
     |> elem(0)
   end
 
-  defp most_frequent_flag(metas) do
-    metas
-    |> Enum.flat_map(fn meta ->
-      if is_map(meta) do
-        Enum.filter(@all_flags, fn flag -> Map.get(meta, flag) == true end)
-      else
+  defp most_frequent_flag(versioned_metas) do
+    versioned_metas
+    |> Enum.flat_map(fn
+      {version, meta} when is_map(meta) ->
+        Enum.filter(flags_for_version(version), fn flag -> flag_enabled?(meta, flag) end)
+
+      _ ->
         []
-      end
     end)
     |> Enum.frequencies()
     |> Enum.max_by(fn {_, freq} -> freq end, fn -> {nil, 0} end)
     |> elem(0)
   end
+
+  defp flags_for_version(version), do: Map.get(@flags_by_version, version, [])
+
+  defp supported_versions_for_flag(flag), do: Map.get(@flag_versions, flag, [])
+
+  defp flag_enabled?(meta, flag) when is_map(meta), do: Map.get(meta, flag) == true
+  defp flag_enabled?(_meta, _flag), do: false
 
   # ---------------------------------------------------------------------------
   # Streak data
