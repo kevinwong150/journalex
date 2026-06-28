@@ -85,7 +85,7 @@ defmodule Journalex.Trades.Metadata.V3 do
     field :align_ticker_big_picture_trend?, :boolean, default: false     # was :big_picture?
     field :align_ticker_intraday_trend?, :boolean, default: false        # was :align_with_trend?
 
-    # New in V3 (17 flags)
+    # New in V3 (18 flags)
     field :adjusted_stoploss?, :boolean, default: false
     field :adjusted_target?, :boolean, default: false
     field :align_global_trend?, :boolean, default: false
@@ -93,6 +93,7 @@ defmodule Journalex.Trades.Metadata.V3 do
     field :averaging_down?, :boolean, default: false
     field :averaging_up?, :boolean, default: false
     field :following_trade?, :boolean, default: false
+    field :following_rule?, :boolean, default: false
     field :lack_confidence?, :boolean, default: false
     field :large_size_in_purpose?, :boolean, default: false
     field :small_size_in_purpose?, :boolean, default: false
@@ -141,7 +142,7 @@ defmodule Journalex.Trades.Metadata.V3 do
     decision_affected_by_other_trade? slippage_entry?
     align_ticker_big_picture_trend? align_ticker_intraday_trend?
     adjusted_stoploss? adjusted_target? align_global_trend? align_sector_trend?
-    averaging_down? averaging_up? following_trade? lack_confidence?
+    averaging_down? averaging_up? following_trade? following_rule? lack_confidence?
     large_size_in_purpose? small_size_in_purpose?
     reasonable_entry_story? reasonable_exit_story?
     scalp? should_record_obsidian? size_matching_story?

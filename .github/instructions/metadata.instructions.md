@@ -100,6 +100,10 @@ Map.put(attrs, "size_in_r", value)
 
 Do **not** use atom keys on JSONB-sourced maps. Ecto `convert_params/1` only converts atom keys when the first key is an atom. On real JSONB maps the first key is typically a string, so atom-keyed computed values are silently dropped.
 
+### 2b. `cast/3` field lists must stay atom-keyed
+
+`cast/3` expects schema field names as atoms. For `Metadata.V3`, keep `@boolean_fields` as a list of atom keys (for example `:done?`), not strings (for example `"done?"`). Converting that list to strings causes runtime `ArgumentError` failures in bound draft/update paths.
+
 ### 3. Disabled inputs do not submit
 
 Browsers omit disabled inputs from form payloads. If a V3 field is display-only but still must be saved, render a hidden input alongside the disabled display input:
@@ -185,6 +189,7 @@ Shared properties in older versions: `"Done?"`, `"LostData?"`, `"Rank"`, `"Setup
 | `averaging_down?` | `"AveragingDown?"` | New V3 |
 | `averaging_up?` | `"AveragingUp?"` | New V3 |
 | `following_trade?` | `"FollowingTrade?"` | New V3 |
+| `following_rule?` | `"FollowingRule?"` | New V3 |
 | `lack_confidence?` | `"LackConfidence?"` | New V3 |
 | `large_size_in_purpose?` | `"LargeSizeInPurpose?"` | New V3 |
 | `small_size_in_purpose?` | `"SmallSizeInPurpose?"` | New V3 |

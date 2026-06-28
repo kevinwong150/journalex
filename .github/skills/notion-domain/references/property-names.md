@@ -115,6 +115,7 @@ Both V1 and V2 use **CamelCase** property names with no spaces, except for one V
 | `"EntryTimeslot"` |
 | `"ExtraSetupComment"` |
 | `"FollowingTrade?"` |
+| `"FollowingRule?"` |
 | `"FollowUpTrial?"` |
 | `"FOMO?"` |
 | `"FormattedDuration"` |

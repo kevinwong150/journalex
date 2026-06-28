@@ -7,6 +7,8 @@
 
 ## Current Baseline
 
+- Docker image baseline (June 2026): `mix.exs` targets `elixir: "~> 1.18"`; keep `Dockerfile` and `Dockerfile.test` pinned to `FROM elixir:1.18` to avoid `elixir:latest` Mix/runtime drift
+- Docker rebuild validation (June 2026): `docker compose build --no-cache web` then `docker compose --env-file .env up -d` moves past the old `Mix.Sync.Lock.switch_file_read/1` crash into normal dependency compilation; `docker compose -f docker-compose.test.yml build --no-cache` also succeeds on the pinned test image
 - Fresh rebuilt test image: 235 tests, 0 failures (April 2026)
 - V3 migration complete (Phases 1-11): 92 files compiled, 0 errors/warnings in MIX_ENV=test (May 2026)
 - V3 fully wired end-to-end (Notion properties confirmed, docker-compose env var added, compile passes): `default_metadata_version` bumped to `3` in `config.exs` (May 2026)

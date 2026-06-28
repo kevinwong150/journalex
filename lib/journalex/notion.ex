@@ -766,6 +766,7 @@ defmodule Journalex.Notion do
     |> put_if_present(:averaging_down?, get_checkbox(properties, "AveragingDown?"))
     |> put_if_present(:averaging_up?, get_checkbox(properties, "AveragingUp?"))
     |> put_if_present(:following_trade?, get_checkbox(properties, "FollowingTrade?"))
+    |> put_if_present(:following_rule?, get_checkbox(properties, "FollowingRule?"))
     |> put_if_present(:lack_confidence?, get_checkbox(properties, "LackConfidence?"))
     |> put_if_present(:large_size_in_purpose?, get_checkbox(properties, "LargeSizeInPurpose?"))
     |> put_if_present(:small_size_in_purpose?, get_checkbox(properties, "SmallSizeInPurpose?"))
@@ -940,6 +941,7 @@ defmodule Journalex.Notion do
       {:averaging_down?, :boolean},
       {:averaging_up?, :boolean},
       {:following_trade?, :boolean},
+      {:following_rule?, :boolean},
       {:lack_confidence?, :boolean},
       {:large_size_in_purpose?, :boolean},
       {:small_size_in_purpose?, :boolean},
@@ -1278,6 +1280,7 @@ defmodule Journalex.Notion do
     |> maybe_put_checkbox("AveragingDown?", get_meta_field(meta, :averaging_down?))
     |> maybe_put_checkbox("AveragingUp?", get_meta_field(meta, :averaging_up?))
     |> maybe_put_checkbox("FollowingTrade?", get_meta_field(meta, :following_trade?))
+    |> maybe_put_checkbox("FollowingRule?", get_meta_field(meta, :following_rule?))
     |> maybe_put_checkbox("LackConfidence?", get_meta_field(meta, :lack_confidence?))
     |> maybe_put_checkbox("LargeSizeInPurpose?", get_meta_field(meta, :large_size_in_purpose?))
     |> maybe_put_checkbox("SmallSizeInPurpose?", get_meta_field(meta, :small_size_in_purpose?))

@@ -19,3 +19,10 @@
 ## `Process.sleep` in Tasks
 
 `Process.sleep` is safe inside `start_async` task lambdas — the lambda runs in a separate process, so sleeping does not block the LiveView channel.
+
+## V3 FollowingRule? Wiring
+
+`FollowingRule?` is a Notion-synced V3 checkbox property. Keep these mappings aligned when touched:
+- `following_rule?` in `lib/journalex/trades/metadata/v3.ex`
+- `"FollowingRule?"` in `extract_v3_metadata_from_properties/1`, `build_v3_metadata_properties/1`, and `metadata_diff_fields(3)` in `lib/journalex/notion.ex`
+- `following_rule` form param handling in `lib/journalex_web/live/trades_dump_live.ex` and `lib/journalex_web/helpers/metadata_params_builder.ex`

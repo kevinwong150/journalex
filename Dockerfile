@@ -1,4 +1,4 @@
-FROM elixir:latest
+FROM elixir:1.18
 
 RUN apt-get update -y && apt-get install -y curl && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \

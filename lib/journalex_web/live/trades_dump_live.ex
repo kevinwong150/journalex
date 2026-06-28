@@ -2413,6 +2413,7 @@ defmodule JournalexWeb.TradesDumpLive do
       averaging_down?: params["averaging_down"] == "true",
       averaging_up?: params["averaging_up"] == "true",
       following_trade?: params["following_trade"] == "true",
+      following_rule?: params["following_rule"] == "true",
       lack_confidence?: params["lack_confidence"] == "true",
       large_size_in_purpose?: params["large_size_in_purpose"] == "true",
       small_size_in_purpose?: params["small_size_in_purpose"] == "true",

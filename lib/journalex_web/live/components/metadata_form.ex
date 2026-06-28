@@ -1349,6 +1349,7 @@ defmodule JournalexWeb.MetadataForm do
       "Just hit target then reverse",
       "Just hit stoploss then reverse",
       "Reverse right before hitting target",
+      "Reverse right before hitting stop loss",
       "Reverse right before hitting stoploss"
     ]
   end
@@ -1378,10 +1379,11 @@ defmodule JournalexWeb.MetadataForm do
         "Key level - Intraday",
         "Key level - Multiday",
         "Consolidation range",
+        "Volume level",
         "Double top/bottom"
       ]},
       {"Candle Patterns", [
-        "Three Inside Down",
+        "Three inside down",
         "Gravestone doji",
         "Engulfing candle",
         "Sharp top round top"
@@ -1395,6 +1397,10 @@ defmodule JournalexWeb.MetadataForm do
       ]},
       {"Other", [
         "Lead Lag",
+        "Sudden Market Shift",
+        "VWAP reversal",
+        "1min 50ma Reversal",
+        "2min 50ma Reversal",
         "N/A"
       ]}
     ]
@@ -1404,6 +1410,8 @@ defmodule JournalexWeb.MetadataForm do
     [
       "Mental",
       "Discipline",
+      "Patience",
+      "Be Selective",
       "Risk Management",
       "Sizing"
     ]
@@ -1429,6 +1437,7 @@ defmodule JournalexWeb.MetadataForm do
         {"random_intraday_trend", "Random Intraday Trend"}
       ]},
       {"Self Assessment", [
+        {"following_rule", "Following Rule"},
         {"normal_emotion", "Normal Emotion"},
         {"reasonable_entry_story", "Reasonable Entry Story"},
         {"reasonable_exit_story", "Reasonable Exit Story"},
