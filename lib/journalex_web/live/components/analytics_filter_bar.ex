@@ -9,6 +9,7 @@ defmodule JournalexWeb.AnalyticsFilterBar do
   - "toggle_version"  %{"version" => "2"}
   - "filter_dates"    %{"from" => "2026-01-01", "to" => "2026-04-23"}
   - "set_r_mode"      %{"mode" => "r" | "usd" | "both"}
+  - "toggle_exception_days" %{}
   - "reload"          %{} — manual chart refresh
   """
 
@@ -17,6 +18,8 @@ defmodule JournalexWeb.AnalyticsFilterBar do
   attr :from, :string, default: nil
   attr :to, :string, default: nil
   attr :r_mode, :string, default: "r"
+  attr :exception_days, :list, default: []
+  attr :exclude_exception_days?, :boolean, default: true
 
   def analytics_filter_bar(assigns) do
     today = Date.utc_today()
@@ -128,6 +131,57 @@ defmodule JournalexWeb.AnalyticsFilterBar do
           ↺ Reload
         </button>
       </div>
+
+      <.analytics_exception_day_controls
+        exception_days={@exception_days}
+        exclude_exception_days?={@exclude_exception_days?}
+      />
+    </div>
+    """
+  end
+
+  attr :exception_days, :list, default: []
+  attr :exclude_exception_days?, :boolean, default: true
+
+  def analytics_exception_day_controls(assigns) do
+    ~H"""
+    <div class="flex flex-wrap items-center gap-3 px-4 py-2 bg-white/70">
+      <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+        Exception days:
+      </span>
+
+      <div class="flex flex-wrap items-center gap-1.5">
+        <%= if @exception_days == [] do %>
+          <span class="rounded-full border border-dashed border-zinc-300 bg-zinc-50 px-2.5 py-0.5 text-xs text-zinc-500">
+            None configured
+          </span>
+        <% else %>
+          <%= for day <- @exception_days do %>
+            <span class="rounded-full border border-zinc-300 bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-700">
+              <%= Date.to_iso8601(day) %>
+            </span>
+          <% end %>
+        <% end %>
+      </div>
+
+      <button
+        type="button"
+        phx-click="toggle_exception_days"
+        class={[
+          "ml-auto rounded px-2.5 py-0.5 font-medium border",
+          if(@exclude_exception_days?,
+            do: "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700",
+            else: "bg-white text-zinc-600 border-zinc-300 hover:bg-zinc-100"
+          )
+        ]}
+        title={if(@exclude_exception_days?, do: "Exception days are excluded", else: "Exception days are included")}
+      >
+        <%= if @exclude_exception_days? do %>
+          Excluding exception days
+        <% else %>
+          Including exception days
+        <% end %>
+      </button>
     </div>
     """
   end

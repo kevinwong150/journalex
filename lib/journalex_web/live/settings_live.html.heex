@@ -4,7 +4,7 @@
     <p class="text-sm text-zinc-500 mt-1">Configure application behaviour and defaults.</p>
   </div>
 
-  <form phx-submit="save_settings" class="flex flex-col gap-6">
+  <form phx-change="change_settings" phx-submit="save_settings" class="flex flex-col gap-6">
 
     <!-- ── Trades Dump ────────────────────────────────── -->
     <div class="bg-white border border-zinc-200 rounded-lg shadow-sm overflow-hidden">
@@ -24,7 +24,7 @@
             class="w-32 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
           >
             <%= for v <- @supported_versions do %>
-              <option value={v} selected={v == @default_metadata_version}>V<%= v %></option>
+              <option value={v} selected={Integer.to_string(v) == @settings_form["default_metadata_version"]}>V<%= v %></option>
             <% end %>
           </select>
           <p class="text-xs text-zinc-500">
@@ -41,7 +41,7 @@
               type="checkbox"
               name="settings[auto_check_on_load]"
               value="true"
-              checked={@auto_check_on_load}
+              checked={@settings_form["auto_check_on_load"]}
               class="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500"
             />
             <span class="text-sm text-zinc-700">Enable automatic Notion check on page load</span>
@@ -62,7 +62,7 @@
             type="number"
             id="settings_r_size"
             name="settings[r_size]"
-            value={@r_size}
+            value={@settings_form["r_size"]}
             min="0.01"
             step="0.01"
             class="w-32 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
@@ -91,7 +91,7 @@
             type="number"
             id="settings_activity_page_size"
             name="settings[activity_page_size]"
-            value={@activity_page_size}
+            value={@settings_form["activity_page_size"]}
             min="5"
             max="200"
             step="5"
@@ -111,7 +111,7 @@
             type="number"
             id="settings_filter_visible_weeks"
             name="settings[filter_visible_weeks]"
-            value={@filter_visible_weeks}
+            value={@settings_form["filter_visible_weeks"]}
             min="1"
             max="52"
             step="1"
@@ -133,7 +133,7 @@
               type="number"
               id="settings_summary_period_value"
               name="settings[summary_period_value]"
-              value={@summary_period_value}
+              value={@settings_form["summary_period_value"]}
               min="1"
               max="52"
               step="1"
@@ -144,14 +144,69 @@
               name="settings[summary_period_unit]"
               class="w-28 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
             >
-              <option value="week" selected={@summary_period_unit == "week"}>Week(s)</option>
-              <option value="day" selected={@summary_period_unit == "day"}>Day(s)</option>
+              <option value="week" selected={@settings_form["summary_period_unit"] == "week"}>Week(s)</option>
+              <option value="day" selected={@settings_form["summary_period_unit"] == "day"}>Day(s)</option>
             </select>
           </div>
           <p class="text-xs text-zinc-500">
             Only trades from the most recent N week(s) or day(s) are included in the Summary
             (Realized P/L by Symbol) table. The Recent Activity table is unaffected. Default: 3 weeks.
           </p>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Analytics ─────────────────────────────────── -->
+    <div class="bg-white border border-zinc-200 rounded-lg shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-100 bg-zinc-50">
+        <h2 class="text-sm font-semibold text-zinc-700 uppercase tracking-wide">Analytics</h2>
+      </div>
+      <div class="px-6 py-5 flex flex-col gap-6">
+
+        <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-sm font-medium text-zinc-700">
+              Exception Days
+            </label>
+            <p class="text-xs text-zinc-500">
+              Trades on these dates are excluded from all analytics queries automatically.
+              Use one calendar date per row.
+            </p>
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <%= for {value, idx} <- Enum.with_index(@settings_form["analytics_exception_days"] || []) do %>
+              <div class="flex items-center gap-2">
+                <input
+                  type="date"
+                  name="settings[analytics_exception_days][]"
+                  value={value}
+                  class="w-44 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
+                />
+                <button
+                  type="button"
+                  phx-click="remove_exception_day"
+                  phx-value-index={idx}
+                  class="inline-flex items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                  title="Remove exception day"
+                >
+                  Remove
+                </button>
+              </div>
+            <% end %>
+          </div>
+
+          <div>
+            <button
+              type="button"
+              phx-click="add_exception_day"
+              class="inline-flex items-center rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              title="Add exception day"
+            >
+              Add date
+            </button>
+          </div>
         </div>
 
       </div>
@@ -173,7 +228,7 @@
                 type="checkbox"
                 name={"settings[nav_pinned_pages][#{key}]"}
                 value="true"
-                checked={key in @nav_pinned_pages}
+                checked={key in (@settings_form["nav_pinned_pages"] || [])}
                 class="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500"
               />
               <span class="text-sm text-zinc-700"><%= label %></span>

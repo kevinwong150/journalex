@@ -38,6 +38,13 @@
 - `/analytics/calendar` — Mon–Fri heatmap
 - `/analytics/risk` — R:R histogram + scatter, V2-only
 
+## Analytics Exception Days
+- Analytics exception-day exclusion is default-on and belongs in the shared analytics query, not per-page logic.
+- Source of truth is `Settings.get_analytics_exception_days/0`; the DB setting is stored as a JSON array string of ISO dates and read back as `Date` structs.
+- `Analytics.base_query/1` excludes matching trade dates via `datetime::date`, so every analytics function inherits the same exception-day rule.
+- The Settings editor uses repeatable native `type=date` inputs with add/remove controls.
+- Validation, normalization, and deduplication happen on save, and there is no per-page analytics toggle for this pass.
+
 ## Phase 3 (stub pages, not yet implemented)
 - equity, breakdown, tickers, time, behavior, scorecard, streaks, compare
 - These stub LiveViews do NOT yet have `handle_event("set_period", ...)` — must add when implementing

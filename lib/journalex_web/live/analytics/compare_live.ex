@@ -2,12 +2,14 @@ defmodule JournalexWeb.Analytics.CompareLive do
   use JournalexWeb, :live_view
 
   alias Journalex.{Analytics, Settings}
+  import JournalexWeb.AnalyticsFilterBar
   import JournalexWeb.ChartComponent
 
   @impl true
   def mount(_params, _session, socket) do
     versions_available = Analytics.available_versions()
     r_mode = Settings.get_analytics_r_mode()
+    exception_days = Settings.get_analytics_exception_days()
     today = Date.utc_today()
 
     # Default: Period A = last 30 days, Period B = 30 days before that
@@ -24,7 +26,9 @@ defmodule JournalexWeb.Analytics.CompareLive do
        from_a: from_a,
        to_a: to_a,
        from_b: from_b,
-       to_b: to_b
+       to_b: to_b,
+       exception_days: exception_days,
+       exclude_exception_days?: true
      )
      |> reload([])}
   end
@@ -54,16 +58,22 @@ defmodule JournalexWeb.Analytics.CompareLive do
   end
 
   @impl true
+  def handle_event("toggle_exception_days", _params, socket) do
+    {:noreply, reload(socket, exclude_exception_days?: !socket.assigns.exclude_exception_days?)}
+  end
+
+  @impl true
   def handle_event("reload", _params, socket) do
     {:noreply, reload(socket, [])}
   end
 
   defp reload(socket, changes) do
     socket = assign(socket, changes)
+    socket = assign(socket, exception_days: Settings.get_analytics_exception_days())
     a = socket.assigns
 
-    opts_a = build_opts(a.selected_versions, a.from_a, a.to_a)
-    opts_b = build_opts(a.selected_versions, a.from_b, a.to_b)
+    opts_a = build_opts(a.selected_versions, a.from_a, a.to_a, a.exclude_exception_days?)
+    opts_b = build_opts(a.selected_versions, a.from_b, a.to_b, a.exclude_exception_days?)
 
     kpis_a = Analytics.kpi_summary(opts_a)
     kpis_b = Analytics.kpi_summary(opts_b)
@@ -77,10 +87,11 @@ defmodule JournalexWeb.Analytics.CompareLive do
     |> push_event("chart-update", %{id: "compare-equity", option: compare_option})
   end
 
-  defp build_opts(versions, from, to) do
+  defp build_opts(versions, from, to, exclude_exception_days?) do
     opts = [versions: versions]
     opts = if d = parse_date(from), do: Keyword.put(opts, :from, d), else: opts
-    if d = parse_date(to), do: Keyword.put(opts, :to, d), else: opts
+    opts = if d = parse_date(to), do: Keyword.put(opts, :to, d), else: opts
+    Keyword.put(opts, :exclude_exception_days, exclude_exception_days?)
   end
 
   defp parse_date(nil), do: nil

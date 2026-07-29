@@ -11,6 +11,7 @@ defmodule JournalexWeb.Analytics.CalendarLive do
   def mount(_params, _session, socket) do
     versions_available = Analytics.available_versions()
     year = Date.utc_today().year
+    exception_days = Settings.get_analytics_exception_days()
 
     {:ok,
      assign(socket,
@@ -19,8 +20,10 @@ defmodule JournalexWeb.Analytics.CalendarLive do
        from: nil,
        to: nil,
        r_mode: Settings.get_analytics_r_mode(),
+       exception_days: exception_days,
+       exclude_exception_days?: true,
        year: year,
-       heatmap_data: Analytics.calendar_heatmap(year, versions: versions_available),
+       heatmap_data: Analytics.calendar_heatmap(year, versions: versions_available, exclude_exception_days: true),
        calendar_option: %{}
      )
      |> build_calendar_option()}
@@ -54,14 +57,20 @@ defmodule JournalexWeb.Analytics.CalendarLive do
   end
 
   @impl true
+  def handle_event("toggle_exception_days", _params, socket) do
+    {:noreply, reload(socket, exclude_exception_days?: !socket.assigns.exclude_exception_days?)}
+  end
+
+  @impl true
   def handle_event("reload", _params, socket) do
     {:noreply, reload(socket, [])}
   end
 
   defp reload(socket, changes) do
     socket = assign(socket, changes)
+    socket = assign(socket, exception_days: Settings.get_analytics_exception_days())
     a = socket.assigns
-    data = Analytics.calendar_heatmap(a.year, versions: a.selected_versions)
+    data = Analytics.calendar_heatmap(a.year, versions: a.selected_versions, exclude_exception_days: a.exclude_exception_days?)
     socket = socket |> assign(heatmap_data: data) |> build_calendar_option()
     push_event(socket, "chart-update", %{id: "calendar-heatmap", option: socket.assigns.calendar_option})
   end

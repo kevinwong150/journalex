@@ -7,6 +7,7 @@ defmodule Journalex.Analytics do
     - `:from` — `Date` lower bound (inclusive); default nil (no lower bound)
     - `:to` — `Date` upper bound (inclusive); default nil (no upper bound)
     - `:r_size` — float; defaults to `Settings.get_r_size()`
+    - `:exclude_exception_days` — boolean; defaults to true
 
   The `done? = true` filter is ALWAYS applied — analytics only count completed trades.
   """
@@ -79,6 +80,8 @@ defmodule Journalex.Analytics do
     versions = Keyword.get(opts, :versions, available_versions())
     from_date = Keyword.get(opts, :from)
     to_date = Keyword.get(opts, :to)
+    exclude_exception_days? = Keyword.get(opts, :exclude_exception_days, true)
+    exception_days = if exclude_exception_days?, do: Settings.get_analytics_exception_days(), else: []
 
     query =
       from t in Trade,
@@ -87,6 +90,7 @@ defmodule Journalex.Analytics do
 
     query = if from_date, do: where(query, [t], fragment("?::date", t.datetime) >= ^from_date), else: query
     query = if to_date, do: where(query, [t], fragment("?::date", t.datetime) <= ^to_date), else: query
+    query = if exception_days == [], do: query, else: where(query, [t], fragment("?::date", t.datetime) not in ^exception_days)
     query
   end
 

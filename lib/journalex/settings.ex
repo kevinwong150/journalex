@@ -320,4 +320,92 @@ defmodule Journalex.Settings do
   def set_analytics_r_mode(mode) when mode in ["r", "usd", "both"] do
     put(@analytics_r_mode_key, mode)
   end
+
+  # ---------------------------------------------------------------------------
+  # Typed helpers — analytics_exception_days
+  # ---------------------------------------------------------------------------
+
+  @analytics_exception_days_key "analytics_exception_days"
+
+  @doc """
+  Returns the list of calendar dates excluded from analytics.
+  Stored in DB as a JSON array string of ISO dates.
+  Default: [].
+  """
+  def get_analytics_exception_days do
+    case get(@analytics_exception_days_key) do
+      nil ->
+        []
+
+      "" ->
+        []
+
+      raw ->
+        with {:ok, values} <- Jason.decode(raw),
+             true <- is_list(values) do
+          values
+          |> Enum.reduce([], fn value, acc ->
+            case parse_exception_day(value) do
+              {:ok, date} -> [date | acc]
+              _ -> acc
+            end
+          end)
+          |> unique_sorted_dates()
+        else
+          _ -> []
+        end
+    end
+  end
+
+  @doc """
+  Persists the analytics exception days as a JSON array string of ISO dates.
+  Blank entries are ignored. Duplicate dates are removed.
+  """
+  def set_analytics_exception_days(days) when is_list(days) do
+    with {:ok, normalized_days} <- normalize_exception_days(days),
+         {:ok, json} <- Jason.encode(Enum.map(normalized_days, &Date.to_iso8601/1)) do
+      put(@analytics_exception_days_key, json)
+    else
+      {:error, _} = error -> error
+    end
+  end
+
+  defp normalize_exception_days(days) do
+    Enum.reduce_while(days, [], fn value, acc ->
+      case parse_exception_day(value) do
+        {:ok, date} -> {:cont, [date | acc]}
+        :skip -> {:cont, acc}
+        :error -> {:halt, {:error, :invalid_exception_days}}
+      end
+    end)
+    |> case do
+      {:error, _} = error -> error
+      normalized -> {:ok, unique_sorted_dates(normalized)}
+    end
+  end
+
+  defp parse_exception_day(%Date{} = date), do: {:ok, date}
+  defp parse_exception_day(nil), do: :skip
+  defp parse_exception_day(""), do: :skip
+
+  defp parse_exception_day(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> case do
+      "" -> :skip
+      iso_date ->
+        case Date.from_iso8601(iso_date) do
+          {:ok, date} -> {:ok, date}
+          _ -> :error
+        end
+    end
+  end
+
+  defp parse_exception_day(_value), do: :error
+
+  defp unique_sorted_dates(dates) do
+    dates
+    |> Enum.uniq_by(&Date.to_iso8601/1)
+    |> Enum.sort_by(&Date.to_iso8601/1)
+  end
 end

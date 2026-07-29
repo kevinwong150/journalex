@@ -112,7 +112,7 @@ Notion sync helpers in `Journalex.Notion`:
 
 Use `Journalex.Settings` for user-configurable settings (DB-backed, changeable at runtime). `Application.get_env` is acceptable for infrastructure config (API tokens, data source IDs) that comes from `config/runtime.exs`.
 
-The main typed helpers: `Settings.get_default_metadata_version/0`, `Settings.set_default_metadata_version/1`, `Settings.get_r_size/0`, `Settings.get_auto_check_on_load/0`, `Settings.get_activity_page_size/0`, `Settings.get_filter_visible_weeks/0`.
+The main typed helpers: `Settings.get_default_metadata_version/0`, `Settings.set_default_metadata_version/1`, `Settings.get_r_size/0`, `Settings.get_auto_check_on_load/0`, `Settings.get_activity_page_size/0`, `Settings.get_filter_visible_weeks/0`, `Settings.get_analytics_exception_days/0`, `Settings.set_analytics_exception_days/1`.
 
 ### 6. Docker / ports
 

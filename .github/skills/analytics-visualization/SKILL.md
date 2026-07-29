@@ -28,6 +28,7 @@ These were established in the planning session (April 2026) and must not be revi
 | Chart library | **ECharts (Apache)** — install via npm in `assets/`, wire up via LiveView hook |
 | Metadata version handling | **Global version filter (Option A)** — one set of pages for all versions; V2-only sections get a "requires V2+" badge; version list is dynamic (from DB), not hardcoded |
 | `done?` filter | **Always applied** — analytics count only `done? = true` trades; this is not user-configurable |
+| Exception-day exclusion | **Always applied in the shared analytics query** — no per-page toggle in this pass; dates live in DB-backed Settings as a JSON array string of ISO dates; Settings UI uses repeatable native `type=date` inputs with add/remove controls; validation, normalization, and deduplication happen on save |
 | P&L default unit | **R-multiples** (`realized_pl / r_size`); toggle to $ or both; persisted in DB-backed Settings |
 | R/$ toggle persistence | **`analytics_r_mode` setting** — DB-backed via `Journalex.Settings`; values: `"r"` | `"usd"` | `"both"`; default `"r"` |
 | Dashboard default period | **YTD (year to date)** |
@@ -492,6 +493,20 @@ test/test_helper.exs                    ← add MockAnalytics defmock
 
 > **Living Document Rule:** This file is the source of truth for the analytics visualization phase. After completing any analytics-related task — implementing a page, establishing a code pattern, discovering a pitfall, creating a component, or making a design decision — append a dated entry to this Changelog section. Future agents and sessions depend on this log to understand what has been built, what patterns are established, and what decisions were made along the way.
 
+### 2026-06-28 — Global analytics exception-day exclusion implemented
+
+**Shared-query rule is now live:** `Journalex.Analytics.base_query/1` excludes configured exception days for every analytics function in one place. No analytics LiveView owns separate state for this filter in this pass.
+
+**Settings storage implemented:** `Journalex.Settings` now persists exception days as a JSON array string of ISO dates, and normalizes blank, duplicate, and unsorted entries on save before analytics reads them back as `Date` structs.
+
+**Date matching rule used in code:** exclusion compares against the stored trade timestamp's database calendar date via `datetime::date`. No market-timezone remapping was added in this pass.
+
+**Settings UI implemented:** `/settings` now exposes repeatable native `type=date` inputs with add/remove controls for exception days.
+
+**LiveView state pattern established:** the settings page now keeps a server-side form snapshot so add/remove row actions do not snap unrelated unsaved fields back to persisted values.
+
+**Tests added:** focused coverage now exists for the shared analytics exclusion path, settings normalization, and the `/settings` save flow for exception days.
+
 ### 2026-06-28 — V3 flag alignment and same-version analytics semantics
 
 **Behavior + Scorecard correctness updated for V3 metadata:** `Journalex.Analytics` now has an explicit V3 flag catalog, including `following_rule?` and renamed V3 keys such as `slippage_entry?`, `choppy_chart?`, and `decision_affected_by_other_trade?`.
@@ -506,6 +521,18 @@ test/test_helper.exs                    ← add MockAnalytics defmock
 - Mixed-version exclusion from the OFF baseline for version-specific flags
 
 **Deferred on purpose:** multi-select analytics dimensions (`patterns`, `regular_lessons`, `extra_setup_comment`, `good_things`) and humanized flag labels in Behavior/Scorecard remain separate follow-up work.
+
+### 2026-06-28 — Global analytics exception-day exclusion plan
+
+**Refined plan locked:** implement the exclusion once in the shared analytics query so every analytics page inherits it automatically.
+
+**Settings contract:** store exception days in `Journalex.Settings` as a JSON array string of ISO dates, not a comma-separated string.
+
+**Settings UI:** use repeatable native `type=date` inputs with add/remove controls.
+
+**Save-time hygiene:** validate entries, normalize them to ISO format, and deduplicate before persisting.
+
+**Explicitly out of scope for this pass:** no per-page analytics toggle or filter-bar state for exception-day exclusion.
 
 ### 2026-06-28 — Breakdown page extended for V3 multi-select dimensions
 

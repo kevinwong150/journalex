@@ -12,6 +12,7 @@ defmodule JournalexWeb.Analytics.RiskLive do
   def mount(_params, _session, socket) do
     versions_available = Analytics.available_versions()
     r_mode = Settings.get_analytics_r_mode()
+    exception_days = Settings.get_analytics_exception_days()
     opts = [versions: Enum.filter(versions_available, &(&1 >= 2))]
     rr = Analytics.rr_analysis(opts)
 
@@ -22,6 +23,8 @@ defmodule JournalexWeb.Analytics.RiskLive do
        from: nil,
        to: nil,
        r_mode: r_mode,
+       exception_days: exception_days,
+       exclude_exception_days?: true,
        rr: rr,
        histogram_option: build_histogram_option(rr),
        scatter_option: build_scatter_option(rr)
@@ -56,15 +59,21 @@ defmodule JournalexWeb.Analytics.RiskLive do
   end
 
   @impl true
+  def handle_event("toggle_exception_days", _params, socket) do
+    {:noreply, reload(socket, exclude_exception_days?: !socket.assigns.exclude_exception_days?)}
+  end
+
+  @impl true
   def handle_event("reload", _params, socket) do
     {:noreply, reload(socket, [])}
   end
 
   defp reload(socket, changes) do
     socket = assign(socket, changes)
+    socket = assign(socket, exception_days: Settings.get_analytics_exception_days())
     a = socket.assigns
     v2_versions = Enum.filter(a.selected_versions, &(&1 >= 2))
-    opts = build_opts(v2_versions, a.from, a.to)
+    opts = build_opts(v2_versions, a.from, a.to, a.exclude_exception_days?)
     rr = Analytics.rr_analysis(opts)
     histogram_option = build_histogram_option(rr)
     scatter_option = build_scatter_option(rr)
@@ -75,11 +84,11 @@ defmodule JournalexWeb.Analytics.RiskLive do
     |> push_event("chart-update", %{id: "rr-scatter", option: scatter_option})
   end
 
-  defp build_opts(versions, from, to) do
+  defp build_opts(versions, from, to, exclude_exception_days?) do
     opts = [versions: versions]
     opts = if d = parse_date(from), do: Keyword.put(opts, :from, d), else: opts
     opts = if d = parse_date(to), do: Keyword.put(opts, :to, d), else: opts
-    opts
+    Keyword.put(opts, :exclude_exception_days, exclude_exception_days?)
   end
 
   defp parse_date(nil), do: nil
